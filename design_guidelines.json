@@ -1,0 +1,167 @@
+{
+  "app_name": "Italian Home Meal Planner",
+  "personality": "8 Hand-Drawn / Journal LIGHT",
+  "personality_one_liner": "A warm, deeply personal, and cozy home cookbook experience that feels like flipping through a cherished family recipe journal.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#3D342B",
+    "surfaceSecondary": "#F5F2EB",
+    "onSurfaceSecondary": "#5A5045",
+    "surfaceTertiary": "#EBE5D9",
+    "onSurfaceTertiary": "#6B6054",
+    "surfaceInverse": "#2C2826",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#D97757",
+    "brandPrimary": "#C66241",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#7E947A",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E8DCC4",
+    "onBrandTertiary": "#5A5045",
+    "success": "#5E7C5A",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D4A373",
+    "onWarning": "#3D342B",
+    "error": "#B85450",
+    "onError": "#FFFFFF",
+    "border": "#DED5C5",
+    "borderStrong": "#C3B6A1",
+    "divider": "#EBE5D9"
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Nunito",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use generous xl/2xl rhythm mimicking a notebook layout. Do not crowd elements.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 0,
+  "navigation": "bottom_tabs",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": ["Skip glass to maintain the raw, matte, tactile paper feel of this personality"],
+    "dont's": ["Do not use blur or glassmorphism on headers, tab bars, or cards"]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "haptics": {
+    "events": {
+      "primary_button": "impactMedium",
+      "tab_change": "selection",
+      "drag_start": "impactHeavy",
+      "drag_drop": "impactMedium",
+      "checkbox_toggle": "impactLight",
+      "item_delete": "notificationWarning"
+    }
+  },
+  "screens": [
+    {
+      "name": "Auth",
+      "purpose": "A welcoming entry point that sets a cozy, home-cooking atmosphere.",
+      "states": {
+        "loading": "Centered soft spinner.",
+        "empty": "N/A",
+        "error": "Standard text label below inputs."
+      },
+      "layout": "Full-bleed background image with vertical top-to-bottom scrim (transparent -> surfaceInverse). White text overlay. Social login (Google) and Email/Password fields positioned in the bottom 40% of the screen. Primary CTA sticky at bottom."
+    },
+    {
+      "name": "Planner",
+      "purpose": "A 7-day weekly canvas (Saturday to Friday) allowing users to map out lunches and dinners intuitively.",
+      "states": {
+        "loading": "Skeleton loaders for the days of the week.",
+        "empty": "Hand-drawn style illustration of a notebook with a CTA to 'Add your first meal'.",
+        "error": "Readable error message with a retry button."
+      },
+      "layout": "Top section: Horizontal week selector (prev/current/next) with the current day prominently highlighted using brandPrimary. Main scrollable area: 7 vertical day blocks (Saturday to Friday). Inside each day, segmented slots for 'Pranzo' (Lunch) and 'Cena' (Dinner). If empty, display a dashed-border 'Add Meal' placeholder. If filled, show a minimalist dish card with servings counter and an edit/remove button. Floating sticky button at bottom for 'Duplicate Previous Week'."
+    },
+    {
+      "name": "Spesa (Shopping List)",
+      "purpose": "An interactive, drag-and-drop grocery list merging manual entries and auto-populated ingredients from the Planner.",
+      "states": {
+        "loading": "Skeleton text lines.",
+        "empty": "Illustration of fresh vegetables with text 'Your cart is empty. Start planning or add items manually.'",
+        "error": "Error loading list, please retry."
+      },
+      "layout": "Header banner featuring a blurred or masked image of fresh vegetables. Main area: A vertical list of ingredients using React Native Gesture Handler for drag-and-drop reordering. Each row has a drag handle on the right. Items added from the Planner carry a subtle 'brandSecondary' (sage) dot indicator to distinguish from manual items. Checkboxes on the left; checking an item strikes through the text and fades the row opacity."
+    },
+    {
+      "name": "Piatti (Dishes)",
+      "purpose": "A digital recipe box to create, search, and manage Primi (First Courses) and Secondi (Second Courses).",
+      "states": {
+        "loading": "Skeleton recipe cards.",
+        "empty": "Illustration of an empty plate. Text: 'No dishes yet. Add your favorite recipes.'",
+        "error": "Could not fetch dishes. Tap to retry."
+      },
+      "layout": "Sticky header with a search bar (surfaceTertiary background) and a segmented control to toggle between 'Primi' and 'Secondi'. Below, a 2-column masonry or simple 1-column list of recipe cards. Cards feature a thumbnail (if available), title, prep time, and course tag. A primary FAB (Floating Action Button) positioned bottom-right to 'Create New Dish'."
+    },
+    {
+      "name": "Create/Edit Dish Modal",
+      "purpose": "A full-screen sheet to input dish details, ingredients, quantities, and preparation steps.",
+      "states": {
+        "loading": "Spinner overlaid on save.",
+        "empty": "N/A",
+        "error": "Validation error text under respective fields."
+      },
+      "layout": "Modal/Sheet presentation. Single-column scrollable form. Fields for Dish Name, Course Type (Picker: Primo/Secondo), Ingredients list (dynamic rows to add name + quantity), and a multiline text area for Preparation instructions. Primary 'Save' CTA sticky at the bottom, respecting the safe area and keyboard avoiding view."
+    }
+  ],
+  "images": {
+    "auth_background": {
+      "url": "https://images.unsplash.com/photo-1528712306091-ed0763094c98?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxjb3p5JTIwaG9tZSUyMGNvb2tpbmclMjBraXRjaGVufGVufDB8fHx8MTc4NzMxNTg1NHww&ixlib=rb-4.1.0&q=85",
+      "alt": "cozy home cooking kitchen background"
+    },
+    "piatti_banner": {
+      "url": "https://images.unsplash.com/photo-1516100882582-96c3a05fe590?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxwbGF0ZWQlMjBwYXN0YSUyMGRpc2h8ZW58MHx8fHwxNzg3MzE1ODU0fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Plated pasta dish top view"
+    },
+    "spesa_header": {
+      "url": "https://images.unsplash.com/photo-1542838132-92c53300491e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxmcmVzaCUyMHZlZ2V0YWJsZXMlMjBncm9jZXJ5fGVufDB8fHx8MTc4NzMxNTg1NHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Fresh vegetables grocery view"
+    },
+    "planner_empty": {
+      "url": "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHx3ZWVrbHklMjBwbGFubmVyJTIwbm90ZWJvb2t8ZW58MHx8fHwxNzg3MzE1ODczfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Notebook planner with coffee cup"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Design with a 'Hand-Drawn / Journal' aesthetic: rely on soft margins, asymmetrical spacing, and warm off-white (FDFBF7) and cream (F5F2EB) backgrounds instead of heavy cards or glassmorphism. Avoid shadows (shadow_tier 0) and pure whites.",
+    "Typography requires 'Fraunces' for elegant serif headings and 'Nunito' for soft, friendly body text. Max font weight everywhere is 500.",
+    "For the Spesa (Shopping) tab: Implement react-native-gesture-handler for drag-and-drop functionality. Auto-populated items from the Planner MUST show a visual dot in 'brandSecondary' (sage) to distinguish them from manual entries.",
+    "Planner structure MUST strictly operate from Saturday to Friday per the user's specific requirement. Implement a week-selector at the top (e.g., arrows for prev/next week).",
+    "When a dish is added to the planner, logic must scale ingredient quantities by the chosen servings before adding to the shopping list.",
+    "Images used as backgrounds (e.g., Auth) MUST use the gradient scrim pattern (top-to-bottom transparent to surfaceInverse at >= 70% opacity) to guarantee readability of overlaid text.",
+    "Wire haptics directly into interactions (e.g., selection haptic for tab changes, impactMedium for adding dishes/saving form, impactHeavy for starting a drag-and-drop)."
+  ]
+}
