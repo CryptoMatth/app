@@ -90,6 +90,7 @@ export const api = {
   toggleShopping: (id: string, checked: boolean) =>
     req(`/shopping/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ checked }) }),
   deleteShopping: (id: string) => req(`/shopping/${id}`, { method: 'DELETE' }),
+  forceDeleteShopping: (id: string) => req(`/shopping/${id}/force`, { method: 'DELETE' }),
   reorderShopping: (ordered_ids: string[]) =>
     req('/shopping/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
   clearChecked: () => req('/shopping/clear-checked', { method: 'POST' }),

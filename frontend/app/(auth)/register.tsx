@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform,
-  ScrollView, ActivityIndicator, Keyboard,
+  View, Text, TextInput, Pressable, StyleSheet, Platform,
+  ActivityIndicator, Keyboard,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter, Link } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
@@ -12,6 +13,7 @@ export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { register } = useAuth();
@@ -22,6 +24,7 @@ export default function Register() {
     setErr('');
     if (!email.trim() || !pw) { setErr('Inserisci email e password'); return; }
     if (pw.length < 6) { setErr('La password deve avere almeno 6 caratteri'); return; }
+    if (pw !== pw2) { setErr('Le due password non coincidono'); return; }
     setBusy(true);
     try {
       await register(email.trim(), pw, name.trim() || undefined);
@@ -35,63 +38,73 @@ export default function Register() {
 
   return (
     <View style={styles.root} testID="register-screen">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Pressable onPress={() => router.back()} style={styles.back} testID="register-back">
-            <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={20}
+      >
+        <Pressable onPress={() => router.back()} style={styles.back} testID="register-back">
+          <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
+        </Pressable>
+        <Text style={styles.h1}>Crea il tuo account</Text>
+        <Text style={styles.sub}>Registrati per iniziare a pianificare i tuoi pasti.</Text>
+
+        <View style={{ height: theme.spacing.xl }} />
+        <TextInput
+          testID="register-name-input"
+          placeholder="Nome (opzionale)"
+          placeholderTextColor={theme.color.onSurfaceTertiary}
+          value={name} onChangeText={setName}
+          style={styles.input}
+        />
+        <TextInput
+          testID="register-email-input"
+          placeholder="Email"
+          placeholderTextColor={theme.color.onSurfaceTertiary}
+          value={email} onChangeText={setEmail}
+          autoCapitalize="none" keyboardType="email-address"
+          style={styles.input}
+        />
+        <TextInput
+          testID="register-password-input"
+          placeholder="Password (min 6 caratteri)"
+          placeholderTextColor={theme.color.onSurfaceTertiary}
+          value={pw} onChangeText={setPw}
+          secureTextEntry
+          style={styles.input}
+        />
+        <TextInput
+          testID="register-password2-input"
+          placeholder="Ripeti password"
+          placeholderTextColor={theme.color.onSurfaceTertiary}
+          value={pw2} onChangeText={setPw2}
+          secureTextEntry
+          style={styles.input}
+        />
+        {err ? <Text style={styles.err} testID="register-error">{err}</Text> : null}
+
+        <Pressable
+          testID="register-submit-button"
+          onPress={onSubmit}
+          disabled={busy}
+          style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
+        >
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Registrati</Text>}
+        </Pressable>
+
+        <Link href="/(auth)/login" asChild>
+          <Pressable style={styles.link} testID="go-to-login">
+            <Text style={styles.linkTxt}>Hai già un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Accedi</Text></Text>
           </Pressable>
-          <Text style={styles.h1}>Crea il tuo account</Text>
-          <Text style={styles.sub}>Registrati per iniziare a pianificare i tuoi pasti.</Text>
-
-          <View style={{ height: theme.spacing.xl }} />
-          <TextInput
-            testID="register-name-input"
-            placeholder="Nome (opzionale)"
-            placeholderTextColor={theme.color.onSurfaceTertiary}
-            value={name} onChangeText={setName}
-            style={styles.input}
-          />
-          <TextInput
-            testID="register-email-input"
-            placeholder="Email"
-            placeholderTextColor={theme.color.onSurfaceTertiary}
-            value={email} onChangeText={setEmail}
-            autoCapitalize="none" keyboardType="email-address"
-            style={styles.input}
-          />
-          <TextInput
-            testID="register-password-input"
-            placeholder="Password (min 6 caratteri)"
-            placeholderTextColor={theme.color.onSurfaceTertiary}
-            value={pw} onChangeText={setPw}
-            secureTextEntry
-            style={styles.input}
-          />
-          {err ? <Text style={styles.err} testID="register-error">{err}</Text> : null}
-
-          <Pressable
-            testID="register-submit-button"
-            onPress={onSubmit}
-            disabled={busy}
-            style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
-          >
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Registrati</Text>}
-          </Pressable>
-
-          <Link href="/(auth)/login" asChild>
-            <Pressable style={styles.link} testID="go-to-login">
-              <Text style={styles.linkTxt}>Hai già un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Accedi</Text></Text>
-            </Pressable>
-          </Link>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </Link>
+      </KeyboardAwareScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.surface },
-  scroll: { padding: theme.spacing.xl, paddingTop: 80 },
+  scroll: { padding: theme.spacing.xl, paddingTop: 80, paddingBottom: 40 },
   back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md, marginLeft: -8 },
   h1: { fontFamily: theme.font.display, fontSize: 30, color: theme.color.onSurface },
   sub: { fontSize: 14, color: theme.color.onSurfaceSecondary, marginTop: 4 },

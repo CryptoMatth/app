@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform,
-  ScrollView, ActivityIndicator, Keyboard,
+  View, Text, TextInput, Pressable, StyleSheet, Platform,
+  ActivityIndicator, Keyboard,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -97,11 +98,11 @@ export default function Login() {
         colors={['rgba(44,40,38,0.25)', 'rgba(44,40,38,0.55)', 'rgba(44,40,38,0.92)']}
         style={StyleSheet.absoluteFillObject}
       />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={20}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.top}>
             <Text style={styles.brand}>Cucina di Casa</Text>
             <Text style={styles.tagline}>Pianifica, cucina, ama.</Text>
@@ -167,8 +168,7 @@ export default function Login() {
               </Pressable>
             </Link>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
     </View>
   );
 }

@@ -530,6 +530,17 @@ async def delete_item(item_id: str, current_user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api_router.delete("/shopping/{item_id}/force")
+async def force_delete_item(item_id: str, current_user=Depends(get_current_user)):
+    """Force delete an item entirely, including planner-added portions.
+    Does NOT modify the planner itself — dishes remain planned, but the ingredient
+    is removed from the shopping list."""
+    res = await db.shopping_items.delete_one({"id": item_id, "user_id": current_user["user_id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Elemento non trovato")
+    return {"ok": True}
+
+
 @api_router.post("/shopping/reorder")
 async def reorder(body: ShoppingReorder, current_user=Depends(get_current_user)):
     for idx, item_id in enumerate(body.ordered_ids):

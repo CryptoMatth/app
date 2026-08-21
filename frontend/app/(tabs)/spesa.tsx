@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard,
+  View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Keyboard, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { useFocusEffect } from 'expo-router';
@@ -21,7 +22,6 @@ const UNITS = ['g', 'kg', 'ml', 'l', 'pz'];
 
 function totalQty(it: Item) { return (it.manual_qty || 0) + (it.planner_qty || 0); }
 function formatQty(n: number) {
-  if (n >= 1000 && n % 1 === 0) return String(n);
   if (n % 1 === 0) return String(n);
   return n.toFixed(1);
 }
@@ -34,6 +34,8 @@ export default function Spesa() {
   const [qty, setQty] = useState('');
   const [unit, setUnit] = useState('g');
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try { const list = await api.listShopping(); setItems(list); } catch {}
@@ -49,10 +51,24 @@ export default function Spesa() {
     try { await api.toggleShopping(id, !checked); } catch { load(); }
   };
 
-  const remove = async (id: string) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    setItems(prev => prev.filter(i => i.id !== id));
-    try { await api.deleteShopping(id); load(); } catch { load(); }
+  const askDelete = (item: Item) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setConfirmDelete(item);
+  };
+
+  const doDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    try {
+      // Force full delete regardless of source
+      await api.forceDeleteShopping(confirmDelete.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setConfirmDelete(null);
+      await load();
+    } catch {
+      load();
+    }
+    setDeleting(false);
   };
 
   const onReorder = async (newList: Item[]) => {
@@ -143,11 +159,9 @@ export default function Spesa() {
                         : ''}
                   </Text>
                 </View>
-                {item.manual_qty > 0 && (
-                  <Pressable onPress={() => remove(item.id)} style={styles.iconBtn} testID={`del-${item.id}`}>
-                    <Feather name="x" size={16} color={theme.color.onSurfaceTertiary} />
-                  </Pressable>
-                )}
+                <Pressable onPress={() => askDelete(item)} style={styles.iconBtn} testID={`del-${item.id}`}>
+                  <Feather name="x" size={18} color={theme.color.onSurfaceTertiary} />
+                </Pressable>
                 <Pressable onLongPress={drag} delayLongPress={150} style={styles.iconBtn} testID={`drag-${item.id}`}>
                   <Feather name="menu" size={18} color={theme.color.onSurfaceTertiary} />
                 </Pressable>
@@ -158,8 +172,8 @@ export default function Spesa() {
         />
       )}
 
-      {showAdd && (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.addWrap}>
+      {showAdd ? (
+        <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
           <View style={styles.addCard}>
             <Text style={styles.addH}>Aggiungi ingrediente</Text>
             <TextInput
@@ -201,10 +215,8 @@ export default function Spesa() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      )}
-
-      {!showAdd && (
+        </KeyboardStickyView>
+      ) : (
         <View style={styles.actions}>
           {boughtCount > 0 && (
             <Pressable onPress={clearBought} style={styles.secondary} testID="clear-checked">
@@ -218,6 +230,46 @@ export default function Spesa() {
           </Pressable>
         </View>
       )}
+
+      {/* Confirmation modal */}
+      <Modal
+        transparent
+        visible={!!confirmDelete}
+        animationType="fade"
+        onRequestClose={() => setConfirmDelete(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="confirm-delete-modal">
+            <View style={styles.modalIcon}>
+              <Feather name="alert-triangle" size={24} color={theme.color.warning} />
+            </View>
+            <Text style={styles.modalH}>Eliminare "{confirmDelete?.name}"?</Text>
+            <Text style={styles.modalP}>
+              {confirmDelete?.planner_qty && confirmDelete.planner_qty > 0
+                ? 'Questo ingrediente è stato aggiunto dal planner. Verrà rimosso completamente dalla lista della spesa, ma i piatti nel planner resteranno.'
+                : 'L\'ingrediente verrà rimosso dalla lista della spesa.'}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+              <Pressable
+                onPress={() => setConfirmDelete(null)}
+                style={styles.btnGhost}
+                testID="confirm-cancel"
+                disabled={deleting}
+              >
+                <Text style={styles.btnGhostTxt}>Annulla</Text>
+              </Pressable>
+              <Pressable
+                onPress={doDelete}
+                style={styles.btnDanger}
+                testID="confirm-delete"
+                disabled={deleting}
+              >
+                {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Elimina</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -257,7 +309,6 @@ const styles = StyleSheet.create({
   primaryTxt: { color: '#fff', fontWeight: '600', fontSize: 15 },
   secondary: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: theme.color.border },
   secondaryTxt: { color: theme.color.onSurface, fontWeight: '500', fontSize: 14 },
-  addWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   addCard: {
     backgroundColor: theme.color.surface, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg,
     padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.color.border, gap: 10,
@@ -277,4 +328,11 @@ const styles = StyleSheet.create({
   btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
   btnPrim: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   btnPrimTxt: { color: '#fff', fontWeight: '600' },
+  btnDanger: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.error, alignItems: 'center', justifyContent: 'center' },
+  btnDangerTxt: { color: '#fff', fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
+  modalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.color.brandTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },
+  modalH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
+  modalP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },
 });

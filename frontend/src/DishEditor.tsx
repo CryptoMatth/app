@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Keyboard,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard,
 } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -111,8 +112,11 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
         ) : <View style={styles.hBtn} />}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 160 }}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={80}
+      >
           <Text style={styles.label}>Nome</Text>
           <TextInput
             testID="dish-name"
@@ -184,14 +188,15 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
           />
 
           {err ? <Text style={styles.err} testID="dish-error">{err}</Text> : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
-        <View style={styles.saveWrap}>
-          <Pressable onPress={save} disabled={busy} style={styles.saveBtn} testID="dish-save">
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>Salva piatto</Text>}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
+        <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+          <View style={styles.saveWrap}>
+            <Pressable onPress={save} disabled={busy} style={styles.saveBtn} testID="dish-save">
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>Salva piatto</Text>}
+            </Pressable>
+          </View>
+        </KeyboardStickyView>
     </SafeAreaView>
   );
 }
