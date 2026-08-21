@@ -801,12 +801,11 @@ async def reorder(body: ShoppingReorder, current_user=Depends(get_current_user))
 
 @api_router.post("/shopping/clear-checked")
 async def clear_checked(current_user=Depends(get_current_user)):
-    await db.shopping_items.delete_many({"user_id": current_user["user_id"], "checked": True, "planner_qty": {"$lte": 0.0001}})
-    # For items with planner qty checked, uncheck them
-    await db.shopping_items.update_many(
-        {"user_id": current_user["user_id"], "checked": True},
-        {"$set": {"checked": False}},
-    )
+    """Delete ALL checked items, regardless of source (planner or manual)."""
+    await db.shopping_items.delete_many({
+        "user_id": current_user["user_id"],
+        "checked": True,
+    })
     return {"ok": True}
 
 

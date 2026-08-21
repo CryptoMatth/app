@@ -22,7 +22,7 @@ export default function PlannerSlot() {
   const [tab, setTab] = useState<'primo' | 'secondo'>('primo');
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<string | null>((currentDishId as string) || null);
-  const [persons, setPersons] = useState<number>(parseInt((currentPersons as string) || '2') || 2);
+  const [persons, setPersons] = useState<number>(parseInt((currentPersons as string) || '1') || 1);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

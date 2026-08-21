@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   h1: { fontFamily: theme.font.display, fontSize: 30, color: theme.color.onSurface },
   sub: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginTop: 2 },
-  logoutBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surfaceSecondary },
+  logoutBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surfaceSecondary },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md,

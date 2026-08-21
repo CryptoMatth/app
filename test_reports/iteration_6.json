@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 6 (bug-fix) verified end-to-end. Backend: 4/4 new tests pass in /app/backend/tests/test_iteration6.py — POST /api/shopping/clear-checked now hard-deletes ALL checked items regardless of source (manual-only, planner-only, mixed planner+manual). Planner slot rows are NOT modified. Unchecked items are untouched. Frontend (mobile viewport 390x844, fresh register): (1) new empty planner slot displays persons-count = '1' (was 2); code review confirms currentPersons from route params still hydrates when editing an existing slot. (2) new dish editor testID='dish-servings' input defaults to '1' (was 2). (3) Spesa full flow works: add manual item → check → tap 'Rimuovi presi' (testID='clear-checked') → item disappears from list. No red-screen, no deprecated Expo packages introduced. One React 19 warning surfaced ('Accessing element.ref was removed in React 19') but it is unrelated to iteration 6 changes and non-blocking.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6.py",
+    "/app/test_reports/pytest/pytest_iteration6.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Optional: pre-existing console warning 'Accessing element.ref was removed in React 19. ref is now a regular prop.' is emitted by an upstream library / component (not touched by iteration 6). Not blocking, but worth investigating in a future maintenance pass to avoid noise."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6.py (new)"
+  ],
+  "success_rate": { "backend": "100% (4/4 iteration-6 tests)", "frontend": "100% (3/3 flows)" },
+  "seed_data_creation": "Registered a fresh throwaway account (test<timestamp>@t.co / test1234) per flow. Backend tests create their own isolated users via /api/auth/register.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 6 fixes are stable. clear-checked endpoint at POST /api/shopping/clear-checked is now a hard-delete for any row where checked=true; the planner slot rows remain untouched (only shopping_items are affected). Frontend default quantities: planner-slot persons_count and DishEditor servings both default to '1' for the new-item flow. To hit the planner-slot screen from tests, from the planner tab click any testID='slot-<i>-<meal>' cell — that navigates to /planner-slot. tab bar labels are Piatti/Planner/Spesa (no testIDs on the tab bar itself; use get_by_text)."
+}

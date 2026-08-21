@@ -26,7 +26,7 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
 
   const [name, setName] = useState('');
   const [course, setCourse] = useState<'primo' | 'secondo'>(startCourse);
-  const [servings, setServings] = useState('2');
+  const [servings, setServings] = useState('1');
   const [ingredients, setIngredients] = useState<Ing[]>([{ name: '', quantity: '', unit: 'g' }]);
   const [preparation, setPreparation] = useState('');
   const [loading, setLoading] = useState(!!dishId);

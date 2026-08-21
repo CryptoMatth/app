@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
@@ -36,6 +36,7 @@ export default function Spesa() {
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
 
   const load = useCallback(async () => {
     try { const list = await api.listShopping(); setItems(list); } catch {}
@@ -102,21 +103,26 @@ export default function Spesa() {
     <SafeAreaView style={styles.root} edges={['top']} testID="spesa-screen">
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.h1}>Spesa</Text>
             <Text style={styles.sub}>
               {items.length} elementi{boughtCount > 0 ? ` · ${boughtCount} già presi` : ''}
             </Text>
           </View>
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />
-              <Text style={styles.legendTxt}>Planner</Text>
+          <View style={styles.headerRight}>
+            <View style={styles.legend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />
+                <Text style={styles.legendTxt}>Planner</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />
+                <Text style={styles.legendTxt}>Manuale</Text>
+              </View>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />
-              <Text style={styles.legendTxt}>Manuale</Text>
-            </View>
+            <Pressable onPress={() => router.push('/settings')} style={styles.settingsBtn} testID="open-settings">
+              <Feather name="settings" size={18} color={theme.color.onSurface} />
+            </Pressable>
           </View>
         </View>
       </View>
@@ -278,6 +284,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.surface },
   header: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md, paddingBottom: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.color.divider },
   headerRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  settingsBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
   h1: { fontFamily: theme.font.display, fontSize: 30, color: theme.color.onSurface },
   sub: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginTop: 2 },
   legend: { gap: 4, alignItems: 'flex-end' },
