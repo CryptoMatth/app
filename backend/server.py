@@ -312,6 +312,25 @@ async def delete_dish(dish_id: str, current_user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api_router.post("/dishes/{dish_id}/duplicate")
+async def duplicate_dish(dish_id: str, current_user=Depends(get_current_user)):
+    src = await db.dishes.find_one({"id": dish_id, "user_id": current_user["user_id"]}, {"_id": 0})
+    if not src:
+        raise HTTPException(404, "Piatto non trovato")
+    new_dish = {
+        "id": _uid(),
+        "user_id": current_user["user_id"],
+        "name": f"{src['name']} (copia)",
+        "course": src["course"],
+        "ingredients": src.get("ingredients", []),
+        "preparation": src.get("preparation", ""),
+        "servings": src.get("servings", 1),
+        "created_at": _now(),
+    }
+    await db.dishes.insert_one(dict(new_dish))
+    return new_dish
+
+
 # -------------------- Planner + Shopping sync --------------------
 def _norm_name(name: str, unit: str) -> str:
     return f"{name.strip().lower()}::{unit.strip().lower()}"

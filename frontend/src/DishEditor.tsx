@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard, Modal,
 } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +32,9 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
   const [loading, setLoading] = useState(!!dishId);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   useEffect(() => {
     if (!dishId || dishId === 'new') { setLoading(false); return; }
@@ -88,8 +91,23 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
 
   const del = async () => {
     if (!dishId || dishId === 'new') return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    try { await api.deleteDish(dishId); router.back(); } catch {}
+    setDeleting(true);
+    try {
+      await api.deleteDish(dishId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setShowDelete(false);
+      router.back();
+    } catch {} finally { setDeleting(false); }
+  };
+
+  const duplicate = async () => {
+    if (!dishId || dishId === 'new') return;
+    setDuplicating(true);
+    try {
+      const nd = await api.duplicateDish(dishId);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.replace(`/dish/${nd.id}`);
+    } catch {} finally { setDuplicating(false); }
   };
 
   if (loading) {
@@ -106,9 +124,14 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
         </Pressable>
         <Text style={styles.hTitle}>{dishId && dishId !== 'new' ? 'Modifica piatto' : 'Nuovo piatto'}</Text>
         {dishId && dishId !== 'new' ? (
-          <Pressable onPress={del} style={styles.hBtn} testID="dish-delete">
-            <Feather name="trash-2" size={20} color={theme.color.error} />
-          </Pressable>
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable onPress={duplicate} disabled={duplicating} style={styles.hBtn} testID="dish-duplicate">
+              {duplicating ? <ActivityIndicator color={theme.color.onSurface} size="small" /> : <Feather name="copy" size={19} color={theme.color.onSurface} />}
+            </Pressable>
+            <Pressable onPress={() => setShowDelete(true)} style={styles.hBtn} testID="dish-delete">
+              <Feather name="trash-2" size={20} color={theme.color.error} />
+            </Pressable>
+          </View>
         ) : <View style={styles.hBtn} />}
       </View>
 
@@ -197,6 +220,43 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
             </Pressable>
           </View>
         </KeyboardStickyView>
+
+        <Modal
+          transparent
+          visible={showDelete}
+          animationType="fade"
+          onRequestClose={() => setShowDelete(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard} testID="confirm-dish-delete-modal">
+              <View style={styles.modalIcon}>
+                <Feather name="alert-triangle" size={24} color={theme.color.error} />
+              </View>
+              <Text style={styles.modalH}>Eliminare "{name}"?</Text>
+              <Text style={styles.modalP}>
+                Il piatto sarà eliminato dal ricettario. Le settimane già pianificate che lo contengono manterranno il nome ma non potrai più modificarlo.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+                <Pressable
+                  onPress={() => setShowDelete(false)}
+                  style={styles.btnGhost}
+                  testID="dish-delete-cancel"
+                  disabled={deleting}
+                >
+                  <Text style={styles.btnGhostTxt}>Annulla</Text>
+                </Pressable>
+                <Pressable
+                  onPress={del}
+                  style={styles.btnDanger}
+                  testID="dish-delete-confirm"
+                  disabled={deleting}
+                >
+                  {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Elimina</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
     </SafeAreaView>
   );
 }
@@ -264,4 +324,13 @@ const styles = StyleSheet.create({
   saveWrap: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.color.divider, backgroundColor: theme.color.surface },
   saveBtn: { height: 52, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   saveTxt: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
+  modalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F5E0DC', alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },
+  modalH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
+  modalP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },
+  btnGhost: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
+  btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
+  btnDanger: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.error, alignItems: 'center', justifyContent: 'center' },
+  btnDangerTxt: { color: '#fff', fontWeight: '600' },
 });

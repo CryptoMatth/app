@@ -311,3 +311,72 @@ def test_force_delete_not_owned_404(user_a, user_b):
 def test_force_delete_nonexistent_404(user_a):
     r = requests.delete(f"{BASE_URL}/shopping/nonexistent_id/force", headers=H(user_a["token"]))
     assert r.status_code == 404
+
+
+# ---- Dish duplicate (Iteration 3) ----
+def test_dish_duplicate_success(user_a):
+    # Create fresh source dish
+    src_payload = {
+        "name": "TEST_DupSource",
+        "course": "secondo",
+        "servings": 3,
+        "ingredients": [
+            {"name": "Pollo", "quantity": 500, "unit": "g"},
+            {"name": "Rosmarino", "quantity": 5, "unit": "g"},
+        ],
+        "preparation": "Arrostire.",
+    }
+    r = requests.post(f"{BASE_URL}/dishes", json=src_payload, headers=H(user_a["token"]))
+    assert r.status_code == 200
+    src = r.json()
+
+    r = requests.post(f"{BASE_URL}/dishes/{src['id']}/duplicate", headers=H(user_a["token"]))
+    assert r.status_code == 200, r.text
+    dup = r.json()
+    # Different id
+    assert dup["id"] != src["id"]
+    # Name suffixed
+    assert dup["name"] == "TEST_DupSource (copia)"
+    # Same course/servings/preparation
+    assert dup["course"] == src["course"]
+    assert dup["servings"] == src["servings"]
+    assert dup["preparation"] == src["preparation"]
+    # Ingredients cloned
+    assert len(dup["ingredients"]) == len(src["ingredients"])
+    src_ings = [(i["name"], i["quantity"], i["unit"]) for i in src["ingredients"]]
+    dup_ings = [(i["name"], i["quantity"], i["unit"]) for i in dup["ingredients"]]
+    assert sorted(src_ings) == sorted(dup_ings)
+
+    # GET verifies persistence
+    r = requests.get(f"{BASE_URL}/dishes/{dup['id']}", headers=H(user_a["token"]))
+    assert r.status_code == 200
+    assert r.json()["name"] == "TEST_DupSource (copia)"
+
+    # cleanup
+    requests.delete(f"{BASE_URL}/dishes/{src['id']}", headers=H(user_a["token"]))
+    requests.delete(f"{BASE_URL}/dishes/{dup['id']}", headers=H(user_a["token"]))
+
+
+def test_dish_duplicate_cross_user_404(user_a, user_b):
+    # A creates a dish
+    r = requests.post(f"{BASE_URL}/dishes", json={
+        "name": "TEST_DupCross",
+        "course": "primo",
+        "servings": 1,
+        "ingredients": [],
+        "preparation": "",
+    }, headers=H(user_a["token"]))
+    assert r.status_code == 200
+    dish = r.json()
+
+    # B tries to duplicate A's dish -> 404
+    r = requests.post(f"{BASE_URL}/dishes/{dish['id']}/duplicate", headers=H(user_b["token"]))
+    assert r.status_code == 404
+
+    # cleanup
+    requests.delete(f"{BASE_URL}/dishes/{dish['id']}", headers=H(user_a["token"]))
+
+
+def test_dish_duplicate_not_found_404(user_a):
+    r = requests.post(f"{BASE_URL}/dishes/nonexistent_id_xyz/duplicate", headers=H(user_a["token"]))
+    assert r.status_code == 404

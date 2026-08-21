@@ -75,6 +75,7 @@ export const api = {
   createDish: (data: any) => req('/dishes', { method: 'POST', body: JSON.stringify(data) }),
   updateDish: (id: string, data: any) => req(`/dishes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteDish: (id: string) => req(`/dishes/${id}`, { method: 'DELETE' }),
+  duplicateDish: (id: string) => req(`/dishes/${id}/duplicate`, { method: 'POST' }),
 
   getPlanner: (weekStart: string) => req(`/planner/${weekStart}`),
   updateSlot: (data: any) => req('/planner/slot', { method: 'PUT', body: JSON.stringify(data) }),

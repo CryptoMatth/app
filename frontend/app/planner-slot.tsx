@@ -88,6 +88,11 @@ export default function PlannerSlot() {
           placeholderTextColor={theme.color.onSurfaceTertiary}
           style={styles.search}
         />
+        {q.length > 0 && (
+          <Pressable onPress={() => setQ('')} style={{ padding: 4 }} testID="slot-search-clear" hitSlop={8}>
+            <Feather name="x-circle" size={18} color={theme.color.onSurfaceTertiary} />
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.seg}>

@@ -58,6 +58,11 @@ export default function Piatti() {
             onChangeText={setQ}
             style={styles.search}
           />
+          {q.length > 0 && (
+            <Pressable onPress={() => setQ('')} style={styles.clearBtn} testID="piatti-search-clear" hitSlop={8}>
+              <Feather name="x-circle" size={18} color={theme.color.onSurfaceTertiary} />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.seg}>
@@ -134,6 +139,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.md, height: 44,
   },
   search: { flex: 1, fontSize: 15, color: theme.color.onSurface, paddingVertical: 0 },
+  clearBtn: { padding: 4 },
   seg: { flexDirection: 'row', backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginTop: theme.spacing.md, height: 44 },
   segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
   segBtnActive: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
