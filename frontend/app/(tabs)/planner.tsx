@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -9,11 +9,12 @@ import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import {
-  saturdayOf, addDays, isoDate, weekRangeLabel, todayIndexInWeek, DAY_LABELS, DAY_LABELS_FULL,
+  saturdayOf, addDays, isoDate, weekRangeLabel, todayIndexInWeek, DAY_LABELS, DAY_LABELS_FULL, parseIso,
 } from '@/src/week';
 
 type Slot = { dish_id: string; dish_name: string; course: 'primo' | 'secondo'; persons: number };
 type Plan = { week_start: string; slots: Record<string, Slot> };
+type WeekRow = { week_start: string; count: number };
 
 const MEALS: { key: 'pranzo' | 'cena'; label: string; icon: any }[] = [
   { key: 'pranzo', label: 'Pranzo', icon: 'sun' },
@@ -26,6 +27,9 @@ export default function Planner() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
+  const [availableWeeks, setAvailableWeeks] = useState<WeekRow[]>([]);
+  const [dupLoading, setDupLoading] = useState(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -62,15 +66,28 @@ export default function Planner() {
     });
   };
 
-  const duplicate = async () => {
+  const duplicate = async (sourceWeek: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const prev = addDays(weekStart, -7);
     setDuplicating(true);
     try {
-      await api.duplicateWeek(isoDate(prev), isoDate(weekStart));
+      await api.duplicateWeek(sourceWeek, isoDate(weekStart));
       await load();
+      setDupOpen(false);
     } catch (e) {}
     setDuplicating(false);
+  };
+
+  const openDuplicatePicker = async () => {
+    Haptics.selectionAsync();
+    setDupOpen(true);
+    setDupLoading(true);
+    try {
+      const rows = await api.listPlannerWeeks();
+      // Exclude the current week itself
+      const current = isoDate(weekStart);
+      setAvailableWeeks(rows.filter((r: WeekRow) => r.week_start !== current));
+    } catch {}
+    setDupLoading(false);
   };
 
   return (
@@ -143,17 +160,73 @@ export default function Planner() {
 
       <Pressable
         testID="duplicate-week-button"
-        onPress={duplicate}
+        onPress={openDuplicatePicker}
         disabled={duplicating}
         style={({ pressed }) => [styles.duplicate, pressed && { opacity: 0.9 }]}
       >
         {duplicating ? <ActivityIndicator color="#fff" /> : (
           <>
             <Feather name="copy" size={16} color="#fff" />
-            <Text style={styles.duplicateTxt}>Duplica settimana precedente</Text>
+            <Text style={styles.duplicateTxt}>Duplica una settimana</Text>
           </>
         )}
       </Pressable>
+
+      <Modal
+        transparent
+        visible={dupOpen}
+        animationType="fade"
+        onRequestClose={() => setDupOpen(false)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.dupCard} testID="duplicate-picker-modal">
+            <View style={styles.dupHeader}>
+              <Text style={styles.dupTitle}>Duplica una settimana</Text>
+              <Pressable onPress={() => setDupOpen(false)} testID="duplicate-close">
+                <Feather name="x" size={22} color={theme.color.onSurface} />
+              </Pressable>
+            </View>
+            <Text style={styles.dupSub}>
+              Scegli quale settimana copiare in <Text style={{ fontWeight: '600' }}>{weekRangeLabel(weekStart)}</Text>.
+            </Text>
+            {dupLoading ? (
+              <View style={{ padding: theme.spacing.xl, alignItems: 'center' }}>
+                <ActivityIndicator color={theme.color.brandPrimary} />
+              </View>
+            ) : availableWeeks.length === 0 ? (
+              <View style={{ padding: theme.spacing.xl, alignItems: 'center' }}>
+                <Feather name="calendar" size={32} color={theme.color.borderStrong} />
+                <Text style={styles.dupEmpty}>Non hai ancora settimane pianificate da copiare.</Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {availableWeeks.map(w => {
+                  const d = parseIso(w.week_start);
+                  const isPast = d.getTime() < weekStart.getTime();
+                  return (
+                    <Pressable
+                      key={w.week_start}
+                      onPress={() => duplicate(w.week_start)}
+                      disabled={duplicating}
+                      style={styles.dupRow}
+                      testID={`duplicate-src-${w.week_start}`}
+                    >
+                      <View style={[styles.dupIcon, { backgroundColor: isPast ? theme.color.brandTertiary : '#E5EDDF' }]}>
+                        <Feather name={isPast ? 'clock' : 'chevron-right'} size={16} color={isPast ? theme.color.brandPrimary : theme.color.brandSecondary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dupRowT}>{weekRangeLabel(d)}</Text>
+                        <Text style={styles.dupRowS}>{w.count} pasti · {isPast ? 'settimana passata' : 'settimana futura'}</Text>
+                      </View>
+                      <Feather name="copy" size={18} color={theme.color.onSurfaceTertiary} />
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -189,4 +262,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
   duplicateTxt: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  overlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  dupCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, width: '100%', maxWidth: 420, borderWidth: 1, borderColor: theme.color.border, padding: theme.spacing.lg },
+  dupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  dupTitle: { fontFamily: theme.font.display, fontSize: 20, color: theme.color.onSurface },
+  dupSub: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18, marginBottom: theme.spacing.md },
+  dupRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, marginBottom: theme.spacing.sm },
+  dupIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  dupRowT: { fontFamily: theme.font.display, fontSize: 15, color: theme.color.onSurface },
+  dupRowS: { fontSize: 11, color: theme.color.onSurfaceTertiary, marginTop: 2 },
+  dupEmpty: { fontSize: 13, color: theme.color.onSurfaceTertiary, marginTop: 8, textAlign: 'center' },
 });

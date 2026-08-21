@@ -11,6 +11,7 @@ type AuthCtx = {
   loginWithGoogleSession: (session_id: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  resetPassword: (email: string, code: string, new_password: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -58,9 +59,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refresh = async () => {
     try { const u = await api.me(); setUser(u); } catch { setUser(null); }
   };
+  const resetPassword = async (email: string, code: string, new_password: string) => {
+    const res = await api.resetPassword(email, code, new_password);
+    await setToken(res.session_token);
+    setUser(res.user);
+  };
 
   return (
-    <Ctx.Provider value={{ user, loading, loginEmail, register, loginWithGoogleSession, logout, refresh }}>
+    <Ctx.Provider value={{ user, loading, loginEmail, register, loginWithGoogleSession, logout, refresh, resetPassword }}>
       {children}
     </Ctx.Provider>
   );

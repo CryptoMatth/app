@@ -63,6 +63,10 @@ export const api = {
     req('/auth/session', { method: 'POST', body: JSON.stringify({ session_id }) }),
   me: () => req('/auth/me'),
   logout: () => req('/auth/logout', { method: 'POST' }),
+  forgotPassword: (email: string) =>
+    req('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (email: string, code: string, new_password: string) =>
+    req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code, new_password }) }),
 
   listDishes: (params?: { course?: string; q?: string }) => {
     const qs = new URLSearchParams();
@@ -78,12 +82,16 @@ export const api = {
   duplicateDish: (id: string) => req(`/dishes/${id}/duplicate`, { method: 'POST' }),
 
   getPlanner: (weekStart: string) => req(`/planner/${weekStart}`),
+  listPlannerWeeks: () => req('/planner-weeks'),
   updateSlot: (data: any) => req('/planner/slot', { method: 'PUT', body: JSON.stringify(data) }),
   duplicateWeek: (source: string, target: string) =>
     req('/planner/duplicate', {
       method: 'POST',
       body: JSON.stringify({ source_week_start: source, target_week_start: target }),
     }),
+
+  exportData: () => req('/export'),
+  importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   listShopping: () => req('/shopping'),
   addManual: (name: string, quantity: number, unit: string) =>

@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 4 — all 5 features verified. Backend: 39/39 pytest tests pass (26 regression + 13 new for iteration 4). New coverage: /api/auth/forgot-password (unknown email + known email both return ok=true), /api/auth/reset-password (invalid code increments attempts; valid code succeeds, invalidates old session, cleans password_resets, returns new working session_token; expired code → 400 + cleanup; attempts>=5 → 400 + cleanup; short password → 400), /api/planner-weeks (returns weeks sorted by week_start desc with count, user-scoped/empty for fresh user), /api/export (returns app=PlanEat, version=1, dishes/weekly_plans/shopping_items lists, user info, auth-required), /api/import (merge preserves existing dishes by id, replace wipes+imports, auth-required). Frontend (390x844 mobile viewport): (1) Login screen shows 'PlanEat' brand + Italian tagline + 'go-to-forgot' link. (2) Forgot flow /(auth)/forgot: step 1 email input + send button; on send screen switches to code step with all 5 expected testIDs (forgot-code-input, forgot-newpw-input, forgot-newpw2-input, forgot-reset-button, forgot-resend); mismatched passwords produce 'Le due password non coincidono' error in [data-testid=forgot-error]. (3) Piatti tab header has settings gear (testID=open-settings) that navigates to /settings. (4) Settings screen shows all 4 buttons (btn-export, btn-import-merge, btn-import-replace, btn-logout); tapping btn-logout opens confirm-logout-modal; logout-cancel dismisses modal and keeps session. (5) Planner: duplicate-week-button opens duplicate-picker-modal listing available weeks with testID='duplicate-src-<week_start>'; tapping a row duplicates INTO current viewed week (verified slot count 0→1, shopping item 'Farina' appeared) and closes modal; duplicate-close X button also closes modal.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — likely from an RN-web component (SafeAreaView / Modal). Non-blocking. Reference: emitted during login/register navigation."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend.py",
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Investigate 'props.pointerEvents is deprecated' RN-web warning; harmless but noisy in console.",
+    "(Optional) Note in /app/memory/test_credentials.md that localStorage key is 'cdc_session_token' (relevant if agents need to script auth from the browser)."
+  ],
+  "critical_code_review_comments": [
+    "server.py forgot_password (L319-372): Correctly returns ok=true for both unknown and google-only accounts (enumeration-safe), deletes prior reset codes before inserting new one, 15-min expiry, bcrypt-hashed code, guardrails-passing email template.",
+    "server.py reset_password (L375-406): Solid — expired/exceeded attempts both clear the reset row; invalid code increments attempts; on success clears reset codes AND invalidates all existing user_sessions before minting a new one. Verified end-to-end.",
+    "server.py list_planner_weeks (L620-631): Filters weeks with non-empty slots, sorts by week_start desc; returns {week_start, count} — matches contract.",
+    "server.py export_data / import_data (L819-930): Export is a snapshot with app/version/exported_at/user/dishes/weekly_plans/shopping_items. Import in merge mode skips by id (dishes) / week_start (plans) / key (shopping); replace mode wipes user's data first. All user-scoped.",
+    "frontend/app/settings.tsx: All 4 backup + logout buttons present with correct testIDs; logout requires confirmation modal — good UX.",
+    "frontend/app/(auth)/forgot.tsx: Two-step flow works, mismatched password validation triggers before hitting API, resend button re-invokes forgot-password endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new)"
+  ],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% (all 5 features verified in UI)"},
+  "seed_data_creation": "Fresh test_it4_<hex>@t.co user registered via API for backend; dup3<ts>@t.co user + TEST_DupUI3 dish + 2025-12-27 planner slot created via UI+fetch for planner duplicate picker verification. Password reset records injected directly into mongo password_resets collection with bcrypt('123456') per playbook.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend base URL https://meal-prep-master-2.preview.emergentagent.com/api. Pytest suites: /app/backend/tests/test_backend.py (26 regression) + /app/backend/tests/test_iteration4.py (13 new). MongoDB collections: password_resets holds {email, code_hash (bcrypt), attempts, created_at, expires_at}. Frontend token key in localStorage/AsyncStorage: 'cdc_session_token'. New testIDs: go-to-forgot (login), forgot-screen/forgot-email-input/forgot-send-button/forgot-code-input/forgot-newpw-input/forgot-newpw2-input/forgot-reset-button/forgot-resend/forgot-error/forgot-info, open-settings (piatti header), settings-screen/settings-back/btn-export/btn-import-merge/btn-import-replace/btn-logout/confirm-logout-modal/logout-cancel/logout-confirm/confirm-import-modal/import-cancel/import-confirm/settings-msg, duplicate-picker-modal/duplicate-src-<week_start>/duplicate-close. When testing forgot-password to real emails on '.co' TLD, Resend returns 502 but the endpoint still returns ok=true (design intent). For reset-password E2E, inject the record directly into mongo (see /app/backend/tests/test_iteration4.py::_inject_reset helper).",
+  "rca_of_issue": "N/A — feature verification iteration; all 5 iteration-4 items behave per spec."
+}

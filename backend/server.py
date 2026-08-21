@@ -11,7 +11,12 @@ from typing import List, Optional, Literal, Dict, Any
 import uuid
 import bcrypt
 import re
+import secrets
+import ipaddress
 import httpx
+from html import escape
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 
 
@@ -23,8 +28,13 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="Cucina di Casa API")
+app = FastAPI(title="PlanEat API")
 api_router = APIRouter(prefix="/api")
+
+# Email (Emergent managed Resend)
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "PlanEat")
 
 
 # -------------------- Models --------------------
@@ -95,6 +105,28 @@ class SessionBody(BaseModel):
     session_id: str
 
 
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+
+class ResetBody(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+class DuplicateWeekBodyV2(BaseModel):
+    source_week_start: str
+    target_week_start: str
+
+
+class ImportBody(BaseModel):
+    dishes: List[Dict[str, Any]] = []
+    weekly_plans: List[Dict[str, Any]] = []
+    shopping_items: List[Dict[str, Any]] = []
+    mode: Literal["merge", "replace"] = "merge"
+
+
 # -------------------- Helpers --------------------
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -128,6 +160,98 @@ async def _create_session(user_id: str) -> str:
         "expires_at": _now() + timedelta(days=30),
     })
     return token
+
+
+# -------------------- Email helpers (guardrails inlined) --------------------
+_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
+_CRED_ASK = ("reply with your password", "reply with the code", "send your password", "cvv",
+             "send us your password", "enter your password below", "confirm your card number",
+             "your full card number", "seed phrase", "recovery phrase", "verify your card",
+             "social security number", "confirm your bank details")
+_HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
+
+
+def _host_ok(host: str) -> bool:
+    if not host or "xn--" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return not any(host == s or host.endswith("." + s) for s in _SHORTENERS)
+
+
+def _same_site(shown: str, real: str) -> bool:
+    return shown == real or real.endswith("." + shown) or shown.endswith("." + real)
+
+
+class _EmailScan(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags, self.urls, self.anchors = set(), [], []
+        self._href, self._text = None, []
+    def handle_starttag(self, tag, attrs):
+        self.tags.add(tag.lower())
+        self.urls += [v for k, v in attrs if k.lower() in ("href", "src") and v]
+        if tag.lower() == "a":
+            self._href = dict((k.lower(), v) for k, v in attrs).get("href")
+            self._text = []
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._href is not None:
+            self.anchors.append((self._href, "".join(self._text)))
+            self._href, self._text = None, []
+
+
+def _assert_safe_email(subject: str, html: str) -> None:
+    scan = _EmailScan(); scan.feed(html)
+    if scan.tags & {"form", "input", "textarea", "select"}:
+        raise ValueError("No forms or input fields in email (G2)")
+    body = f"{subject}\n{html}".lower()
+    for p in _CRED_ASK:
+        if p in body:
+            raise ValueError(f"Email asks for credentials: {p!r} (G2)")
+    for url in scan.urls:
+        low = url.strip().lower()
+        if low.startswith(("mailto:", "tel:", "cid:", "#")):
+            continue
+        if not low.startswith("https://"):
+            raise ValueError(f"Email links must be https: {url!r} (G3)")
+        host = urlparse(low).hostname or ""
+        if not _host_ok(host) or urlparse(low).username is not None:
+            raise ValueError(f"Unsafe URL: {url!r} (G3)")
+    for href, text in scan.anchors:
+        real = urlparse(href.strip().lower()).hostname or ""
+        if not real:
+            continue
+        for m in _HOSTISH.finditer(text):
+            if not _same_site(m.group(1).lower(), real):
+                raise ValueError(f"Anchor host mismatch: {m.group(1)!r} vs {real!r} (G3)")
+
+
+async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
+    if not EMAIL_KEY:
+        raise HTTPException(500, "Email non configurato")
+    _assert_safe_email(subject, html)
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    try:
+        async with httpx.AsyncClient(timeout=30) as hc:
+            resp = await hc.post(
+                f"{EMAIL_BASE_URL}/api/v1/email/send",
+                headers={"X-Email-Key": EMAIL_KEY},
+                json=payload,
+            )
+        resp.raise_for_status()
+        return resp.json().get("id")
+    except httpx.HTTPStatusError as e:
+        logging.getLogger(__name__).error(f"Email send failed: {e.response.status_code} {e.response.text}")
+        raise HTTPException(status_code=502, detail="Invio email fallito")
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Email send error: {e}")
+        raise HTTPException(status_code=500, detail="Invio email fallito")
 
 
 async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -188,6 +312,96 @@ async def login(body: LoginBody):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     if not _verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
+    token = await _create_session(user["user_id"])
+    return {"session_token": token, "user": await _user_public(user)}
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(body: ForgotBody):
+    """Send a 6-digit reset code to the user's email. Always returns 200 to avoid
+    email enumeration; only actually sends if the user exists."""
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if user and user.get("provider") != "google":
+        # Generate 6-digit code
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        code_hash = _hash_password(code)  # bcrypt the code
+        # Invalidate any previous codes for this email
+        await db.password_resets.delete_many({"email": email})
+        await db.password_resets.insert_one({
+            "email": email,
+            "code_hash": code_hash,
+            "attempts": 0,
+            "created_at": _now(),
+            "expires_at": _now() + timedelta(minutes=15),
+        })
+        html = (
+            f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+            f'style="background:#FDFBF7;font-family:Arial,sans-serif;padding:24px">'
+            f'<tr><td align="center">'
+            f'<table role="presentation" width="480" cellspacing="0" cellpadding="0" '
+            f'style="background:#FFFFFF;border-radius:12px;padding:32px;border:1px solid #DED5C5">'
+            f'<tr><td>'
+            f'<h1 style="font-family:Georgia,serif;font-size:24px;color:#3D342B;margin:0 0 8px">Ciao {escape(user.get("name") or "")}</h1>'
+            f'<p style="color:#5A5045;font-size:15px;line-height:22px;margin:0 0 20px">'
+            f'Hai richiesto di reimpostare la password di <strong>{escape(EMAIL_FROM_NAME)}</strong>. '
+            f'Inserisci questo codice nell\'app per procedere:</p>'
+            f'<div style="text-align:center;margin:24px 0">'
+            f'<div style="display:inline-block;background:#F5F2EB;border:1px solid #DED5C5;'
+            f'border-radius:12px;padding:16px 32px;font-family:Georgia,serif;font-size:32px;'
+            f'letter-spacing:8px;color:#C66241;font-weight:bold">{code}</div>'
+            f'</div>'
+            f'<p style="color:#5A5045;font-size:14px;line-height:20px;margin:0 0 8px">'
+            f'Il codice scade tra <strong>15 minuti</strong>.</p>'
+            f'<p style="color:#5A5045;font-size:14px;line-height:20px;margin:0 0 20px">'
+            f'Se non hai fatto tu questa richiesta, puoi ignorare questa email — la tua password non cambia.</p>'
+            f'<hr style="border:none;border-top:1px solid #EBE5D9;margin:24px 0">'
+            f'<p style="font-size:12px;color:#8A7F72;line-height:18px;margin:0">'
+            f'Inviato da {escape(EMAIL_FROM_NAME)}. Non ti chiederemo mai la password o dati di pagamento via email.</p>'
+            f'</td></tr></table></td></tr></table>'
+        )
+        try:
+            await send_email(
+                to=email,
+                subject=f"Codice di reimpostazione — {EMAIL_FROM_NAME}",
+                html=html,
+            )
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Reset email send failed: {e}")
+            # Still return ok to prevent enumeration
+    return {"ok": True}
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(body: ResetBody):
+    email = body.email.lower().strip()
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password troppo corta (min 6 caratteri)")
+    rec = await db.password_resets.find_one({"email": email})
+    if not rec:
+        raise HTTPException(status_code=400, detail="Codice non valido o scaduto")
+    exp = rec["expires_at"]
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < _now():
+        await db.password_resets.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Codice scaduto, richiedi un nuovo codice")
+    if rec.get("attempts", 0) >= 5:
+        await db.password_resets.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Troppi tentativi, richiedi un nuovo codice")
+    if not _verify_password(body.code, rec["code_hash"]):
+        await db.password_resets.update_one({"email": email}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail="Codice non valido")
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=400, detail="Utente non trovato")
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": _hash_password(body.new_password)}},
+    )
+    await db.password_resets.delete_many({"email": email})
+    # Also invalidate all existing sessions for safety
+    await db.user_sessions.delete_many({"user_id": user["user_id"]})
     token = await _create_session(user["user_id"])
     return {"session_token": token, "user": await _user_public(user)}
 
@@ -403,6 +617,21 @@ async def _remove_planner_source_from_shopping(user_id: str, week_start: str, da
                     {"$set": {"sources": remaining, "planner_qty": new_planner_qty}},
                 )
 
+@api_router.get("/planner-weeks")
+async def list_planner_weeks(current_user=Depends(get_current_user)):
+    """List all weeks that have any slots, most recent first, for the duplicate picker."""
+    cursor = db.weekly_plans.find(
+        {"user_id": current_user["user_id"]},
+        {"_id": 0, "week_start": 1, "slots": 1},
+    ).sort("week_start", -1)
+    rows = await cursor.to_list(200)
+    return [
+        {"week_start": r["week_start"], "count": len(r.get("slots", {}))}
+        for r in rows if r.get("slots")
+    ]
+
+
+
 
 @api_router.get("/planner/{week_start}")
 async def get_planner(week_start: str, current_user=Depends(get_current_user)):
@@ -586,6 +815,123 @@ async def root():
     return {"message": "Cucina di Casa API"}
 
 
+# -------------------- Export / Import --------------------
+@api_router.get("/export")
+async def export_data(current_user=Depends(get_current_user)):
+    """Export all of the current user's data as a JSON snapshot."""
+    user_id = current_user["user_id"]
+    dishes = await db.dishes.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+    plans = await db.weekly_plans.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+    shopping = await db.shopping_items.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+    return {
+        "app": "PlanEat",
+        "version": 1,
+        "exported_at": _now().isoformat(),
+        "user": {"email": current_user["email"], "name": current_user.get("name")},
+        "dishes": dishes,
+        "weekly_plans": plans,
+        "shopping_items": shopping,
+    }
+
+
+@api_router.post("/import")
+async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
+    """Import a backup. mode=merge preserves existing data; mode=replace wipes user's
+    data first (dishes/plans/shopping) then imports."""
+    user_id = current_user["user_id"]
+
+    if body.mode == "replace":
+        await db.dishes.delete_many({"user_id": user_id})
+        await db.weekly_plans.delete_many({"user_id": user_id})
+        await db.shopping_items.delete_many({"user_id": user_id})
+
+    imported_dishes = 0
+    imported_plans = 0
+    imported_shopping = 0
+
+    for d in body.dishes:
+        try:
+            doc = {
+                "id": d.get("id") or _uid(),
+                "user_id": user_id,
+                "name": str(d.get("name", "")).strip() or "Piatto",
+                "course": d.get("course") if d.get("course") in ("primo", "secondo") else "primo",
+                "ingredients": d.get("ingredients", []),
+                "preparation": d.get("preparation", ""),
+                "servings": max(1, int(d.get("servings", 1) or 1)),
+                "created_at": _now(),
+            }
+            if body.mode == "merge":
+                exists = await db.dishes.find_one({"user_id": user_id, "id": doc["id"]}, {"_id": 0})
+                if exists:
+                    continue
+            await db.dishes.insert_one(doc)
+            imported_dishes += 1
+        except Exception:
+            continue
+
+    for p in body.weekly_plans:
+        try:
+            week = str(p.get("week_start", ""))
+            if not week:
+                continue
+            slots = p.get("slots", {}) or {}
+            if body.mode == "merge":
+                exists = await db.weekly_plans.find_one({"user_id": user_id, "week_start": week}, {"_id": 0})
+                if exists:
+                    continue
+            await db.weekly_plans.update_one(
+                {"user_id": user_id, "week_start": week},
+                {"$set": {"user_id": user_id, "week_start": week, "slots": slots}},
+                upsert=True,
+            )
+            imported_plans += 1
+        except Exception:
+            continue
+
+    for it in body.shopping_items:
+        try:
+            key = _norm_name(it.get("name", ""), it.get("unit", ""))
+            doc = {
+                "id": it.get("id") or _uid(),
+                "user_id": user_id,
+                "key": key,
+                "name": str(it.get("name", "")).strip(),
+                "unit": str(it.get("unit", "")).strip(),
+                "manual_qty": float(it.get("manual_qty", 0) or 0),
+                "planner_qty": float(it.get("planner_qty", 0) or 0),
+                "sources": it.get("sources", []),
+                "checked": bool(it.get("checked", False)),
+                "order": int(it.get("order", 0) or 0),
+                "created_at": _now(),
+            }
+            if not doc["name"]:
+                continue
+            if body.mode == "merge":
+                exists = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
+                if exists:
+                    continue
+            await db.shopping_items.update_one(
+                {"user_id": user_id, "key": key},
+                {"$set": doc},
+                upsert=True,
+            )
+            imported_shopping += 1
+        except Exception:
+            continue
+
+    return {
+        "ok": True,
+        "imported": {
+            "dishes": imported_dishes,
+            "weekly_plans": imported_plans,
+            "shopping_items": imported_shopping,
+        },
+    }
+
+
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -611,6 +957,8 @@ async def startup():
     await db.weekly_plans.create_index([("user_id", 1), ("week_start", 1)], unique=True)
     await db.shopping_items.create_index([("user_id", 1), ("key", 1)])
     await db.shopping_items.create_index([("user_id", 1), ("order", 1)])
+    await db.password_resets.create_index("email")
+    await db.password_resets.create_index("expires_at", expireAfterSeconds=0)
 
 
 @app.on_event("shutdown")

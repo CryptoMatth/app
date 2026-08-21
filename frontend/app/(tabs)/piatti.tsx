@@ -18,7 +18,7 @@ export default function Piatti() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
 
   const load = useCallback(async () => {
     try {
@@ -43,8 +43,8 @@ export default function Piatti() {
             <Text style={styles.h1}>Piatti</Text>
             <Text style={styles.sub}>Il tuo ricettario personale</Text>
           </View>
-          <Pressable onPress={logout} style={styles.logoutBtn} testID="logout-button">
-            <Feather name="log-out" size={18} color={theme.color.onSurfaceSecondary} />
+          <Pressable onPress={() => router.push('/settings')} style={styles.logoutBtn} testID="open-settings">
+            <Feather name="settings" size={18} color={theme.color.onSurfaceSecondary} />
           </Pressable>
         </View>
 

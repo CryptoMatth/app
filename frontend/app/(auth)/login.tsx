@@ -104,8 +104,8 @@ export default function Login() {
         bottomOffset={20}
       >
           <View style={styles.top}>
-            <Text style={styles.brand}>Cucina di Casa</Text>
-            <Text style={styles.tagline}>Pianifica, cucina, ama.</Text>
+            <Text style={styles.brand}>PlanEat</Text>
+            <Text style={styles.tagline}>Pianifica i pasti, semplifica la spesa.</Text>
           </View>
           <View style={styles.card}>
             <Text style={styles.title}>Benvenuto</Text>
@@ -162,6 +162,12 @@ export default function Login() {
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Accedi</Text>}
             </Pressable>
 
+            <Link href="/(auth)/forgot" asChild>
+              <Pressable testID="go-to-forgot" style={styles.forgotBtn}>
+                <Text style={styles.forgotTxt}>Password dimenticata?</Text>
+              </Pressable>
+            </Link>
+
             <Link href="/(auth)/register" asChild>
               <Pressable testID="go-to-register" style={styles.linkBtn}>
                 <Text style={styles.linkTxt}>Non hai un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Registrati</Text></Text>
@@ -209,5 +215,7 @@ const styles = StyleSheet.create({
   primaryTxt: { color: '#fff', fontWeight: '600', fontSize: 16 },
   linkBtn: { alignItems: 'center', paddingVertical: theme.spacing.md },
   linkTxt: { fontSize: 14, color: theme.color.onSurfaceSecondary },
+  forgotBtn: { alignItems: 'center', paddingVertical: theme.spacing.sm, marginTop: theme.spacing.sm },
+  forgotTxt: { fontSize: 13, color: theme.color.brandPrimary, fontWeight: '500' },
   err: { color: theme.color.error, fontSize: 13, marginBottom: theme.spacing.sm },
 });

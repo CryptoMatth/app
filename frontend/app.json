@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "PlanEat",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,7 +15,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#C66241"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.mealprepmaster.op32ei"
@@ -31,9 +31,9 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
-          "imageWidth": 200,
+          "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#C66241"
         }
       ]
     ],
