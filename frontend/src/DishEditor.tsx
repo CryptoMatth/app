@@ -29,6 +29,7 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
   const [servings, setServings] = useState('1');
   const [ingredients, setIngredients] = useState<Ing[]>([{ name: '', quantity: '', unit: 'g' }]);
   const [preparation, setPreparation] = useState('');
+  const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(!!dishId);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -48,6 +49,7 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
           ? d.ingredients.map((i: any) => ({ name: i.name, quantity: String(i.quantity), unit: i.unit }))
           : [{ name: '', quantity: '', unit: 'g' }]);
         setPreparation(d.preparation || '');
+        setNotes(d.notes || '');
       } catch {}
       setLoading(false);
     })();
@@ -76,6 +78,7 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
         course,
         ingredients: validIngs,
         preparation,
+        notes,
         servings: Math.max(1, parseInt(servings) || 1),
       };
       if (dishId && dishId !== 'new') await api.updateDish(dishId, body);
@@ -210,6 +213,16 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
             style={[styles.input, styles.textarea]}
           />
 
+          <Text style={styles.label}>Note</Text>
+          <TextInput
+            testID="dish-notes"
+            value={notes} onChangeText={setNotes}
+            placeholder="Es. piace tanto a Giulia, usa basilico fresco..."
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            multiline
+            style={[styles.input, styles.textareaSm]}
+          />
+
           {err ? <Text style={styles.err} testID="dish-error">{err}</Text> : null}
         </KeyboardAwareScrollView>
 
@@ -296,6 +309,7 @@ const styles = StyleSheet.create({
     color: theme.color.onSurface, fontSize: 15,
   },
   textarea: { minHeight: 130, textAlignVertical: 'top' },
+  textareaSm: { minHeight: 80, textAlignVertical: 'top' },
   seg: { flexDirection: 'row', backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4 },
   segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: theme.radius.pill },
   segBtnActive: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },

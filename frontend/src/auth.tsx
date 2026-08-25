@@ -1,17 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, clearToken, setToken, getToken } from './api';
 
-export type User = { user_id: string; email: string; name: string; picture?: string | null };
+export type User = { user_id: string; username: string };
 
 type AuthCtx = {
   user: User | null;
   loading: boolean;
-  loginEmail: (email: string, pw: string) => Promise<void>;
-  register: (email: string, pw: string, name?: string) => Promise<void>;
-  loginWithGoogleSession: (session_id: string) => Promise<void>;
+  loginUsername: (username: string, pw: string) => Promise<void>;
+  register: (username: string, pw: string, pw2: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  resetPassword: (email: string, code: string, new_password: string) => Promise<void>;
+  updateUsername: (username: string, current_password: string) => Promise<void>;
+  updatePassword: (old_password: string, new_password: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -36,18 +36,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { bootstrap(); }, [bootstrap]);
 
-  const loginEmail = async (email: string, pw: string) => {
-    const res = await api.login(email, pw);
+  const loginUsername = async (username: string, pw: string) => {
+    const res = await api.login(username, pw);
     await setToken(res.session_token);
     setUser(res.user);
   };
-  const register = async (email: string, pw: string, name?: string) => {
-    const res = await api.register(email, pw, name);
-    await setToken(res.session_token);
-    setUser(res.user);
-  };
-  const loginWithGoogleSession = async (session_id: string) => {
-    const res = await api.googleSession(session_id);
+  const register = async (username: string, pw: string, pw2: string) => {
+    const res = await api.register(username, pw, pw2);
     await setToken(res.session_token);
     setUser(res.user);
   };
@@ -59,14 +54,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refresh = async () => {
     try { const u = await api.me(); setUser(u); } catch { setUser(null); }
   };
-  const resetPassword = async (email: string, code: string, new_password: string) => {
-    const res = await api.resetPassword(email, code, new_password);
-    await setToken(res.session_token);
+  const updateUsername = async (username: string, current_password: string) => {
+    const res = await api.updateUsername(username, current_password);
     setUser(res.user);
+  };
+  const updatePassword = async (old_password: string, new_password: string) => {
+    await api.updatePassword(old_password, new_password);
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, loginEmail, register, loginWithGoogleSession, logout, refresh, resetPassword }}>
+    <Ctx.Provider value={{ user, loading, loginUsername, register, logout, refresh, updateUsername, updatePassword }}>
       {children}
     </Ctx.Provider>
   );

@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict, Any
 import uuid
 import bcrypt
@@ -14,7 +14,6 @@ import re
 import secrets
 import ipaddress
 import httpx
-from html import escape
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
@@ -49,37 +48,22 @@ class DishCreate(BaseModel):
     course: Literal["primo", "secondo"]
     ingredients: List[Ingredient] = []
     preparation: str = ""
-    servings: int = 1  # base servings the recipe is written for
-
-
-class Dish(BaseModel):
-    id: str
-    user_id: str
-    name: str
-    course: Literal["primo", "secondo"]
-    ingredients: List[Ingredient] = []
-    preparation: str = ""
     servings: int = 1
-    created_at: datetime
-
-
-class PlannerSlotUpdate(BaseModel):
-    week_start: str  # ISO date, must be a Saturday
-    day_index: int  # 0=Sat, 1=Sun, ..., 6=Fri
-    meal: Literal["pranzo", "cena"]
-    dish_id: Optional[str] = None  # None means clear
-    persons: int = 2
-
-
-class DuplicateWeekBody(BaseModel):
-    source_week_start: str
-    target_week_start: str
+    notes: str = ""
 
 
 class ShoppingItemManual(BaseModel):
     name: str
     quantity: float
     unit: str
+    notes: str = ""
+
+
+class ShoppingItemUpdate(BaseModel):
+    name: Optional[str] = None
+    quantity: Optional[float] = None  # sets manual_qty
+    unit: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ShoppingItemToggle(BaseModel):
@@ -90,34 +74,52 @@ class ShoppingReorder(BaseModel):
     ordered_ids: List[str]
 
 
+USERNAME_RE = re.compile(r"^[a-z0-9_.]{3,30}$")
+
+
+def _norm_username(v: str) -> str:
+    v = (v or "").strip().lower()
+    if not USERNAME_RE.fullmatch(v):
+        raise HTTPException(status_code=422, detail="Username non valido: 3-30 caratteri, lettere, numeri, '_' o '.'.")
+    return v
+
+
 class RegisterBody(BaseModel):
-    email: EmailStr
+    username: str
     password: str
-    name: Optional[str] = None
+    password_repeat: str
 
 
 class LoginBody(BaseModel):
-    email: EmailStr
+    username: str
     password: str
+
+
+class UpdateUsernameBody(BaseModel):
+    username: str
+    current_password: str
+
+
+class UpdatePasswordBody(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class DuplicateWeekBody(BaseModel):
+    source_week_start: str
+    target_week_start: str
+
+
+class PlannerSlotUpdate(BaseModel):
+    week_start: str
+    day_index: int
+    meal: Literal["pranzo", "cena"]
+    dish_id: Optional[str] = None
+    persons: int = 1
 
 
 class SessionBody(BaseModel):
     session_id: str
-
-
-class ForgotBody(BaseModel):
-    email: EmailStr
-
-
-class ResetBody(BaseModel):
-    email: EmailStr
-    code: str
-    new_password: str
-
-
-class DuplicateWeekBodyV2(BaseModel):
-    source_week_start: str
-    target_week_start: str
 
 
 class ImportBody(BaseModel):
@@ -257,9 +259,7 @@ async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
 async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "user_id": user_doc["user_id"],
-        "email": user_doc["email"],
-        "name": user_doc.get("name") or user_doc["email"].split("@")[0],
-        "picture": user_doc.get("picture"),
+        "username": user_doc.get("username") or (user_doc.get("email") or "").split("@")[0],
     }
 
 
@@ -286,28 +286,35 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
 # -------------------- Auth endpoints --------------------
 @api_router.post("/auth/register")
 async def register(body: RegisterBody):
-    existing = await db.users.find_one({"email": body.email.lower()})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email già registrata")
+    username = _norm_username(body.username)
     if len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password troppo corta (min 6 caratteri)")
+    if body.password != body.password_repeat:
+        raise HTTPException(status_code=422, detail="Le due password non coincidono")
+    existing = await db.users.find_one({"username": username})
+    if existing:
+        raise HTTPException(status_code=409, detail="Username già in uso")
     user = {
         "user_id": _new_user_id(),
-        "email": body.email.lower(),
-        "name": body.name or body.email.split("@")[0],
-        "picture": None,
+        "username": username,
         "password_hash": _hash_password(body.password),
         "created_at": _now(),
-        "provider": "email",
+        "provider": "username",
     }
-    await db.users.insert_one(user)
+    try:
+        await db.users.insert_one(user)
+    except Exception as e:
+        if "duplicate" in str(e).lower():
+            raise HTTPException(status_code=409, detail="Username già in uso")
+        raise
     token = await _create_session(user["user_id"])
     return {"session_token": token, "user": await _user_public(user)}
 
 
 @api_router.post("/auth/login")
 async def login(body: LoginBody):
-    user = await db.users.find_one({"email": body.email.lower()})
+    username = _norm_username(body.username)
+    user = await db.users.find_one({"username": username})
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     if not _verify_password(body.password, user["password_hash"]):
@@ -316,139 +323,41 @@ async def login(body: LoginBody):
     return {"session_token": token, "user": await _user_public(user)}
 
 
-@api_router.post("/auth/forgot-password")
-async def forgot_password(body: ForgotBody):
-    """Send a 6-digit reset code to the user's email. Always returns 200 to avoid
-    email enumeration; only actually sends if the user exists."""
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-    if user and user.get("provider") != "google":
-        # Generate 6-digit code
-        code = f"{secrets.randbelow(1_000_000):06d}"
-        code_hash = _hash_password(code)  # bcrypt the code
-        # Invalidate any previous codes for this email
-        await db.password_resets.delete_many({"email": email})
-        await db.password_resets.insert_one({
-            "email": email,
-            "code_hash": code_hash,
-            "attempts": 0,
-            "created_at": _now(),
-            "expires_at": _now() + timedelta(minutes=15),
-        })
-        html = (
-            f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
-            f'style="background:#FDFBF7;font-family:Arial,sans-serif;padding:24px">'
-            f'<tr><td align="center">'
-            f'<table role="presentation" width="480" cellspacing="0" cellpadding="0" '
-            f'style="background:#FFFFFF;border-radius:12px;padding:32px;border:1px solid #DED5C5">'
-            f'<tr><td>'
-            f'<h1 style="font-family:Georgia,serif;font-size:24px;color:#3D342B;margin:0 0 8px">Ciao {escape(user.get("name") or "")}</h1>'
-            f'<p style="color:#5A5045;font-size:15px;line-height:22px;margin:0 0 20px">'
-            f'Hai richiesto di reimpostare la password di <strong>{escape(EMAIL_FROM_NAME)}</strong>. '
-            f'Inserisci questo codice nell\'app per procedere:</p>'
-            f'<div style="text-align:center;margin:24px 0">'
-            f'<div style="display:inline-block;background:#F5F2EB;border:1px solid #DED5C5;'
-            f'border-radius:12px;padding:16px 32px;font-family:Georgia,serif;font-size:32px;'
-            f'letter-spacing:8px;color:#C66241;font-weight:bold">{code}</div>'
-            f'</div>'
-            f'<p style="color:#5A5045;font-size:14px;line-height:20px;margin:0 0 8px">'
-            f'Il codice scade tra <strong>15 minuti</strong>.</p>'
-            f'<p style="color:#5A5045;font-size:14px;line-height:20px;margin:0 0 20px">'
-            f'Se non hai fatto tu questa richiesta, puoi ignorare questa email — la tua password non cambia.</p>'
-            f'<hr style="border:none;border-top:1px solid #EBE5D9;margin:24px 0">'
-            f'<p style="font-size:12px;color:#8A7F72;line-height:18px;margin:0">'
-            f'Inviato da {escape(EMAIL_FROM_NAME)}. Non ti chiederemo mai la password o dati di pagamento via email.</p>'
-            f'</td></tr></table></td></tr></table>'
-        )
-        try:
-            await send_email(
-                to=email,
-                subject=f"Codice di reimpostazione — {EMAIL_FROM_NAME}",
-                html=html,
-            )
-        except Exception as e:
-            logging.getLogger(__name__).error(f"Reset email send failed: {e}")
-            # Still return ok to prevent enumeration
-    return {"ok": True}
+@api_router.put("/auth/profile")
+async def update_username(body: UpdateUsernameBody, current_user=Depends(get_current_user)):
+    new_username = _norm_username(body.username)
+    # Verify current password
+    full = await db.users.find_one({"user_id": current_user["user_id"]})
+    if not full or not _verify_password(body.current_password, full.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Password attuale non valida")
+    if new_username == full.get("username"):
+        return {"user": await _user_public(full)}
+    existing = await db.users.find_one({"username": new_username})
+    if existing and existing["user_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=409, detail="Username già in uso")
+    await db.users.update_one(
+        {"user_id": current_user["user_id"]},
+        {"$set": {"username": new_username, "updated_at": _now()}},
+    )
+    updated = await db.users.find_one({"user_id": current_user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return {"user": await _user_public(updated)}
 
 
-@api_router.post("/auth/reset-password")
-async def reset_password(body: ResetBody):
-    email = body.email.lower().strip()
+@api_router.put("/auth/password")
+async def update_password(body: UpdatePasswordBody, current_user=Depends(get_current_user)):
     if len(body.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password troppo corta (min 6 caratteri)")
-    rec = await db.password_resets.find_one({"email": email})
-    if not rec:
-        raise HTTPException(status_code=400, detail="Codice non valido o scaduto")
-    exp = rec["expires_at"]
-    if exp.tzinfo is None:
-        exp = exp.replace(tzinfo=timezone.utc)
-    if exp < _now():
-        await db.password_resets.delete_many({"email": email})
-        raise HTTPException(status_code=400, detail="Codice scaduto, richiedi un nuovo codice")
-    if rec.get("attempts", 0) >= 5:
-        await db.password_resets.delete_many({"email": email})
-        raise HTTPException(status_code=400, detail="Troppi tentativi, richiedi un nuovo codice")
-    if not _verify_password(body.code, rec["code_hash"]):
-        await db.password_resets.update_one({"email": email}, {"$inc": {"attempts": 1}})
-        raise HTTPException(status_code=400, detail="Codice non valido")
-    user = await db.users.find_one({"email": email})
-    if not user:
-        raise HTTPException(status_code=400, detail="Utente non trovato")
+    full = await db.users.find_one({"user_id": current_user["user_id"]})
+    if not full or not _verify_password(body.old_password, full.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Password attuale non valida")
+    if body.old_password == body.new_password:
+        raise HTTPException(status_code=422, detail="La nuova password deve essere diversa da quella attuale")
     await db.users.update_one(
-        {"user_id": user["user_id"]},
-        {"$set": {"password_hash": _hash_password(body.new_password)}},
+        {"user_id": current_user["user_id"]},
+        {"$set": {"password_hash": _hash_password(body.new_password), "updated_at": _now()}},
     )
-    await db.password_resets.delete_many({"email": email})
-    # Also invalidate all existing sessions for safety
-    await db.user_sessions.delete_many({"user_id": user["user_id"]})
-    token = await _create_session(user["user_id"])
-    return {"session_token": token, "user": await _user_public(user)}
-
-
-_processed_session_ids: set = set()
-
-
-@api_router.post("/auth/session")
-async def google_session(body: SessionBody):
-    if body.session_id in _processed_session_ids:
-        raise HTTPException(status_code=401, detail="Session already processed")
-    _processed_session_ids.add(body.session_id)
-    async with httpx.AsyncClient(timeout=15.0) as hc:
-        try:
-            resp = await hc.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": body.session_id},
-            )
-        except Exception as e:
-            raise HTTPException(status_code=401, detail=f"Auth failed: {e}")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session")
-    data = resp.json()
-    email = (data.get("email") or "").lower()
-    if not email:
-        raise HTTPException(status_code=401, detail="No email in profile")
-    existing = await db.users.find_one({"email": email})
-    if existing:
-        user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": data.get("name") or existing.get("name"), "picture": data.get("picture"), "provider": existing.get("provider", "google")}},
-        )
-        user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
-    else:
-        user = {
-            "user_id": _new_user_id(),
-            "email": email,
-            "name": data.get("name") or email.split("@")[0],
-            "picture": data.get("picture"),
-            "created_at": _now(),
-            "provider": "google",
-        }
-        await db.users.insert_one(user)
-        user = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
-    token = await _create_session(user["user_id"])
-    return {"session_token": token, "user": await _user_public(user)}
+    # Invalidate all other sessions for safety, keep current one
+    return {"ok": True}
 
 
 @api_router.get("/auth/me")
@@ -486,6 +395,7 @@ async def create_dish(body: DishCreate, current_user=Depends(get_current_user)):
         "course": body.course,
         "ingredients": [ing.dict() for ing in body.ingredients],
         "preparation": body.preparation,
+        "notes": body.notes,
         "servings": max(1, body.servings),
         "created_at": _now(),
     }
@@ -511,6 +421,7 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
             "course": body.course,
             "ingredients": [ing.dict() for ing in body.ingredients],
             "preparation": body.preparation,
+            "notes": body.notes,
             "servings": max(1, body.servings),
         }},
     )
@@ -538,6 +449,7 @@ async def duplicate_dish(dish_id: str, current_user=Depends(get_current_user)):
         "course": src["course"],
         "ingredients": src.get("ingredients", []),
         "preparation": src.get("preparation", ""),
+        "notes": src.get("notes", ""),
         "servings": src.get("servings", 1),
         "created_at": _now(),
     }
@@ -724,10 +636,13 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
     key = _norm_name(body.name, body.unit)
     existing = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
     if existing:
-        await db.shopping_items.update_one(
-            {"user_id": user_id, "key": key},
-            {"$inc": {"manual_qty": float(body.quantity)}},
-        )
+        update: Dict[str, Any] = {"$inc": {"manual_qty": float(body.quantity)}}
+        if body.notes:
+            existing_notes = existing.get("notes", "").strip()
+            new_notes = body.notes.strip()
+            merged = "\n".join([n for n in [existing_notes, new_notes] if n])
+            update["$set"] = {"notes": merged}
+        await db.shopping_items.update_one({"user_id": user_id, "key": key}, update)
         item = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
         return item
     last = await db.shopping_items.find_one({"user_id": user_id}, {"_id": 0}, sort=[("order", -1)])
@@ -741,6 +656,7 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
         "manual_qty": float(body.quantity),
         "planner_qty": 0.0,
         "sources": [],
+        "notes": body.notes,
         "checked": False,
         "order": next_order,
         "created_at": _now(),
@@ -750,14 +666,73 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
     return doc
 
 
+@api_router.patch("/shopping/{item_id}")
+async def edit_item(item_id: str, body: ShoppingItemUpdate, current_user=Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    it = await db.shopping_items.find_one({"id": item_id, "user_id": user_id}, {"_id": 0})
+    if not it:
+        raise HTTPException(404, "Elemento non trovato")
+    update_set: Dict[str, Any] = {}
+    if body.notes is not None:
+        update_set["notes"] = body.notes
+    # Manual qty adjustment
+    if body.quantity is not None:
+        new_manual = max(0.0, float(body.quantity))
+        # If planner_qty=0 and new_manual=0, delete entirely
+        if new_manual <= 0.0001 and it.get("planner_qty", 0.0) <= 0.0001:
+            await db.shopping_items.delete_one({"id": item_id, "user_id": user_id})
+            return {"ok": True, "deleted": True}
+        update_set["manual_qty"] = new_manual
+    # Name / unit change (affects key)
+    new_name = body.name.strip() if body.name is not None else it["name"]
+    new_unit = body.unit.strip() if body.unit is not None else it["unit"]
+    if new_name != it["name"] or new_unit != it["unit"]:
+        new_key = _norm_name(new_name, new_unit)
+        if new_key != it["key"]:
+            # If another item with same new_key exists, merge into it
+            other = await db.shopping_items.find_one({"user_id": user_id, "key": new_key}, {"_id": 0})
+            if other and other["id"] != item_id:
+                merged_manual = other.get("manual_qty", 0.0) + update_set.get("manual_qty", it.get("manual_qty", 0.0))
+                merged_planner = other.get("planner_qty", 0.0) + it.get("planner_qty", 0.0)
+                merged_sources = other.get("sources", []) + it.get("sources", [])
+                merged_notes_list = [n for n in [other.get("notes", ""), update_set.get("notes", it.get("notes", ""))] if n]
+                merged_notes = "\n".join(merged_notes_list)
+                await db.shopping_items.update_one(
+                    {"id": other["id"], "user_id": user_id},
+                    {"$set": {
+                        "manual_qty": merged_manual, "planner_qty": merged_planner,
+                        "sources": merged_sources, "notes": merged_notes,
+                    }},
+                )
+                await db.shopping_items.delete_one({"id": item_id, "user_id": user_id})
+                return await db.shopping_items.find_one({"id": other["id"], "user_id": user_id}, {"_id": 0})
+        update_set["name"] = new_name
+        update_set["unit"] = new_unit
+        update_set["key"] = new_key
+    if update_set:
+        await db.shopping_items.update_one({"id": item_id, "user_id": user_id}, {"$set": update_set})
+    return await db.shopping_items.find_one({"id": item_id, "user_id": user_id}, {"_id": 0})
+
+
 @api_router.patch("/shopping/{item_id}/toggle")
 async def toggle_item(item_id: str, body: ShoppingItemToggle, current_user=Depends(get_current_user)):
-    res = await db.shopping_items.update_one(
-        {"id": item_id, "user_id": current_user["user_id"]},
-        {"$set": {"checked": bool(body.checked)}},
-    )
-    if res.matched_count == 0:
+    user_id = current_user["user_id"]
+    it = await db.shopping_items.find_one({"id": item_id, "user_id": user_id}, {"_id": 0})
+    if not it:
         raise HTTPException(404, "Elemento non trovato")
+    if body.checked:
+        # Move to end
+        last = await db.shopping_items.find_one({"user_id": user_id}, {"_id": 0}, sort=[("order", -1)])
+        new_order = (last["order"] + 1) if last else 0
+        await db.shopping_items.update_one(
+            {"id": item_id, "user_id": user_id},
+            {"$set": {"checked": True, "order": new_order}},
+        )
+    else:
+        await db.shopping_items.update_one(
+            {"id": item_id, "user_id": user_id},
+            {"$set": {"checked": False}},
+        )
     return {"ok": True}
 
 
@@ -826,7 +801,7 @@ async def export_data(current_user=Depends(get_current_user)):
         "app": "PlanEat",
         "version": 1,
         "exported_at": _now().isoformat(),
-        "user": {"email": current_user["email"], "name": current_user.get("name")},
+        "user": {"username": current_user.get("username")},
         "dishes": dishes,
         "weekly_plans": plans,
         "shopping_items": shopping,
@@ -947,7 +922,22 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup():
-    await db.users.create_index("email", unique=True)
+    # Drop old email unique index if present BEFORE running any migration
+    try:
+        indexes = await db.users.index_information()
+        for name in list(indexes.keys()):
+            info = indexes[name]
+            key = info.get("key") if isinstance(info, dict) else None
+            if key and any(k[0] == "email" for k in key):
+                try:
+                    await db.users.drop_index(name)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    # Migrate old email-based users → username
+    await _migrate_email_to_username()
+    await db.users.create_index("username", unique=True, sparse=True)
     await db.users.create_index("user_id", unique=True)
     await db.user_sessions.create_index("session_token", unique=True)
     await db.user_sessions.create_index("user_id")
@@ -956,8 +946,26 @@ async def startup():
     await db.weekly_plans.create_index([("user_id", 1), ("week_start", 1)], unique=True)
     await db.shopping_items.create_index([("user_id", 1), ("key", 1)])
     await db.shopping_items.create_index([("user_id", 1), ("order", 1)])
-    await db.password_resets.create_index("email")
-    await db.password_resets.create_index("expires_at", expireAfterSeconds=0)
+
+
+async def _migrate_email_to_username():
+    """Set a fallback username for users that only have email."""
+    cursor = db.users.find({"username": {"$exists": False}, "email": {"$type": "string"}})
+    async for u in cursor:
+        base = (u["email"].split("@", 1)[0] or "utente").lower()
+        base = re.sub(r"[^a-z0-9_.]", "_", base)[:30]
+        if len(base) < 3:
+            base = (base + "user")[:30]
+        candidate = base
+        n = 0
+        while await db.users.find_one({"username": candidate}):
+            n += 1
+            suffix = f"_{n}"
+            candidate = base[:30 - len(suffix)] + suffix
+        await db.users.update_one(
+            {"user_id": u["user_id"]},
+            {"$set": {"username": candidate, "username_migrated": True}, "$unset": {"email": "", "picture": "", "name": ""}},
+        )
 
 
 @app.on_event("shutdown")

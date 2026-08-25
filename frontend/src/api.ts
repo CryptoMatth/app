@@ -55,18 +55,16 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  register: (email: string, password: string, name?: string) =>
-    req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
-  login: (email: string, password: string) =>
-    req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  googleSession: (session_id: string) =>
-    req('/auth/session', { method: 'POST', body: JSON.stringify({ session_id }) }),
+  register: (username: string, password: string, password_repeat: string) =>
+    req('/auth/register', { method: 'POST', body: JSON.stringify({ username, password, password_repeat }) }),
+  login: (username: string, password: string) =>
+    req('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => req('/auth/me'),
   logout: () => req('/auth/logout', { method: 'POST' }),
-  forgotPassword: (email: string) =>
-    req('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
-  resetPassword: (email: string, code: string, new_password: string) =>
-    req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, code, new_password }) }),
+  updateUsername: (username: string, current_password: string) =>
+    req('/auth/profile', { method: 'PUT', body: JSON.stringify({ username, current_password }) }),
+  updatePassword: (old_password: string, new_password: string) =>
+    req('/auth/password', { method: 'PUT', body: JSON.stringify({ old_password, new_password }) }),
 
   listDishes: (params?: { course?: string; q?: string }) => {
     const qs = new URLSearchParams();
@@ -94,8 +92,10 @@ export const api = {
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   listShopping: () => req('/shopping'),
-  addManual: (name: string, quantity: number, unit: string) =>
-    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit }) }),
+  addManual: (name: string, quantity: number, unit: string, notes = '') =>
+    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes }) }),
+  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string }>) =>
+    req(`/shopping/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleShopping: (id: string, checked: boolean) =>
     req(`/shopping/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ checked }) }),
   deleteShopping: (id: string) => req(`/shopping/${id}`, { method: 'DELETE' }),

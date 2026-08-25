@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Keyboard, Modal,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -15,10 +14,9 @@ type Item = {
   id: string; name: string; unit: string;
   manual_qty: number; planner_qty: number;
   sources: { dish_name: string; quantity: number }[];
+  notes?: string;
   checked: boolean; order: number;
 };
-
-const UNITS = ['g', 'kg', 'ml', 'l', 'pz'];
 
 function totalQty(it: Item) { return (it.manual_qty || 0) + (it.planner_qty || 0); }
 function formatQty(n: number) {
@@ -29,11 +27,6 @@ function formatQty(n: number) {
 export default function Spesa() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [name, setName] = useState('');
-  const [qty, setQty] = useState('');
-  const [unit, setUnit] = useState('g');
-  const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
@@ -48,8 +41,19 @@ export default function Spesa() {
 
   const toggle = async (id: string, checked: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setItems(prev => prev.map(i => i.id === id ? { ...i, checked: !checked } : i));
-    try { await api.toggleShopping(id, !checked); } catch { load(); }
+    // Optimistic: when checking, move to end; when unchecking, keep in place
+    setItems(prev => {
+      const found = prev.find(i => i.id === id);
+      if (!found) return prev;
+      const rest = prev.filter(i => i.id !== id);
+      const updated = { ...found, checked: !checked };
+      if (!checked) {
+        // was unchecked → check → to end
+        return [...rest, updated];
+      }
+      return prev.map(i => i.id === id ? updated : i);
+    });
+    try { await api.toggleShopping(id, !checked); await load(); } catch { load(); }
   };
 
   const askDelete = (item: Item) => {
@@ -61,7 +65,6 @@ export default function Spesa() {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
-      // Force full delete regardless of source
       await api.forceDeleteShopping(confirmDelete.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setConfirmDelete(null);
@@ -75,21 +78,6 @@ export default function Spesa() {
   const onReorder = async (newList: Item[]) => {
     setItems(newList);
     try { await api.reorderShopping(newList.map(i => i.id)); } catch {}
-  };
-
-  const submitAdd = async () => {
-    Keyboard.dismiss();
-    if (!name.trim() || !qty) return;
-    const q = parseFloat(qty.replace(',', '.'));
-    if (isNaN(q) || q <= 0) return;
-    setBusy(true);
-    try {
-      await api.addManual(name.trim(), q, unit);
-      setName(''); setQty(''); setShowAdd(false);
-      await load();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {}
-    setBusy(false);
   };
 
   const clearBought = async () => {
@@ -129,7 +117,7 @@ export default function Spesa() {
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.color.brandPrimary} /></View>
-      ) : items.length === 0 && !showAdd ? (
+      ) : items.length === 0 ? (
         <View style={styles.center}>
           <Feather name="shopping-cart" size={44} color={theme.color.borderStrong} />
           <Text style={styles.emptyH}>Lista vuota</Text>
@@ -164,7 +152,16 @@ export default function Spesa() {
                         ? `  ·  ${item.sources.map(s => s.dish_name).slice(0, 2).join(', ')}`
                         : ''}
                   </Text>
+                  {item.notes ? (
+                    <View style={styles.notesRow}>
+                      <Feather name="edit-2" size={11} color={theme.color.onSurfaceTertiary} />
+                      <Text style={styles.notesTxt} numberOfLines={2}>{item.notes}</Text>
+                    </View>
+                  ) : null}
                 </View>
+                <Pressable onPress={() => router.push(`/shopping/${item.id}`)} style={styles.iconBtn} testID={`edit-${item.id}`}>
+                  <Feather name="edit-3" size={18} color={theme.color.onSurfaceTertiary} />
+                </Pressable>
                 <Pressable onPress={() => askDelete(item)} style={styles.iconBtn} testID={`del-${item.id}`}>
                   <Feather name="x" size={18} color={theme.color.onSurfaceTertiary} />
                 </Pressable>
@@ -178,66 +175,19 @@ export default function Spesa() {
         />
       )}
 
-      {showAdd ? (
-        <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-          <View style={styles.addCard}>
-            <Text style={styles.addH}>Aggiungi ingrediente</Text>
-            <TextInput
-              testID="add-name-input"
-              placeholder="Nome (es. pomodoro)"
-              placeholderTextColor={theme.color.onSurfaceTertiary}
-              value={name} onChangeText={setName}
-              style={styles.input}
-              autoFocus
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TextInput
-                testID="add-qty-input"
-                placeholder="Quantità"
-                placeholderTextColor={theme.color.onSurfaceTertiary}
-                value={qty} onChangeText={setQty}
-                keyboardType="numeric"
-                style={[styles.input, { flex: 1 }]}
-              />
-              <View style={styles.unitPicker}>
-                {UNITS.map(u => (
-                  <Pressable
-                    key={u}
-                    testID={`unit-${u}`}
-                    onPress={() => setUnit(u)}
-                    style={[styles.unitBtn, unit === u && styles.unitBtnOn]}
-                  >
-                    <Text style={[styles.unitTxt, unit === u && styles.unitTxtOn]}>{u}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-              <Pressable onPress={() => setShowAdd(false)} style={[styles.btnGhost]} testID="cancel-add">
-                <Text style={styles.btnGhostTxt}>Annulla</Text>
-              </Pressable>
-              <Pressable onPress={submitAdd} disabled={busy} style={[styles.btnPrim]} testID="submit-add">
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnPrimTxt}>Aggiungi</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardStickyView>
-      ) : (
-        <View style={styles.actions}>
-          {boughtCount > 0 && (
-            <Pressable onPress={clearBought} style={styles.secondary} testID="clear-checked">
-              <Feather name="trash-2" size={16} color={theme.color.onSurface} />
-              <Text style={styles.secondaryTxt}>Rimuovi presi</Text>
-            </Pressable>
-          )}
-          <Pressable onPress={() => setShowAdd(true)} style={styles.primary} testID="show-add">
-            <Feather name="plus" size={20} color="#fff" />
-            <Text style={styles.primaryTxt}>Aggiungi</Text>
+      <View style={styles.actions}>
+        {boughtCount > 0 && (
+          <Pressable onPress={clearBought} style={styles.secondary} testID="clear-checked">
+            <Feather name="trash-2" size={16} color={theme.color.onSurface} />
+            <Text style={styles.secondaryTxt}>Rimuovi presi</Text>
           </Pressable>
-        </View>
-      )}
+        )}
+        <Pressable onPress={() => router.push('/shopping/new')} style={styles.primary} testID="show-add">
+          <Feather name="plus" size={20} color="#fff" />
+          <Text style={styles.primaryTxt}>Aggiungi</Text>
+        </Pressable>
+      </View>
 
-      {/* Confirmation modal */}
       <Modal
         transparent
         visible={!!confirmDelete}
@@ -249,7 +199,7 @@ export default function Spesa() {
             <View style={styles.modalIcon}>
               <Feather name="alert-triangle" size={24} color={theme.color.warning} />
             </View>
-            <Text style={styles.modalH}>Eliminare "{confirmDelete?.name}"?</Text>
+            <Text style={styles.modalH}>Eliminare {'"'}{confirmDelete?.name}{'"'}?</Text>
             <Text style={styles.modalP}>
               {confirmDelete?.planner_qty && confirmDelete.planner_qty > 0
                 ? 'Questo ingrediente è stato aggiunto dal planner. Verrà rimosso completamente dalla lista della spesa, ma i piatti nel planner resteranno.'
@@ -296,13 +246,13 @@ const styles = StyleSheet.create({
   emptyH: { fontFamily: theme.font.display, fontSize: 20, color: theme.color.onSurface, marginTop: 8 },
   emptyP: { fontSize: 13, color: theme.color.onSurfaceSecondary, textAlign: 'center' },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: theme.color.surface, borderRadius: theme.radius.md, padding: theme.spacing.md,
     borderWidth: 1, borderColor: theme.color.border,
   },
   rowActive: { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.surfaceSecondary },
   rowTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  check: {},
+  check: { paddingRight: theme.spacing.sm },
   checkbox: {
     width: 24, height: 24, borderRadius: 6, borderWidth: 1.5,
     borderColor: theme.color.borderStrong, alignItems: 'center', justifyContent: 'center',
@@ -311,31 +261,16 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 15, color: theme.color.onSurface, fontWeight: '500' },
   strike: { textDecorationLine: 'line-through' },
   itemQty: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
+  notesRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  notesTxt: { flex: 1, fontSize: 11, color: theme.color.onSurfaceTertiary, fontStyle: 'italic' },
   iconBtn: { padding: 6 },
   actions: { position: 'absolute', left: theme.spacing.lg, right: theme.spacing.lg, bottom: theme.spacing.lg, flexDirection: 'row', gap: 10 },
   primary: { flex: 1, backgroundColor: theme.color.brandPrimary, borderRadius: theme.radius.pill, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryTxt: { color: '#fff', fontWeight: '600', fontSize: 15 },
   secondary: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: theme.color.border },
   secondaryTxt: { color: theme.color.onSurface, fontWeight: '500', fontSize: 14 },
-  addCard: {
-    backgroundColor: theme.color.surface, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg,
-    padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.color.border, gap: 10,
-  },
-  addH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 4 },
-  input: {
-    height: 46, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
-    paddingHorizontal: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary,
-    color: theme.color.onSurface, fontSize: 15,
-  },
-  unitPicker: { flexDirection: 'row', gap: 4, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, padding: 3 },
-  unitBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: theme.radius.sm, minWidth: 32, alignItems: 'center' },
-  unitBtnOn: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
-  unitTxt: { fontSize: 12, color: theme.color.onSurfaceSecondary },
-  unitTxtOn: { color: theme.color.brandPrimary, fontWeight: '600' },
   btnGhost: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
   btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
-  btnPrim: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
-  btnPrimTxt: { color: '#fff', fontWeight: '600' },
   btnDanger: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.error, alignItems: 'center', justifyContent: 'center' },
   btnDangerTxt: { color: '#fff', fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },

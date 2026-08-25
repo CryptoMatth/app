@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Modal, Platform,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, TextInput, Keyboard, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,13 +14,17 @@ import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 
+type Msg = { kind: 'ok' | 'err'; text: string } | null;
+
 export default function Settings() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUsername, updatePassword } = useAuth();
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
   const [confirmImport, setConfirmImport] = useState<{ payload: any; mode: 'merge' | 'replace' } | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [editUsernameOpen, setEditUsernameOpen] = useState(false);
+  const [editPasswordOpen, setEditPasswordOpen] = useState(false);
 
   useEffect(() => {
     if (!msg) return;
@@ -37,15 +42,11 @@ export default function Settings() {
       const filename = `planeat-backup-${stamp}.json`;
 
       if (Platform.OS === 'web') {
-        // Web: download via blob + <a>
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
         setMsg({ kind: 'ok', text: 'Backup scaricato con successo.' });
       } else {
@@ -75,7 +76,6 @@ export default function Settings() {
     try {
       let raw: string;
       if (Platform.OS === 'web') {
-        // Web: use native file input
         raw = await new Promise<string>((resolve, reject) => {
           const input = document.createElement('input');
           input.type = 'file';
@@ -150,7 +150,7 @@ export default function Settings() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 40 }}>
+      <KeyboardAwareScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 40 }}>
         <View style={styles.section}>
           <Text style={styles.sectionH}>Account</Text>
           <View style={styles.card}>
@@ -158,16 +158,36 @@ export default function Settings() {
               <Feather name="user" size={20} color={theme.color.brandPrimary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{user?.name}</Text>
-              <Text style={styles.emailTxt}>{user?.email}</Text>
+              <Text style={styles.name}>{user?.username}</Text>
+              <Text style={styles.emailTxt}>Utente PlanEat</Text>
             </View>
           </View>
+          <Pressable onPress={() => setEditUsernameOpen(true)} style={styles.actionRow} testID="btn-edit-username">
+            <View style={[styles.actionIcon, { backgroundColor: theme.color.brandTertiary }]}>
+              <Feather name="edit-3" size={18} color={theme.color.brandPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Modifica username</Text>
+              <Text style={styles.actionSub}>Cambia il tuo nome utente</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
+          </Pressable>
+          <Pressable onPress={() => setEditPasswordOpen(true)} style={styles.actionRow} testID="btn-edit-password">
+            <View style={[styles.actionIcon, { backgroundColor: theme.color.brandTertiary }]}>
+              <Feather name="lock" size={18} color={theme.color.brandPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Cambia password</Text>
+              <Text style={styles.actionSub}>Aggiorna la tua password</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
+          </Pressable>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionH}>Backup dati</Text>
           <Text style={styles.sectionSub}>
-            Scarica un file di backup con tutti i tuoi piatti, settimane pianificate e lista spesa. Potrai ripristinarlo in qualsiasi momento su questo o su un altro dispositivo.
+            Scarica un file di backup con tutti i tuoi piatti, settimane pianificate e lista spesa. Potrai ripristinarlo in qualsiasi momento.
           </Text>
 
           <Pressable onPress={doExport} disabled={busy} style={styles.actionRow} testID="btn-export">
@@ -219,7 +239,27 @@ export default function Settings() {
             <Text style={[styles.actionTitle, { color: theme.color.error }]}>Esci</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
+
+      <EditUsernameModal
+        open={editUsernameOpen}
+        currentUsername={user?.username || ''}
+        onClose={() => setEditUsernameOpen(false)}
+        onSave={async (u, pw) => {
+          await updateUsername(u, pw);
+          setEditUsernameOpen(false);
+          setMsg({ kind: 'ok', text: 'Username aggiornato.' });
+        }}
+      />
+      <ChangePasswordModal
+        open={editPasswordOpen}
+        onClose={() => setEditPasswordOpen(false)}
+        onSave={async (oldPw, newPw) => {
+          await updatePassword(oldPw, newPw);
+          setEditPasswordOpen(false);
+          setMsg({ kind: 'ok', text: 'Password aggiornata.' });
+        }}
+      />
 
       {/* Import confirmation */}
       <Modal transparent visible={!!confirmImport} animationType="fade" onRequestClose={() => setConfirmImport(null)}>
@@ -253,7 +293,6 @@ export default function Settings() {
         </View>
       </Modal>
 
-      {/* Logout confirmation */}
       <Modal transparent visible={confirmLogout} animationType="fade" onRequestClose={() => setConfirmLogout(false)}>
         <View style={styles.overlay}>
           <View style={styles.modalCard} testID="confirm-logout-modal">
@@ -279,6 +318,131 @@ export default function Settings() {
   );
 }
 
+function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
+  open: boolean; currentUsername: string;
+  onClose: () => void;
+  onSave: (username: string, current_password: string) => Promise<void>;
+}) {
+  const [username, setUsername] = useState('');
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => { if (open) { setUsername(currentUsername); setPw(''); setErr(''); } }, [open, currentUsername]);
+
+  const submit = async () => {
+    Keyboard.dismiss(); setErr('');
+    setBusy(true);
+    try { await onSave(username.trim(), pw); } catch (e: any) { setErr(e.message || 'Errore'); }
+    setBusy(false);
+  };
+
+  return (
+    <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalCard} testID="edit-username-modal">
+          <Text style={styles.modalH}>Modifica username</Text>
+          <Text style={styles.modalP}>Inserisci il nuovo username e conferma con la tua password attuale.</Text>
+          <View style={{ height: theme.spacing.md }} />
+          <TextInput
+            testID="edit-username-input"
+            placeholder="Nuovo username"
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={username} onChangeText={setUsername}
+            autoCapitalize="none" autoCorrect={false}
+            style={styles.modalInput}
+          />
+          <TextInput
+            testID="edit-username-password"
+            placeholder="Password attuale"
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={pw} onChangeText={setPw}
+            secureTextEntry
+            style={styles.modalInput}
+          />
+          {err ? <Text style={styles.err} testID="edit-username-error">{err}</Text> : null}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
+            <Pressable onPress={onClose} style={styles.btnGhost} disabled={busy} testID="edit-username-cancel">
+              <Text style={styles.btnGhostTxt}>Annulla</Text>
+            </Pressable>
+            <Pressable onPress={submit} style={styles.btnPrim} disabled={busy} testID="edit-username-save">
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Salva</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ChangePasswordModal({ open, onClose, onSave }: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (oldPw: string, newPw: string) => Promise<void>;
+}) {
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [newPw2, setNewPw2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => { if (open) { setOldPw(''); setNewPw(''); setNewPw2(''); setErr(''); } }, [open]);
+
+  const submit = async () => {
+    Keyboard.dismiss(); setErr('');
+    if (newPw.length < 6) { setErr('La nuova password deve avere almeno 6 caratteri'); return; }
+    if (newPw !== newPw2) { setErr('Le due password non coincidono'); return; }
+    setBusy(true);
+    try { await onSave(oldPw, newPw); } catch (e: any) { setErr(e.message || 'Errore'); }
+    setBusy(false);
+  };
+
+  return (
+    <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalCard} testID="edit-password-modal">
+          <Text style={styles.modalH}>Cambia password</Text>
+          <Text style={styles.modalP}>Serve la password attuale per confermare la modifica.</Text>
+          <View style={{ height: theme.spacing.md }} />
+          <TextInput
+            testID="edit-password-old"
+            placeholder="Password attuale"
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={oldPw} onChangeText={setOldPw}
+            secureTextEntry
+            style={styles.modalInput}
+          />
+          <TextInput
+            testID="edit-password-new"
+            placeholder="Nuova password (min 6)"
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={newPw} onChangeText={setNewPw}
+            secureTextEntry
+            style={styles.modalInput}
+          />
+          <TextInput
+            testID="edit-password-new2"
+            placeholder="Ripeti nuova password"
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={newPw2} onChangeText={setNewPw2}
+            secureTextEntry
+            style={styles.modalInput}
+          />
+          {err ? <Text style={styles.err} testID="edit-password-error">{err}</Text> : null}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
+            <Pressable onPress={onClose} style={styles.btnGhost} disabled={busy} testID="edit-password-cancel">
+              <Text style={styles.btnGhostTxt}>Annulla</Text>
+            </Pressable>
+            <Pressable onPress={submit} style={styles.btnPrim} disabled={busy} testID="edit-password-save">
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Salva</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.surface },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.color.divider },
@@ -287,7 +451,7 @@ const styles = StyleSheet.create({
   section: { marginBottom: theme.spacing.xl },
   sectionH: { fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface, marginBottom: theme.spacing.sm },
   sectionSub: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginBottom: theme.spacing.md, lineHeight: 18 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface },
+  card: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, marginBottom: theme.spacing.sm },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.color.brandTertiary, alignItems: 'center', justifyContent: 'center' },
   name: { fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface },
   emailTxt: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
@@ -309,6 +473,12 @@ const styles = StyleSheet.create({
   modalH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
   modalP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 19 },
   modalStats: { fontSize: 12, color: theme.color.onSurfaceTertiary, marginTop: theme.spacing.sm, fontStyle: 'italic' },
+  modalInput: {
+    height: 46, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
+    paddingHorizontal: theme.spacing.md, backgroundColor: theme.color.surfaceSecondary,
+    color: theme.color.onSurface, fontSize: 15, marginBottom: theme.spacing.sm,
+  },
+  err: { color: theme.color.error, fontSize: 13, marginTop: 4 },
   btnGhost: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
   btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
   btnPrim: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
