@@ -7,11 +7,12 @@ type AuthCtx = {
   user: User | null;
   loading: boolean;
   loginUsername: (username: string, pw: string) => Promise<void>;
-  register: (username: string, pw: string, pw2: string) => Promise<void>;
+  register: (username: string, pw: string, pw2: string) => Promise<string[]>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateUsername: (username: string, current_password: string) => Promise<void>;
   updatePassword: (old_password: string, new_password: string) => Promise<void>;
+  recoveryVerify: (username: string, code: string, new_password: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await api.register(username, pw, pw2);
     await setToken(res.session_token);
     setUser(res.user);
+    return (res.recovery_codes || []) as string[];
   };
   const logout = async () => {
     try { await api.logout(); } catch {}
@@ -61,9 +63,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updatePassword = async (old_password: string, new_password: string) => {
     await api.updatePassword(old_password, new_password);
   };
+  const recoveryVerify = async (username: string, code: string, new_password: string) => {
+    const res = await api.recoveryVerify(username, code, new_password);
+    await setToken(res.session_token);
+    setUser(res.user);
+  };
 
   return (
-    <Ctx.Provider value={{ user, loading, loginUsername, register, logout, refresh, updateUsername, updatePassword }}>
+    <Ctx.Provider value={{ user, loading, loginUsername, register, logout, refresh, updateUsername, updatePassword, recoveryVerify }}>
       {children}
     </Ctx.Provider>
   );

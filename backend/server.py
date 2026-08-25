@@ -105,6 +105,12 @@ class UpdatePasswordBody(BaseModel):
     new_password: str
 
 
+class RecoveryVerifyBody(BaseModel):
+    username: str
+    code: str
+    new_password: str
+
+
 class DuplicateWeekBody(BaseModel):
     source_week_start: str
     target_week_start: str
@@ -140,6 +146,23 @@ def _uid() -> str:
 
 def _new_user_id() -> str:
     return f"user_{uuid.uuid4().hex[:12]}"
+
+
+_RECOVERY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no confusing chars
+
+
+def _generate_recovery_codes(count: int = 8) -> tuple[List[str], List[Dict[str, Any]]]:
+    plain: List[str] = []
+    for _ in range(count):
+        p1 = "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(4))
+        p2 = "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(4))
+        plain.append(f"{p1}-{p2}")
+    stored = [{"code_hash": _hash_password(c), "used_at": None} for c in plain]
+    return plain, stored
+
+
+def _normalize_code(code: str) -> str:
+    return (code or "").strip().upper().replace(" ", "")
 
 
 def _hash_password(pw: str) -> str:
@@ -301,6 +324,8 @@ async def register(body: RegisterBody):
         "created_at": _now(),
         "provider": "username",
     }
+    plain_codes, code_docs = _generate_recovery_codes()
+    user["recovery_codes"] = code_docs
     try:
         await db.users.insert_one(user)
     except Exception as e:
@@ -308,7 +333,7 @@ async def register(body: RegisterBody):
             raise HTTPException(status_code=409, detail="Username già in uso")
         raise
     token = await _create_session(user["user_id"])
-    return {"session_token": token, "user": await _user_public(user)}
+    return {"session_token": token, "user": await _user_public(user), "recovery_codes": plain_codes}
 
 
 @api_router.post("/auth/login")
@@ -358,6 +383,91 @@ async def update_password(body: UpdatePasswordBody, current_user=Depends(get_cur
     )
     # Invalidate all other sessions for safety, keep current one
     return {"ok": True}
+
+
+# Rate limit for recovery attempts (in-memory, single-process)
+_recovery_attempts: Dict[str, List[datetime]] = {}
+_RECOVERY_MAX = 5
+_RECOVERY_WINDOW = timedelta(minutes=15)
+
+
+def _recovery_rate_check(username: str) -> None:
+    now = _now()
+    q = _recovery_attempts.get(username, [])
+    q = [t for t in q if now - t < _RECOVERY_WINDOW]
+    _recovery_attempts[username] = q
+    if len(q) >= _RECOVERY_MAX:
+        raise HTTPException(status_code=429, detail="Troppi tentativi. Riprova tra 15 minuti.")
+
+
+def _recovery_note_wrong(username: str) -> None:
+    _recovery_attempts.setdefault(username, []).append(_now())
+
+
+def _recovery_note_success(username: str) -> None:
+    _recovery_attempts.pop(username, None)
+
+
+@api_router.post("/auth/recovery/verify")
+async def recovery_verify(body: RecoveryVerifyBody):
+    username = _norm_username(body.username)
+    _recovery_rate_check(username)
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password troppo corta (min 6 caratteri)")
+    user = await db.users.find_one({"username": username})
+    code = _normalize_code(body.code)
+    matched_hash = None
+    if user:
+        for item in user.get("recovery_codes", []):
+            if item.get("used_at") is None and _verify_password(code, item["code_hash"]):
+                matched_hash = item["code_hash"]
+                break
+    if not matched_hash:
+        _recovery_note_wrong(username)
+        raise HTTPException(status_code=400, detail="Codice di recupero non valido")
+    # Atomic update: mark code as used AND set new password only if still unused
+    result = await db.users.find_one_and_update(
+        {
+            "user_id": user["user_id"],
+            "recovery_codes": {"$elemMatch": {"code_hash": matched_hash, "used_at": None}},
+        },
+        {
+            "$set": {
+                "password_hash": _hash_password(body.new_password),
+                "recovery_codes.$[c].used_at": _now(),
+                "updated_at": _now(),
+            }
+        },
+        array_filters=[{"c.code_hash": matched_hash, "c.used_at": None}],
+    )
+    if not result:
+        _recovery_note_wrong(username)
+        raise HTTPException(status_code=400, detail="Codice di recupero non valido")
+    # Invalidate all existing sessions and issue a new one
+    await db.user_sessions.delete_many({"user_id": user["user_id"]})
+    _recovery_note_success(username)
+    token = await _create_session(user["user_id"])
+    fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return {"session_token": token, "user": await _user_public(fresh)}
+
+
+@api_router.post("/auth/recovery/regenerate")
+async def recovery_regenerate(current_user=Depends(get_current_user)):
+    plain, docs = _generate_recovery_codes()
+    await db.users.update_one(
+        {"user_id": current_user["user_id"]},
+        {"$set": {"recovery_codes": docs, "updated_at": _now()}},
+    )
+    return {"recovery_codes": plain}
+
+
+@api_router.get("/auth/recovery/status")
+async def recovery_status(current_user=Depends(get_current_user)):
+    u = await db.users.find_one({"user_id": current_user["user_id"]}, {"recovery_codes": 1})
+    codes = (u or {}).get("recovery_codes", []) or []
+    remaining = sum(1 for c in codes if c.get("used_at") is None)
+    return {"remaining": remaining, "total": len(codes)}
+
 
 
 @api_router.get("/auth/me")

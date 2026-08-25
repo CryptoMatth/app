@@ -87,6 +87,12 @@ export default function Login() {
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Accedi</Text>}
             </Pressable>
 
+            <Link href="/(auth)/forgot" asChild>
+              <Pressable testID="go-to-forgot" style={styles.linkBtn}>
+                <Text style={[styles.linkTxt, { color: theme.color.brandPrimary }]}>Password dimenticata?</Text>
+              </Pressable>
+            </Link>
+
             <Link href="/(auth)/register" asChild>
               <Pressable testID="go-to-register" style={styles.linkBtn}>
                 <Text style={styles.linkTxt}>Non hai un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Registrati</Text></Text>

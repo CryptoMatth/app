@@ -26,8 +26,8 @@ export default function Register() {
     if (pw !== pw2) { setErr('Le due password non coincidono'); return; }
     setBusy(true);
     try {
-      await register(username.trim(), pw, pw2);
-      router.replace('/(tabs)/planner');
+      const codes = await register(username.trim(), pw, pw2);
+      router.replace({ pathname: '/(auth)/recovery-codes', params: { codes: codes.join(',') } });
     } catch (e: any) {
       setErr(e.message || 'Errore registrazione');
     } finally {

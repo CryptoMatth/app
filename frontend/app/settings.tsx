@@ -182,6 +182,16 @@ export default function Settings() {
             </View>
             <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
           </Pressable>
+          <Pressable onPress={() => router.push('/recovery-manage')} style={styles.actionRow} testID="btn-recovery-codes">
+            <View style={[styles.actionIcon, { backgroundColor: theme.color.brandTertiary }]}>
+              <Feather name="shield" size={18} color={theme.color.brandPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Codici di recupero</Text>
+              <Text style={styles.actionSub}>Rigenera nuovi codici (i vecchi non funzioneranno più)</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
+          </Pressable>
         </View>
 
         <View style={styles.section}>
