@@ -68,6 +68,8 @@ export default function Forgot() {
           placeholder="Nuova password (min 6)"
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw} onChangeText={setPw}
+          autoCapitalize="none"
+          autoCorrect={false}
           secureTextEntry
           style={styles.input}
         />
@@ -76,6 +78,8 @@ export default function Forgot() {
           placeholder="Ripeti nuova password"
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw2} onChangeText={setPw2}
+          autoCapitalize="none"
+          autoCorrect={false}
           secureTextEntry
           style={styles.input}
         />

@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { resetAllTutorial } from '@/src/tutorial';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -195,6 +196,24 @@ export default function Settings() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionH}>Guida</Text>
+          <Pressable
+            onPress={async () => { await resetAllTutorial(); router.push('/tutorial'); }}
+            style={styles.actionRow}
+            testID="btn-review-tutorial"
+          >
+            <View style={[styles.actionIcon, { backgroundColor: '#E5EDDF' }]}>
+              <Feather name="play-circle" size={18} color={theme.color.brandSecondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Rivedi tutorial</Text>
+              <Text style={styles.actionSub}>Ripeti l'introduzione e mostra di nuovo i suggerimenti</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionH}>Backup dati</Text>
           <Text style={styles.sectionSub}>
             Scarica un file di backup con tutti i tuoi piatti, settimane pianificate e lista spesa. Potrai ripristinarlo in qualsiasi momento.
@@ -367,6 +386,8 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
             placeholder="Password attuale"
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={pw} onChangeText={setPw}
+            autoCapitalize="none"
+            autoCorrect={false}
             secureTextEntry
             style={styles.modalInput}
           />
@@ -419,6 +440,8 @@ function ChangePasswordModal({ open, onClose, onSave }: {
             placeholder="Password attuale"
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={oldPw} onChangeText={setOldPw}
+            autoCapitalize="none"
+            autoCorrect={false}
             secureTextEntry
             style={styles.modalInput}
           />
@@ -427,6 +450,8 @@ function ChangePasswordModal({ open, onClose, onSave }: {
             placeholder="Nuova password (min 6)"
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={newPw} onChangeText={setNewPw}
+            autoCapitalize="none"
+            autoCorrect={false}
             secureTextEntry
             style={styles.modalInput}
           />
@@ -435,6 +460,8 @@ function ChangePasswordModal({ open, onClose, onSave }: {
             placeholder="Ripeti nuova password"
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={newPw2} onChangeText={setNewPw2}
+            autoCapitalize="none"
+            autoCorrect={false}
             secureTextEntry
             style={styles.modalInput}
           />

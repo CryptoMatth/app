@@ -62,6 +62,8 @@ export default function Register() {
           placeholder="Password (min 6 caratteri)"
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw} onChangeText={setPw}
+          autoCapitalize="none"
+          autoCorrect={false}
           secureTextEntry
           style={styles.input}
         />
@@ -70,6 +72,8 @@ export default function Register() {
           placeholder="Ripeti password"
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw2} onChangeText={setPw2}
+          autoCapitalize="none"
+          autoCorrect={false}
           secureTextEntry
           style={styles.input}
         />

@@ -73,6 +73,8 @@ export default function Login() {
               placeholderTextColor={theme.color.onSurfaceTertiary}
               value={pw}
               onChangeText={setPw}
+              autoCapitalize="none"
+              autoCorrect={false}
               secureTextEntry
               style={styles.input}
             />

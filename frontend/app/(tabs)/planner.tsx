@@ -8,6 +8,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { TipBanner } from '@/src/TipBanner';
+import { TutorialKeys } from '@/src/tutorial';
 import {
   saturdayOf, addDays, isoDate, weekRangeLabel, todayIndexInWeek, DAY_LABELS, DAY_LABELS_FULL, parseIso,
 } from '@/src/week';
@@ -142,6 +144,13 @@ export default function Planner() {
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
         >
+          <TipBanner
+            storageKey={TutorialKeys.tipPlanner}
+            icon="calendar"
+            title="Pianifica il tuo menù settimanale"
+            body="Tocca uno slot Pranzo o Cena per assegnare un piatto. Gli ingredienti finiscono automaticamente nella Spesa."
+            testID="tip-planner"
+          />
           {Array.from({ length: 7 }).map((_, i) => {
             const isToday = today === i;
             const d = addDays(weekStart, i);

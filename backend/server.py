@@ -1018,6 +1018,10 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
 
 app.include_router(api_router)
 
+# Admin router (protected by ADMIN_PASSWORD header)
+from admin import create_admin_router  # noqa: E402
+app.include_router(create_admin_router(db), prefix="/api")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

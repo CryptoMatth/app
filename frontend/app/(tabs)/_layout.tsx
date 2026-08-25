@@ -1,16 +1,29 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { hasSeenOnboarding } from '@/src/tutorial';
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/(auth)/login');
   }, [user, loading, router]);
+
+  // On first entry into tabs after login/register, if the user has never
+  // seen the onboarding tutorial, redirect them there.
+  useEffect(() => {
+    if (loading || !user || checked) return;
+    (async () => {
+      const seen = await hasSeenOnboarding();
+      setChecked(true);
+      if (!seen) router.replace('/tutorial');
+    })();
+  }, [loading, user, checked, router]);
 
   if (loading || !user) return null;
 

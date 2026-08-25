@@ -8,6 +8,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { TipBanner } from '@/src/TipBanner';
+import { TutorialKeys } from '@/src/tutorial';
 
 type Dish = { id: string; name: string; course: 'primo' | 'secondo'; ingredients: any[]; preparation: string; servings: number };
 
@@ -81,6 +83,16 @@ export default function Piatti() {
         </View>
       </View>
 
+      <View style={{ paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md }}>
+        <TipBanner
+          storageKey={TutorialKeys.tipPiatti}
+          icon="book-open"
+          title="I tuoi piatti in un tocco"
+          body="Tocca “Nuovo piatto” per creare una ricetta con ingredienti, quantità e passaggi. Verrà usata poi nel Planner."
+          testID="tip-piatti"
+        />
+      </View>
+
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.color.brandPrimary} /></View>
       ) : dishes.length === 0 ? (
@@ -94,6 +106,7 @@ export default function Piatti() {
           data={dishes}
           keyExtractor={i => i.id}
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}
+          ListHeaderComponent={null}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
           renderItem={({ item }) => (
             <Pressable

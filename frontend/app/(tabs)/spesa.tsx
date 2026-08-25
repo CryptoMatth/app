@@ -9,6 +9,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { TipBanner } from '@/src/TipBanner';
+import { TutorialKeys } from '@/src/tutorial';
 
 type Item = {
   id: string; name: string; unit: string;
@@ -113,6 +115,16 @@ export default function Spesa() {
             </Pressable>
           </View>
         </View>
+      </View>
+
+      <View style={{ paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md }}>
+        <TipBanner
+          storageKey={TutorialKeys.tipSpesa}
+          icon="shopping-cart"
+          title="La spesa si compila da sola"
+          body="Verde = arriva dal Planner, arancione = aggiunto a mano. Trascina per riordinare, spunta al supermercato."
+          testID="tip-spesa"
+        />
       </View>
 
       {loading ? (

@@ -55,7 +55,7 @@ export default function RecoveryCodes() {
         </View>
         <Text style={styles.h1}>Salva i tuoi codici di recupero</Text>
         <Text style={styles.sub}>
-          Se dimentichi la password, questi codici sono l'UNICO modo per rientrare nel tuo account.
+          Se dimentichi la password, questi codici sono l{'\''}UNICO modo per rientrare nel tuo account.
           Non li rivedrai più dopo aver chiuso questa pagina.
         </Text>
 
@@ -84,7 +84,7 @@ export default function RecoveryCodes() {
         </Pressable>
 
         <Pressable
-          onPress={() => router.replace('/(tabs)/planner')}
+          onPress={() => router.replace('/tutorial')}
           disabled={!ack}
           style={[styles.primary, !ack && { opacity: 0.4 }]}
           testID="codes-continue"
