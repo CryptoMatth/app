@@ -1,0 +1,44 @@
+{
+  "summary": "Verified the expo-file-system deprecation fix in /app/frontend/app/settings.tsx (import changed to 'expo-file-system/legacy'). Registered fresh user, navigated to Impostazioni via testID='open-settings', tapped testID='btn-export'. RESULT: The specific deprecation banner ('writeAsStringAsync ... is deprecated ... expo-file-system/legacy') is NO LONGER shown — SUCCESS on the requested acceptance criteria (a) and (b). HOWEVER, on the web preview a different red error banner is still displayed with the exact message: 'The method or property expo-file-system.writeAsStringAsync is not available on web, are you sure you've linked all the native dependencies properly?' (settings-msg kind='err', bg #F5E0DC). This still contains the string 'writeAsStringAsync' though it is NOT the deprecation warning. On a real device Sharing/FileSystem should work; on web it needs a Platform.OS==='web' fallback. Ripristina (unisci) button (testID='btn-import-merge') opens without any error/deprecation on web. No red screen, no PAGEERRORS. Only unrelated console warning: 'props.pointerEvents is deprecated' from a third-party RN component.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Settings > Esporta i miei dati (web)",
+        "issue": "On web preview, tapping btn-export shows a red error banner: 'The method or property expo-file-system.writeAsStringAsync is not available on web, are you sure you've linked all the native dependencies properly?'. The originally-reported 'deprecated' warning is gone (fix works), but the web UX is still broken. Add a Platform.OS==='web' branch in doExport() that generates the JSON as a Blob and triggers a browser download via an <a download> element, bypassing FileSystem/Sharing entirely on web. Reference: /app/frontend/app/settings.tsx:30-56",
+        "testID": "btn-export / settings-msg",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "expo-file-system (legacy import)",
+        "issue": "Using 'expo-file-system/legacy' works and removes the deprecation banner, but it is still the legacy API. Long-term migration to the new File/Directory classes from expo-file-system is recommended (Expo SDK 54+). Reference: /app/frontend/app/settings.tsx:8"
+      },
+      {
+        "component": "pointerEvents prop (unknown source)",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' appears on app load. Likely coming from a third-party library or a View in the codebase. Non-blocking but should be located and fixed."
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add Platform.OS==='web' branch in doExport() at /app/frontend/app/settings.tsx: on web, create a Blob from the JSON, generate an object URL, and trigger download via a temporary <a> tag. This avoids FileSystem.writeAsStringAsync entirely on web and provides a green 'ok' settings-msg such as 'Backup scaricato con successo'.",
+    "Same treatment for pickAndPreview() import flow: on web, read the file via a hidden <input type='file'> + FileReader instead of FileSystem.readAsStringAsync (DocumentPicker + copyToCacheDirectory may work on web but readAsStringAsync will likely fail similarly).",
+    "Optional: plan migration from 'expo-file-system/legacy' to the new File/Directory API before the legacy API is removed.",
+    "Track down the 'props.pointerEvents is deprecated' warning source and switch to style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "settings.tsx lines 38-39: FileSystem.documentDirectory is null on web, so building `${FileSystem.documentDirectory}${filename}` yields 'null<filename>' before writeAsStringAsync throws. A web-specific branch avoids this.",
+    "settings.tsx doExport catch (line 52-54): the current UX surfaces the raw exception message to the user, including internal API names ('writeAsStringAsync', 'expo-file-system'). Consider translating to a user-friendly Italian message like 'Esportazione non disponibile sul web, usa l'app mobile.'"
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (frontend-only test)", "frontend": "Partial: deprecation banner fixed (100%), but web export flow still errors (0% functional on web)" },
+  "seed_data_creation": "Registered ephemeral users test<epoch>@t.co / test1234 via /api/auth/register during the flow.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The expo-file-system/legacy import fixes the ORIGINAL deprecation banner. But on web preview a new error appears because writeAsStringAsync/documentDirectory are not implemented for web. Main agent needs to add a Platform.OS==='web' branch that uses Blob + anchor download. After that fix, re-test by: register user -> open-settings -> btn-export -> confirm settings-msg text starts with 'Backup' and background is green (#E5EDDF), and a download is triggered.",
+  "rca_of_issue": "Original RCA (already fixed by main agent): expo-file-system deprecated the top-level writeAsStringAsync method in favor of the new File/Directory API; the SDK now emits an in-app red banner when the legacy method is used from the main import path. Switching import to 'expo-file-system/legacy' opts back into the legacy API and suppresses the deprecation banner. Remaining issue: legacy API is a NATIVE module and its methods raise 'not available on web' when executed in Expo web. The web branch needs a Blob + <a download> fallback (or File API from expo-file-system may support web via a different code path)."
+}

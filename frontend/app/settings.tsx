@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Modal,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, ScrollView, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
@@ -35,18 +35,33 @@ export default function Settings() {
       const json = JSON.stringify(data, null, 2);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `planeat-backup-${stamp}.json`;
-      const path = `${FileSystem.documentDirectory}${filename}`;
-      await FileSystem.writeAsStringAsync(path, json);
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(path, {
-          mimeType: 'application/json',
-          dialogTitle: 'Salva il backup PlanEat',
-          UTI: 'public.json',
-        });
-        setMsg({ kind: 'ok', text: 'Backup esportato con successo.' });
+
+      if (Platform.OS === 'web') {
+        // Web: download via blob + <a>
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setMsg({ kind: 'ok', text: 'Backup scaricato con successo.' });
       } else {
-        setMsg({ kind: 'ok', text: `Backup salvato in: ${path}` });
+        const path = `${FileSystem.documentDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(path, json);
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(path, {
+            mimeType: 'application/json',
+            dialogTitle: 'Salva il backup PlanEat',
+            UTI: 'public.json',
+          });
+          setMsg({ kind: 'ok', text: 'Backup esportato con successo.' });
+        } else {
+          setMsg({ kind: 'ok', text: `Backup salvato in: ${path}` });
+        }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
@@ -58,14 +73,33 @@ export default function Settings() {
   const pickAndPreview = useCallback(async (mode: 'merge' | 'replace') => {
     setMsg(null);
     try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: 'application/json',
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled) return;
-      const uri = res.assets?.[0]?.uri;
-      if (!uri) return;
-      const raw = await FileSystem.readAsStringAsync(uri);
+      let raw: string;
+      if (Platform.OS === 'web') {
+        // Web: use native file input
+        raw = await new Promise<string>((resolve, reject) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'application/json,.json';
+          input.onchange = () => {
+            const f = input.files?.[0];
+            if (!f) { reject(new Error('Nessun file selezionato')); return; }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('Lettura fallita'));
+            reader.readAsText(f);
+          };
+          input.click();
+        });
+      } else {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: 'application/json',
+          copyToCacheDirectory: true,
+        });
+        if (res.canceled) return;
+        const uri = res.assets?.[0]?.uri;
+        if (!uri) return;
+        raw = await FileSystem.readAsStringAsync(uri);
+      }
       const parsed = JSON.parse(raw);
       if (!parsed || (parsed.app && parsed.app !== 'PlanEat')) {
         setMsg({ kind: 'err', text: 'Il file non sembra un backup PlanEat valido.' });
