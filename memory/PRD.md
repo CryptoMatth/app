@@ -20,11 +20,18 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Tip banner contestuali su ogni tab, dismissibili, chiave AsyncStorage `planeat_tip_*`
 - Impostazioni → "Rivedi tutorial" resetta i flag e riapre l'onboarding
 
-## Settings
-- Modifica username (richiede password attuale), cambia password, rigenera codici recupero
-- Backup export/import: `expo-file-system/legacy` + `expo-sharing` (nativo), download via Blob (web); modes merge/replace
-- Rivedi tutorial
-- Logout con conferma
+## Settings (giu 2026, riorganizzate in sottopagine)
+- Hub `/settings` con card per sezione
+- `/settings/account` — modifica username (con password), cambia password, codici recupero
+- `/settings/preferences` — inizio settimana (Lun–Dom) + gestione categorie piatti (aggiungi/rinomina/riordina/elimina)
+- `/settings/tutorial` — rivedi introduzione e riattiva tip banner
+- `/settings/backup` — export/import JSON con modalità merge o replace
+- Logout con conferma direttamente dall'hub
+
+## Preferenze utente (giu 2026)
+- `week_start_day` (0=Lun..6=Dom, default 5=Sab): il Planner ordina i 7 giorni partendo da qui
+- `courses` (lista `{id, label}`): categorie personalizzabili per i piatti; default Primo/Secondo/Contorno/Dolce; possibilità di aggiungerne di custom (es. Antipasto, Colazione)
+- Il campo `course` sui piatti è ora una stringa libera; l'id viene generato dalla label
 
 ## Admin (giu 2026)
 - Endpoint sotto `/api/admin/*` protetti da header `X-Admin-Password` (variabile env `ADMIN_PASSWORD` in `backend/.env`)
@@ -37,7 +44,7 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Duplica settimana → clona slot + ricalcola spesa
 
 ## Endpoints /api/*
-- Auth: register (ritorna recovery_codes), login, `POST /auth/recovery/verify`, `POST /auth/recovery/regenerate`, `GET /auth/recovery/status`, `PUT /auth/profile`, `PUT /auth/password`, me, logout
+- Auth: register (ritorna recovery_codes), login, `POST /auth/recovery/verify`, `POST /auth/recovery/regenerate`, `GET /auth/recovery/status`, `PUT /auth/profile`, `PUT /auth/password`, `GET/PUT /auth/preferences`, me, logout
 - Dishes: CRUD + duplicate
 - Planner: `GET /planner/{week_start}`, `PUT /planner/slot`, `POST /planner/duplicate`, `GET /planner-weeks`
 - Shopping: CRUD + reorder + toggle + force-delete + clear-checked

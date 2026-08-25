@@ -1,11 +1,31 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, clearToken, setToken, getToken } from './api';
 
-export type User = { user_id: string; username: string };
+export type Course = { id: string; label: string };
+export type UserPreferences = {
+  week_start_day: number; // 0=Mon..6=Sun
+  courses: Course[];
+};
+export type User = {
+  user_id: string;
+  username: string;
+  preferences?: UserPreferences;
+};
+
+const DEFAULT_PREFS: UserPreferences = {
+  week_start_day: 5,
+  courses: [
+    { id: 'primo', label: 'Primo' },
+    { id: 'secondo', label: 'Secondo' },
+    { id: 'contorno', label: 'Contorno' },
+    { id: 'dolce', label: 'Dolce' },
+  ],
+};
 
 type AuthCtx = {
   user: User | null;
   loading: boolean;
+  prefs: UserPreferences;
   loginUsername: (username: string, pw: string) => Promise<void>;
   register: (username: string, pw: string, pw2: string) => Promise<string[]>;
   logout: () => Promise<void>;
@@ -13,6 +33,7 @@ type AuthCtx = {
   updateUsername: (username: string, current_password: string) => Promise<void>;
   updatePassword: (old_password: string, new_password: string) => Promise<void>;
   recoveryVerify: (username: string, code: string, new_password: string) => Promise<void>;
+  updatePreferences: (data: Partial<UserPreferences>) => Promise<UserPreferences>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -68,9 +89,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setToken(res.session_token);
     setUser(res.user);
   };
+  const updatePreferences = async (data: Partial<UserPreferences>) => {
+    const updated: UserPreferences = await api.updatePreferences(data as any);
+    setUser(prev => (prev ? { ...prev, preferences: updated } : prev));
+    return updated;
+  };
+
+  const prefs: UserPreferences = user?.preferences || DEFAULT_PREFS;
 
   return (
-    <Ctx.Provider value={{ user, loading, loginUsername, register, logout, refresh, updateUsername, updatePassword, recoveryVerify }}>
+    <Ctx.Provider
+      value={{
+        user, loading, prefs,
+        loginUsername, register, logout, refresh,
+        updateUsername, updatePassword, recoveryVerify,
+        updatePreferences,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 11: backend-only testing of admin endpoints, user preferences flow, flexible dish courses, and regression coverage. 26/26 pytest tests pass. Admin endpoints (stats/users/user detail/password reset/delete/export/export.csv) all correctly gated by X-Admin-Password header; missing/wrong header returns 401; password_hash and recovery_codes are never exposed. Admin password reset invalidates all sessions of the target user, blocks the old password, and accepts the new one. Admin delete removes user + dishes + plans + shopping + sessions and subsequent GET is 404. Preferences: default is week_start_day=5 and 4 courses (primo/secondo/contorno/dolce); PUT correctly updates, auto-generates ids from labels, rejects week_start_day=9/-1 with 422, rejects empty courses with 422, and de-duplicates repeated labels case-insensitively. /auth/me now includes the preferences field. Dish creation accepts arbitrary course strings (e.g. 'dolce', 'antipasto') and GET /api/dishes?course=antipasto filters correctly. All previously-working endpoints (register/login/me/logout, recovery verify, dish CRUD + duplicate, planner slot update + duplicate week + shopping sync, shopping add/edit/toggle/delete/reorder/clear-checked, export/import) still work. Cross-user isolation confirmed (404 when fetching another user's dish). All /api/auth/* protected endpoints reject requests without a Bearer token with 401.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_admin_prefs.py",
+    "/app/test_reports/pytest/pytest_iteration11.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "admin.py require_admin uses simple string comparison of X-Admin-Password; consider using secrets.compare_digest to prevent timing attacks (very low priority - single credential, short strings).",
+    "admin.py delete_user is a hard cascade delete with no soft-delete/audit trail. This is documented as intentional but there is no admin action log; consider adding one if you ever need forensics.",
+    "server.py update_password endpoint does NOT invalidate other sessions (comment says 'keep current one' but no delete_many runs). If this is intentional it's fine; if not, add await db.user_sessions.delete_many({...}) except current token.",
+    "server.py import_data hard-codes default course to 'primo' when missing which is fine but note this bypasses the new user-defined course list."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration11_admin_prefs.py"],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend only requested)"},
+  "seed_data_creation": "Created ~15 ephemeral users with random usernames (prefixes pref/reg/recv/pgd/ppu/piw/pec/pdd/dds/dcc/dfc/dcrud/plsh/exp/imp/iso1/iso2/adm/adm2/admr/admd/adme/admc). No cleanup performed; they use unique timestamped names.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full backend regression suite for iteration 11 lives at /app/backend/tests/test_iteration11_admin_prefs.py. Backend base URL from EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env. Admin password from ADMIN_PASSWORD env var. All 26 tests green in ~55s under pytest-xdist. Prior recovery suite still at test_iteration9_recovery.py.",
+  "rca_of_issue": "N/A - no issues found"
+}

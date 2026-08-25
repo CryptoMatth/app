@@ -7,14 +7,16 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
+import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import {
-  saturdayOf, addDays, isoDate, weekRangeLabel, todayIndexInWeek, DAY_LABELS, DAY_LABELS_FULL, parseIso,
+  weekStartFor, addDays, isoDate, weekRangeLabel, todayIndexInWeek,
+  orderedDayLabels, parseIso, weekStartLabels,
 } from '@/src/week';
 
-type Slot = { dish_id: string; dish_name: string; course: 'primo' | 'secondo'; persons: number };
+type Slot = { dish_id: string; dish_name: string; course: string; persons: number };
 type Plan = { week_start: string; slots: Record<string, Slot> };
 type WeekRow = { week_start: string; count: number };
 
@@ -24,7 +26,11 @@ const MEALS: { key: 'pranzo' | 'cena'; label: string; icon: any }[] = [
 ];
 
 export default function Planner() {
-  const [weekStart, setWeekStart] = useState(() => saturdayOf(new Date()));
+  const { prefs } = useAuth();
+  const startDay = prefs.week_start_day;
+  const dayLabelsFull = orderedDayLabels(startDay, true);
+  const weekSubLabel = weekStartLabels(startDay);
+  const [weekStart, setWeekStart] = useState(() => weekStartFor(new Date(), startDay));
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,6 +48,12 @@ export default function Planner() {
     setLoading(false);
     setRefreshing(false);
   }, [weekStart]);
+
+  // If the user's week_start_day preference changes while on this screen,
+  // realign the current weekStart to the new anchor.
+  useEffect(() => {
+    setWeekStart(prev => weekStartFor(prev, startDay));
+  }, [startDay]);
 
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -99,7 +111,7 @@ export default function Planner() {
           <Text style={styles.h1}>Planner</Text>
           <View style={styles.headerActions}>
             <Pressable
-              onPress={() => { Haptics.selectionAsync(); setWeekStart(saturdayOf(new Date())); }}
+              onPress={() => { Haptics.selectionAsync(); setWeekStart(weekStartFor(new Date(), startDay)); }}
               style={styles.headerIconBtn}
               testID="week-today"
             >
@@ -129,7 +141,7 @@ export default function Planner() {
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={styles.weekLabel}>{weekRangeLabel(weekStart)}</Text>
-            <Text style={styles.weekSub}>sab → ven</Text>
+            <Text style={styles.weekSub}>{weekSubLabel}</Text>
           </View>
           <Pressable testID="week-next" onPress={() => goWeek(1)} style={styles.weekBtn}>
             <Feather name="chevron-right" size={20} color={theme.color.onSurface} />
@@ -157,7 +169,7 @@ export default function Planner() {
             return (
               <View key={i} style={[styles.day, isToday && styles.dayToday]} testID={`day-${i}`}>
                 <View style={styles.dayHeader}>
-                  <Text style={[styles.dayName, isToday && { color: theme.color.brandPrimary }]}>{DAY_LABELS_FULL[i]}</Text>
+                  <Text style={[styles.dayName, isToday && { color: theme.color.brandPrimary }]}>{dayLabelsFull[i]}</Text>
                   <Text style={[styles.dayDate, isToday && { color: theme.color.brandPrimary }]}>
                     {d.getDate().toString().padStart(2, '0')}/{(d.getMonth() + 1).toString().padStart(2, '0')}
                     {isToday ? ' · oggi' : ''}
@@ -165,6 +177,7 @@ export default function Planner() {
                 </View>
                 {MEALS.map(m => {
                   const slot = plan?.slots?.[`${i}_${m.key}`];
+                  const slotCourse = slot ? prefs.courses.find(c => c.id === slot.course)?.label : null;
                   return (
                     <Pressable
                       key={m.key}
@@ -178,7 +191,7 @@ export default function Planner() {
                         {slot ? (
                           <>
                             <Text style={styles.dishName}>{slot.dish_name}</Text>
-                            <Text style={styles.dishMeta}>{slot.persons} pers. · {slot.course === 'primo' ? 'Primo' : 'Secondo'}</Text>
+                            <Text style={styles.dishMeta}>{slot.persons} pers. · {slotCourse || slot.course}</Text>
                           </>
                         ) : (
                           <Text style={styles.slotEmpty}>Tocca per aggiungere un piatto</Text>

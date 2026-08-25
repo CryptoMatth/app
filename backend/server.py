@@ -45,7 +45,7 @@ class Ingredient(BaseModel):
 
 class DishCreate(BaseModel):
     name: str
-    course: Literal["primo", "secondo"]
+    course: str  # course id (matches user's preferences.courses)
     ingredients: List[Ingredient] = []
     preparation: str = ""
     servings: int = 1
@@ -75,6 +75,30 @@ class ShoppingReorder(BaseModel):
 
 
 USERNAME_RE = re.compile(r"^[a-z0-9_.]{3,30}$")
+
+# Default course catalog: users can rename/reorder/delete/add.
+# `id` is the stable slug used in dish documents; label is user-facing.
+DEFAULT_COURSES: List[Dict[str, Any]] = [
+    {"id": "primo", "label": "Primo"},
+    {"id": "secondo", "label": "Secondo"},
+    {"id": "contorno", "label": "Contorno"},
+    {"id": "dolce", "label": "Dolce"},
+]
+# 0 = Monday, 6 = Sunday (Python weekday convention).
+# Historically PlanEat starts weeks on Saturday (=5).
+DEFAULT_WEEK_START_DAY = 5
+
+
+def _course_id(label: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "_", (label or "").strip().lower()).strip("_")
+    return base[:40] or "categoria"
+
+
+def _default_prefs() -> Dict[str, Any]:
+    return {
+        "week_start_day": DEFAULT_WEEK_START_DAY,
+        "courses": [dict(c) for c in DEFAULT_COURSES],
+    }
 
 
 def _norm_username(v: str) -> str:
@@ -133,6 +157,16 @@ class ImportBody(BaseModel):
     weekly_plans: List[Dict[str, Any]] = []
     shopping_items: List[Dict[str, Any]] = []
     mode: Literal["merge", "replace"] = "merge"
+
+
+class CourseItem(BaseModel):
+    id: Optional[str] = None
+    label: str
+
+
+class PreferencesBody(BaseModel):
+    week_start_day: Optional[int] = None  # 0=Mon..6=Sun
+    courses: Optional[List[CourseItem]] = None
 
 
 # -------------------- Helpers --------------------
@@ -280,9 +314,16 @@ async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
 
 
 async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
+    prefs = user_doc.get("preferences") or _default_prefs()
+    # Backfill any missing keys (older accounts predating prefs)
+    if "week_start_day" not in prefs:
+        prefs["week_start_day"] = DEFAULT_WEEK_START_DAY
+    if not prefs.get("courses"):
+        prefs["courses"] = [dict(c) for c in DEFAULT_COURSES]
     return {
         "user_id": user_doc["user_id"],
         "username": user_doc.get("username") or (user_doc.get("email") or "").split("@")[0],
+        "preferences": prefs,
     }
 
 
@@ -323,6 +364,7 @@ async def register(body: RegisterBody):
         "password_hash": _hash_password(body.password),
         "created_at": _now(),
         "provider": "username",
+        "preferences": _default_prefs(),
     }
     plain_codes, code_docs = _generate_recovery_codes()
     user["recovery_codes"] = code_docs
@@ -475,6 +517,59 @@ async def me(current_user=Depends(get_current_user)):
     return await _user_public(current_user)
 
 
+@api_router.get("/auth/preferences")
+async def get_preferences(current_user=Depends(get_current_user)):
+    pub = await _user_public(current_user)
+    return pub["preferences"]
+
+
+@api_router.put("/auth/preferences")
+async def update_preferences(body: PreferencesBody, current_user=Depends(get_current_user)):
+    prefs = current_user.get("preferences") or _default_prefs()
+    if body.week_start_day is not None:
+        if body.week_start_day < 0 or body.week_start_day > 6:
+            raise HTTPException(422, "week_start_day deve essere tra 0 (Lun) e 6 (Dom)")
+        prefs["week_start_day"] = int(body.week_start_day)
+    if body.courses is not None:
+        # Enforce at least one course and unique ids
+        if len(body.courses) == 0:
+            raise HTTPException(422, "Serve almeno una categoria di piatto")
+        if len(body.courses) > 20:
+            raise HTTPException(422, "Massimo 20 categorie")
+        seen_ids = set()
+        seen_labels = set()
+        cleaned: List[Dict[str, Any]] = []
+        for c in body.courses:
+            label = (c.label or "").strip()
+            if not label:
+                continue
+            if len(label) > 40:
+                label = label[:40]
+            cid = (c.id or "").strip() or _course_id(label)
+            # Ensure uniqueness: if id already used, suffix _2, _3...
+            base_cid = cid
+            n = 1
+            while cid in seen_ids:
+                n += 1
+                cid = f"{base_cid}_{n}"
+            low = label.lower()
+            if low in seen_labels:
+                continue
+            seen_ids.add(cid)
+            seen_labels.add(low)
+            cleaned.append({"id": cid, "label": label})
+        if not cleaned:
+            raise HTTPException(422, "Nessuna categoria valida fornita")
+        prefs["courses"] = cleaned
+    await db.users.update_one(
+        {"user_id": current_user["user_id"]},
+        {"$set": {"preferences": prefs, "updated_at": _now()}},
+    )
+    updated = await db.users.find_one({"user_id": current_user["user_id"]}, {"_id": 0, "password_hash": 0})
+    pub = await _user_public(updated)
+    return pub["preferences"]
+
+
 @api_router.post("/auth/logout")
 async def logout(authorization: Optional[str] = Header(None)):
     if authorization:
@@ -488,7 +583,7 @@ async def logout(authorization: Optional[str] = Header(None)):
 @api_router.get("/dishes")
 async def list_dishes(course: Optional[str] = None, q: Optional[str] = None, current_user=Depends(get_current_user)):
     query: Dict[str, Any] = {"user_id": current_user["user_id"]}
-    if course in ("primo", "secondo"):
+    if course:
         query["course"] = course
     if q:
         query["name"] = {"$regex": re.escape(q), "$options": "i"}
@@ -939,7 +1034,7 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
                 "id": d.get("id") or _uid(),
                 "user_id": user_id,
                 "name": str(d.get("name", "")).strip() or "Piatto",
-                "course": d.get("course") if d.get("course") in ("primo", "secondo") else "primo",
+                "course": str(d.get("course") or "primo").strip() or "primo",
                 "ingredients": d.get("ingredients", []),
                 "preparation": d.get("preparation", ""),
                 "servings": max(1, int(d.get("servings", 1) or 1)),

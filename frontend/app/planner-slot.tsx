@@ -7,19 +7,22 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
+import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
-import { DAY_LABELS_FULL } from '@/src/week';
+import { orderedDayLabels } from '@/src/week';
 
-type Dish = { id: string; name: string; course: 'primo' | 'secondo'; ingredients: any[] };
+type Dish = { id: string; name: string; course: string; ingredients: any[] };
 
 export default function PlannerSlot() {
   const router = useRouter();
+  const { prefs } = useAuth();
+  const courses = prefs.courses;
   const { weekStart, dayIndex, meal, currentDishId, currentPersons } =
     useLocalSearchParams<{ weekStart: string; dayIndex: string; meal: 'pranzo' | 'cena'; currentDishId?: string; currentPersons?: string }>();
 
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'primo' | 'secondo'>('primo');
+  const [tab, setTab] = useState<string>(courses[0]?.id || 'primo');
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<string | null>((currentDishId as string) || null);
   const [persons, setPersons] = useState<number>(parseInt((currentPersons as string) || '1') || 1);
@@ -51,7 +54,7 @@ export default function PlannerSlot() {
     setSaving(false);
   };
 
-  const dayLabel = DAY_LABELS_FULL[parseInt(dayIndex as string)] || '';
+  const dayLabel = orderedDayLabels(prefs.week_start_day, true)[parseInt(dayIndex as string)] || '';
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="planner-slot-screen">
@@ -96,11 +99,18 @@ export default function PlannerSlot() {
       </View>
 
       <View style={styles.seg}>
-        {(['primo', 'secondo'] as const).map(c => (
-          <Pressable key={c} onPress={() => setTab(c)} style={[styles.segBtn, tab === c && styles.segBtnActive]} testID={`slot-seg-${c}`}>
-            <Text style={[styles.segTxt, tab === c && styles.segTxtActive]}>{c === 'primo' ? 'Primi' : 'Secondi'}</Text>
-          </Pressable>
-        ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4 }}>
+          {courses.map(c => (
+            <Pressable
+              key={c.id}
+              onPress={() => setTab(c.id)}
+              style={[styles.segBtn, tab === c.id && styles.segBtnActive]}
+              testID={`slot-seg-${c.id}`}
+            >
+              <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{c.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
       </View>
 
       {loading ? (
@@ -162,8 +172,8 @@ const styles = StyleSheet.create({
   personsCount: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, minWidth: 32, textAlign: 'center' },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, marginHorizontal: theme.spacing.lg, paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.md, height: 44 },
   search: { flex: 1, fontSize: 15, color: theme.color.onSurface },
-  seg: { flexDirection: 'row', backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, height: 42 },
-  segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
+  seg: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, minHeight: 42 },
+  segBtn: { alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill, paddingHorizontal: 16, paddingVertical: 8, minWidth: 80 },
   segBtnActive: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
   segTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary },
   segTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },

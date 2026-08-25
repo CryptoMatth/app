@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, FlatList, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, TextInput, Pressable, FlatList, ActivityIndicator, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -11,16 +11,24 @@ import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 
-type Dish = { id: string; name: string; course: 'primo' | 'secondo'; ingredients: any[]; preparation: string; servings: number };
+type Dish = { id: string; name: string; course: string; ingredients: any[]; preparation: string; servings: number };
 
 export default function Piatti() {
-  const [tab, setTab] = useState<'primo' | 'secondo'>('primo');
+  const { prefs } = useAuth();
+  const courses = prefs.courses;
+  const [tab, setTab] = useState<string>(courses[0]?.id || 'primo');
   const [q, setQ] = useState('');
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
+
+  // Re-align selected tab if user removed/renamed categories elsewhere
+  useEffect(() => {
+    if (!courses.find(c => c.id === tab)) {
+      setTab(courses[0]?.id || 'primo');
+    }
+  }, [courses, tab]);
 
   const load = useCallback(async () => {
     try {
@@ -68,18 +76,22 @@ export default function Piatti() {
         </View>
 
         <View style={styles.seg}>
-          {(['primo', 'secondo'] as const).map(c => (
-            <Pressable
-              key={c}
-              testID={`segment-${c}`}
-              onPress={() => setTab(c)}
-              style={[styles.segBtn, tab === c && styles.segBtnActive]}
-            >
-              <Text style={[styles.segTxt, tab === c && styles.segTxtActive]}>
-                {c === 'primo' ? 'Primi' : 'Secondi'}
-              </Text>
-            </Pressable>
-          ))}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.segScroll}
+          >
+            {courses.map(c => (
+              <Pressable
+                key={c.id}
+                testID={`segment-${c.id}`}
+                onPress={() => setTab(c.id)}
+                style={[styles.segBtn, tab === c.id && styles.segBtnActive]}
+              >
+                <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{c.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       </View>
 
@@ -153,8 +165,9 @@ const styles = StyleSheet.create({
   },
   search: { flex: 1, fontSize: 15, color: theme.color.onSurface, paddingVertical: 0 },
   clearBtn: { padding: 4 },
-  seg: { flexDirection: 'row', backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginTop: theme.spacing.md, height: 44 },
-  segBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill },
+  seg: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginTop: theme.spacing.md, minHeight: 44 },
+  segScroll: { flexDirection: 'row', gap: 4, paddingHorizontal: 2 },
+  segBtn: { alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.pill, paddingHorizontal: 18, paddingVertical: 8, minWidth: 88 },
   segBtnActive: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
   segTxt: { fontSize: 14, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
   segTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },

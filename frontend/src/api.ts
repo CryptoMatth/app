@@ -65,6 +65,9 @@ export const api = {
     req('/auth/profile', { method: 'PUT', body: JSON.stringify({ username, current_password }) }),
   updatePassword: (old_password: string, new_password: string) =>
     req('/auth/password', { method: 'PUT', body: JSON.stringify({ old_password, new_password }) }),
+  getPreferences: () => req('/auth/preferences'),
+  updatePreferences: (data: { week_start_day?: number; courses?: { id?: string; label: string }[] }) =>
+    req('/auth/preferences', { method: 'PUT', body: JSON.stringify(data) }),
   recoveryVerify: (username: string, code: string, new_password: string) =>
     req('/auth/recovery/verify', { method: 'POST', body: JSON.stringify({ username, code, new_password }) }),
   recoveryRegenerate: () => req('/auth/recovery/regenerate', { method: 'POST' }),

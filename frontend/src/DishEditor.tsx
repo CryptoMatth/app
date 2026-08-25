@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard, Modal,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard, Modal, ScrollView,
 } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,23 +9,26 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/auth';
 
 type Ing = { name: string; quantity: string; unit: string };
 const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'q.b.'];
 
 type Props = {
   id?: string;
-  initialCourse?: 'primo' | 'secondo';
+  initialCourse?: string;
 };
 
-export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
+export default function DishEditor({ id, initialCourse }: Props) {
   const router = useRouter();
   const params = useLocalSearchParams<{ course?: string; id?: string }>();
+  const { prefs } = useAuth();
+  const courses = prefs.courses;
   const dishId = id || (params.id as string | undefined);
-  const startCourse = (params.course as 'primo' | 'secondo' | undefined) || initialCourse;
+  const startCourse = (params.course as string | undefined) || initialCourse || courses[0]?.id || 'primo';
 
   const [name, setName] = useState('');
-  const [course, setCourse] = useState<'primo' | 'secondo'>(startCourse);
+  const [course, setCourse] = useState<string>(startCourse);
   const [servings, setServings] = useState('1');
   const [ingredients, setIngredients] = useState<Ing[]>([{ name: '', quantity: '', unit: 'g' }]);
   const [preparation, setPreparation] = useState('');
@@ -153,13 +156,27 @@ export default function DishEditor({ id, initialCourse = 'primo' }: Props) {
           />
 
           <Text style={styles.label}>Portata</Text>
-          <View style={styles.seg}>
-            {(['primo', 'secondo'] as const).map(c => (
-              <Pressable key={c} testID={`course-${c}`} onPress={() => setCourse(c)} style={[styles.segBtn, course === c && styles.segBtnActive]}>
-                <Text style={[styles.segTxt, course === c && styles.segTxtActive]}>{c === 'primo' ? 'Primo' : 'Secondo'}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+          >
+            {courses.map(c => (
+              <Pressable
+                key={c.id}
+                testID={`course-${c.id}`}
+                onPress={() => setCourse(c.id)}
+                style={[styles.chip, course === c.id && styles.chipActive]}
+              >
+                <Text style={[styles.chipTxt, course === c.id && styles.chipTxtActive]}>{c.label}</Text>
               </Pressable>
             ))}
-          </View>
+            {!courses.find(c => c.id === course) && course ? (
+              <View style={[styles.chip, styles.chipActive]}>
+                <Text style={[styles.chipTxt, styles.chipTxtActive]}>{course}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
 
           <Text style={styles.label}>Porzioni della ricetta</Text>
           <TextInput
@@ -315,6 +332,19 @@ const styles = StyleSheet.create({
   segBtnActive: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
   segTxt: { fontSize: 14, color: theme.color.onSurfaceSecondary },
   segTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },
+  chipsRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  chipActive: {
+    backgroundColor: theme.color.brandTertiary,
+    borderColor: theme.color.brandPrimary,
+  },
+  chipTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
+  chipTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },
   ingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   unitBox: {},
   unitTrigger: {
