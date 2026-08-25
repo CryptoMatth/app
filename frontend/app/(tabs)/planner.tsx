@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl, Modal,
 } from 'react-native';
@@ -16,7 +16,8 @@ import {
   orderedDayLabels, parseIso, weekStartLabels,
 } from '@/src/week';
 
-type Slot = { dish_id: string; dish_name: string; course: string; persons: number };
+type SlotItem = { dish_id: string; dish_name: string; course: string; persons: number };
+type Slot = { items: SlotItem[] };
 type Plan = { week_start: string; slots: Record<string, Slot> };
 type WeekRow = { week_start: string; count: number };
 
@@ -25,32 +26,57 @@ const MEALS: { key: 'pranzo' | 'cena'; label: string; icon: any }[] = [
   { key: 'cena', label: 'Cena', icon: 'moon' },
 ];
 
+/** Extract items from a slot in either legacy or new shape. */
+function itemsOf(slot: any): SlotItem[] {
+  if (!slot) return [];
+  if (Array.isArray(slot.items)) return slot.items;
+  if (slot.dish_id) return [{
+    dish_id: slot.dish_id,
+    dish_name: slot.dish_name || '',
+    course: slot.course || '',
+    persons: slot.persons || 1,
+  }];
+  return [];
+}
+
 export default function Planner() {
   const { prefs } = useAuth();
   const startDay = prefs.week_start_day;
+  const isBiweekly = prefs.planner_span === 'biweekly';
+  const daysCount = isBiweekly ? 14 : 7;
+
   const dayLabelsFull = orderedDayLabels(startDay, true);
   const weekSubLabel = weekStartLabels(startDay);
+
   const [weekStart, setWeekStart] = useState(() => weekStartFor(new Date(), startDay));
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);       // first week
+  const [plan2, setPlan2] = useState<Plan | null>(null);     // second week (only if biweekly)
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [dupOpen, setDupOpen] = useState(false);
+  const [dupTargetWeek, setDupTargetWeek] = useState<string>('');
   const [availableWeeks, setAvailableWeeks] = useState<WeekRow[]>([]);
   const [dupLoading, setDupLoading] = useState(false);
   const router = useRouter();
+
+  const secondWeekStart = useMemo(() => addDays(weekStart, 7), [weekStart]);
 
   const load = useCallback(async () => {
     try {
       const p = await api.getPlanner(isoDate(weekStart));
       setPlan(p);
+      if (isBiweekly) {
+        const p2 = await api.getPlanner(isoDate(secondWeekStart));
+        setPlan2(p2);
+      } else {
+        setPlan2(null);
+      }
     } catch {}
     setLoading(false);
     setRefreshing(false);
-  }, [weekStart]);
+  }, [weekStart, isBiweekly, secondWeekStart]);
 
-  // If the user's week_start_day preference changes while on this screen,
-  // realign the current weekStart to the new anchor.
   useEffect(() => {
     setWeekStart(prev => weekStartFor(prev, startDay));
   }, [startDay]);
@@ -60,22 +86,27 @@ export default function Planner() {
 
   const goWeek = (delta: number) => {
     Haptics.selectionAsync();
-    setWeekStart(prev => addDays(prev, delta * 7));
+    // Jump by 7 or 14 days depending on span
+    setWeekStart(prev => addDays(prev, delta * daysCount));
   };
 
   const today = todayIndexInWeek(weekStart);
+  const todayInSecond = isBiweekly ? todayIndexInWeek(secondWeekStart) : null;
 
-  const openSlot = (dayIndex: number, meal: 'pranzo' | 'cena') => {
-    const slotKey = `${dayIndex}_${meal}`;
-    const cur = plan?.slots?.[slotKey];
+  const openSlot = (absDay: number, meal: 'pranzo' | 'cena') => {
+    const inSecondWeek = absDay >= 7;
+    const dayInWeek = inSecondWeek ? absDay - 7 : absDay;
+    const targetPlan = inSecondWeek ? plan2 : plan;
+    const targetWeekStart = inSecondWeek ? secondWeekStart : weekStart;
+    const cur = targetPlan?.slots?.[`${dayInWeek}_${meal}`];
+    const curItems = itemsOf(cur);
     router.push({
       pathname: '/planner-slot',
       params: {
-        weekStart: isoDate(weekStart),
-        dayIndex: String(dayIndex),
+        weekStart: isoDate(targetWeekStart),
+        dayIndex: String(dayInWeek),
         meal,
-        currentDishId: cur?.dish_id || '',
-        currentPersons: String(cur?.persons || 1),
+        initialItems: JSON.stringify(curItems),
       },
     });
   };
@@ -84,25 +115,36 @@ export default function Planner() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setDuplicating(true);
     try {
-      await api.duplicateWeek(sourceWeek, isoDate(weekStart));
+      await api.duplicateWeek(sourceWeek, dupTargetWeek);
       await load();
       setDupOpen(false);
     } catch (e) {}
     setDuplicating(false);
   };
 
-  const openDuplicatePicker = async () => {
+  const openDuplicatePicker = async (targetWeekIso: string) => {
     Haptics.selectionAsync();
+    setDupTargetWeek(targetWeekIso);
     setDupOpen(true);
     setDupLoading(true);
     try {
       const rows = await api.listPlannerWeeks();
-      // Exclude the current week itself
-      const current = isoDate(weekStart);
-      setAvailableWeeks(rows.filter((r: WeekRow) => r.week_start !== current));
+      setAvailableWeeks(rows.filter((r: WeekRow) => r.week_start !== targetWeekIso));
     } catch {}
     setDupLoading(false);
   };
+
+  const dupPeriodLabel = useMemo(() => {
+    if (!dupTargetWeek) return '';
+    return weekRangeLabel(parseIso(dupTargetWeek));
+  }, [dupTargetWeek]);
+
+  const rangeLabel = useMemo(() => {
+    if (!isBiweekly) return weekRangeLabel(weekStart);
+    const start = weekStart.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+    const end = addDays(weekStart, 13).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+    return `${start} – ${end}`;
+  }, [weekStart, isBiweekly]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="planner-screen">
@@ -119,7 +161,7 @@ export default function Planner() {
               <Text style={styles.headerIconTxt}>Oggi</Text>
             </Pressable>
             <Pressable
-              onPress={openDuplicatePicker}
+              onPress={() => openDuplicatePicker(isoDate(weekStart))}
               disabled={duplicating}
               style={styles.headerIconBtn}
               testID="duplicate-week-button"
@@ -140,8 +182,10 @@ export default function Planner() {
             <Feather name="chevron-left" size={20} color={theme.color.onSurface} />
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={styles.weekLabel}>{weekRangeLabel(weekStart)}</Text>
-            <Text style={styles.weekSub}>{weekSubLabel}</Text>
+            <Text style={styles.weekLabel}>{rangeLabel}</Text>
+            <Text style={styles.weekSub}>
+              {isBiweekly ? `${weekSubLabel} · 2 settimane` : weekSubLabel}
+            </Text>
           </View>
           <Pressable testID="week-next" onPress={() => goWeek(1)} style={styles.weekBtn}>
             <Feather name="chevron-right" size={20} color={theme.color.onSurface} />
@@ -160,47 +204,78 @@ export default function Planner() {
             storageKey={TutorialKeys.tipPlanner}
             icon="calendar"
             title="Pianifica il tuo menù settimanale"
-            body="Tocca uno slot Pranzo o Cena per assegnare un piatto. Gli ingredienti finiscono automaticamente nella Spesa."
+            body="Tocca uno slot Pranzo o Cena per assegnare uno o più piatti. Gli ingredienti finiscono automaticamente nella Spesa."
             testID="tip-planner"
           />
-          {Array.from({ length: 7 }).map((_, i) => {
-            const isToday = today === i;
+
+          {Array.from({ length: daysCount }).map((_, i) => {
+            const inSecondWeek = i >= 7;
+            const dayInWeek = inSecondWeek ? i - 7 : i;
+            const targetPlan = inSecondWeek ? plan2 : plan;
+            const isToday = inSecondWeek ? todayInSecond === dayInWeek : today === dayInWeek;
             const d = addDays(weekStart, i);
+
+            // Section divider between week 1 and week 2
+            const showWeekDivider = isBiweekly && i === 7;
+
             return (
-              <View key={i} style={[styles.day, isToday && styles.dayToday]} testID={`day-${i}`}>
-                <View style={styles.dayHeader}>
-                  <Text style={[styles.dayName, isToday && { color: theme.color.brandPrimary }]}>{dayLabelsFull[i]}</Text>
-                  <Text style={[styles.dayDate, isToday && { color: theme.color.brandPrimary }]}>
-                    {d.getDate().toString().padStart(2, '0')}/{(d.getMonth() + 1).toString().padStart(2, '0')}
-                    {isToday ? ' · oggi' : ''}
-                  </Text>
+              <View key={i}>
+                {showWeekDivider && (
+                  <View style={styles.weekDivider} testID="week-2-divider">
+                    <View style={styles.weekDividerLine} />
+                    <Text style={styles.weekDividerTxt}>Settimana 2 · {weekRangeLabel(secondWeekStart)}</Text>
+                    <View style={styles.weekDividerLine} />
+                  </View>
+                )}
+                <View style={[styles.day, isToday && styles.dayToday]} testID={`day-${i}`}>
+                  <View style={styles.dayHeader}>
+                    <Text style={[styles.dayName, isToday && { color: theme.color.brandPrimary }]}>{dayLabelsFull[dayInWeek]}</Text>
+                    <Text style={[styles.dayDate, isToday && { color: theme.color.brandPrimary }]}>
+                      {d.getDate().toString().padStart(2, '0')}/{(d.getMonth() + 1).toString().padStart(2, '0')}
+                      {isToday ? ' · oggi' : ''}
+                    </Text>
+                  </View>
+                  {MEALS.map(m => {
+                    const slot = targetPlan?.slots?.[`${dayInWeek}_${m.key}`];
+                    const its = itemsOf(slot);
+                    const filled = its.length > 0;
+                    return (
+                      <Pressable
+                        key={m.key}
+                        testID={`slot-${i}-${m.key}`}
+                        onPress={() => openSlot(i, m.key)}
+                        style={({ pressed }) => [styles.slot, filled && styles.slotFilled, pressed && { opacity: 0.9 }]}
+                      >
+                        <Feather name={m.icon} size={16} color={filled ? theme.color.brandSecondary : theme.color.onSurfaceTertiary} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.mealLabel}>{m.label}</Text>
+                          {filled ? (
+                            <>
+                              {its.map((it, idx) => {
+                                const label = prefs.courses.find(c => c.id === it.course)?.label || it.course;
+                                return (
+                                  <View key={`${it.dish_id}_${idx}`} style={styles.itemLine}>
+                                    <View style={styles.itemDot} />
+                                    <Text style={styles.itemName} numberOfLines={1}>{it.dish_name}</Text>
+                                    <Text style={styles.itemMeta}>{it.persons}p</Text>
+                                  </View>
+                                );
+                              })}
+                              {its.length === 1 && (
+                                <Text style={styles.dishMeta}>
+                                  {(prefs.courses.find(c => c.id === its[0].course)?.label) || its[0].course}
+                                </Text>
+                              )}
+                            </>
+                          ) : (
+                            <Text style={styles.slotEmpty}>Tocca per aggiungere uno o più piatti</Text>
+                          )}
+                        </View>
+                        <Feather name={filled ? 'edit-2' : 'plus'} size={16} color={theme.color.onSurfaceTertiary} />
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                {MEALS.map(m => {
-                  const slot = plan?.slots?.[`${i}_${m.key}`];
-                  const slotCourse = slot ? prefs.courses.find(c => c.id === slot.course)?.label : null;
-                  return (
-                    <Pressable
-                      key={m.key}
-                      testID={`slot-${i}-${m.key}`}
-                      onPress={() => openSlot(i, m.key)}
-                      style={({ pressed }) => [styles.slot, slot && styles.slotFilled, pressed && { opacity: 0.9 }]}
-                    >
-                      <Feather name={m.icon} size={16} color={slot ? theme.color.brandSecondary : theme.color.onSurfaceTertiary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.mealLabel}>{m.label}</Text>
-                        {slot ? (
-                          <>
-                            <Text style={styles.dishName}>{slot.dish_name}</Text>
-                            <Text style={styles.dishMeta}>{slot.persons} pers. · {slotCourse || slot.course}</Text>
-                          </>
-                        ) : (
-                          <Text style={styles.slotEmpty}>Tocca per aggiungere un piatto</Text>
-                        )}
-                      </View>
-                      <Feather name={slot ? 'edit-2' : 'plus'} size={16} color={theme.color.onSurfaceTertiary} />
-                    </Pressable>
-                  );
-                })}
               </View>
             );
           })}
@@ -222,7 +297,8 @@ export default function Planner() {
               </Pressable>
             </View>
             <Text style={styles.dupSub}>
-              Scegli quale settimana copiare in <Text style={{ fontWeight: '600' }}>{weekRangeLabel(weekStart)}</Text>.
+              Scegli quale settimana copiare in <Text style={{ fontWeight: '600' }}>{dupPeriodLabel}</Text>.
+              {isBiweekly ? ' Per la seconda settimana, ripeti l\'operazione.' : ''}
             </Text>
             {dupLoading ? (
               <View style={{ padding: theme.spacing.xl, alignItems: 'center' }}>
@@ -259,6 +335,15 @@ export default function Planner() {
                 })}
               </ScrollView>
             )}
+            {isBiweekly ? (
+              <View style={styles.dupSpanNote}>
+                <Feather name="info" size={12} color={theme.color.onSurfaceTertiary} />
+                <Text style={styles.dupSpanNoteTxt}>
+                  Attualmente l'operazione copia solo la settimana selezionata come destinazione.
+                  Per la seconda usa il pulsante “Duplica” accanto alla sua intestazione (o passa temporaneamente al Planner settimanale).
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -284,6 +369,15 @@ const styles = StyleSheet.create({
   weekLabel: { fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface },
   weekSub: { fontSize: 11, color: theme.color.onSurfaceTertiary, marginTop: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  weekDivider: {
+    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
+    marginVertical: theme.spacing.md,
+  },
+  weekDividerLine: { flex: 1, height: 1, backgroundColor: theme.color.border },
+  weekDividerTxt: {
+    fontSize: 11, color: theme.color.brandPrimary, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
   day: { borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, padding: theme.spacing.md, marginBottom: theme.spacing.md, backgroundColor: theme.color.surface },
   dayToday: { borderColor: theme.color.brandPrimary, borderWidth: 2, backgroundColor: theme.color.surfaceSecondary },
   dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: theme.spacing.sm },
@@ -295,10 +389,14 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.color.divider, borderStyle: 'dashed',
     marginBottom: theme.spacing.sm, backgroundColor: theme.color.surface,
   },
-  slotFilled: { borderStyle: 'solid', backgroundColor: theme.color.surface, borderColor: theme.color.border },
-  mealLabel: { fontSize: 11, color: theme.color.onSurfaceTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  slotFilled: { borderStyle: 'solid', backgroundColor: theme.color.surface, borderColor: theme.color.border, alignItems: 'flex-start' },
+  mealLabel: { fontSize: 11, color: theme.color.onSurfaceTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  itemLine: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 1 },
+  itemDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: theme.color.brandSecondary },
+  itemName: { flex: 1, fontSize: 14, color: theme.color.onSurface, fontWeight: '500' },
+  itemMeta: { fontSize: 11, color: theme.color.onSurfaceTertiary },
   dishName: { fontSize: 15, color: theme.color.onSurface, marginTop: 2, fontWeight: '500' },
-  dishMeta: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
+  dishMeta: { fontSize: 11, color: theme.color.onSurfaceTertiary, marginTop: 2 },
   slotEmpty: { fontSize: 13, color: theme.color.onSurfaceTertiary, marginTop: 2 },
   overlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
   dupCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, width: '100%', maxWidth: 420, borderWidth: 1, borderColor: theme.color.border, padding: theme.spacing.lg },
@@ -310,4 +408,6 @@ const styles = StyleSheet.create({
   dupRowT: { fontFamily: theme.font.display, fontSize: 15, color: theme.color.onSurface },
   dupRowS: { fontSize: 11, color: theme.color.onSurfaceTertiary, marginTop: 2 },
   dupEmpty: { fontSize: 13, color: theme.color.onSurfaceTertiary, marginTop: 8, textAlign: 'center' },
+  dupSpanNote: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.sm, paddingHorizontal: 4, alignItems: 'flex-start' },
+  dupSpanNoteTxt: { flex: 1, fontSize: 11, color: theme.color.onSurfaceTertiary, lineHeight: 15 },
 });

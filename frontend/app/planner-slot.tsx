@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput,
+  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -12,24 +12,35 @@ import { theme } from '@/src/theme';
 import { orderedDayLabels } from '@/src/week';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[] };
+type Item = { dish_id: string; dish_name: string; course: string; persons: number };
 
 export default function PlannerSlot() {
   const router = useRouter();
   const { prefs } = useAuth();
   const courses = prefs.courses;
-  const { weekStart, dayIndex, meal, currentDishId, currentPersons } =
-    useLocalSearchParams<{ weekStart: string; dayIndex: string; meal: 'pranzo' | 'cena'; currentDishId?: string; currentPersons?: string }>();
+  const {
+    weekStart, dayIndex, meal, initialItems,
+  } = useLocalSearchParams<{
+    weekStart: string; dayIndex: string; meal: 'pranzo' | 'cena';
+    initialItems?: string;
+  }>();
 
+  // Selected items in composition tray
+  const [items, setItems] = useState<Item[]>(() => {
+    try { return initialItems ? JSON.parse(initialItems as string) as Item[] : []; }
+    catch { return []; }
+  });
+
+  // Dish picker state
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<string>(courses[0]?.id || 'primo');
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState<string | null>((currentDishId as string) || null);
-  const [persons, setPersons] = useState<number>(parseInt((currentPersons as string) || '1') || 1);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
         const list = await api.listDishes({ course: tab, q: q || undefined });
         setDishes(list);
@@ -38,23 +49,47 @@ export default function PlannerSlot() {
     })();
   }, [tab, q]);
 
-  const save = async (dishId: string | null) => {
+  const dayLabel = orderedDayLabels(prefs.week_start_day, true)[parseInt(dayIndex as string)] || '';
+
+  const addDish = (d: Dish) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setItems(prev => [...prev, {
+      dish_id: d.id,
+      dish_name: d.name,
+      course: d.course,
+      persons: 1,
+    }]);
+  };
+
+  const removeItem = (idx: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const changePersons = (idx: number, delta: number) => {
+    Haptics.selectionAsync();
+    setItems(prev => prev.map((it, i) =>
+      i === idx ? { ...it, persons: Math.max(1, it.persons + delta) } : it
+    ));
+  };
+
+  const save = async () => {
     setSaving(true);
     try {
       await api.updateSlot({
         week_start: weekStart,
         day_index: parseInt(dayIndex as string),
         meal,
-        dish_id: dishId,
-        persons,
+        items: items.map(it => ({ dish_id: it.dish_id, persons: it.persons })),
       });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch {}
     setSaving(false);
   };
 
-  const dayLabel = orderedDayLabels(prefs.week_start_day, true)[parseInt(dayIndex as string)] || '';
+  const usedIds = useMemo(() => new Set(items.map(i => i.dish_id)), [items]);
+  const hasItems = items.length > 0;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="planner-slot-screen">
@@ -64,24 +99,64 @@ export default function PlannerSlot() {
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.hTitle}>{dayLabel}</Text>
-          <Text style={styles.hSub}>{meal === 'pranzo' ? 'Pranzo' : 'Cena'}</Text>
+          <Text style={styles.hSub}>{meal === 'pranzo' ? 'Pranzo' : 'Cena'} · {items.length} piatti</Text>
         </View>
         <View style={styles.hBtn} />
       </View>
 
-      <View style={styles.personsRow}>
-        <Text style={styles.personsLabel}>Persone:</Text>
-        <View style={styles.personsCtl}>
-          <Pressable onPress={() => setPersons(p => Math.max(1, p - 1))} style={styles.personsBtn} testID="persons-minus">
-            <Feather name="minus" size={18} color={theme.color.onSurface} />
-          </Pressable>
-          <Text style={styles.personsCount} testID="persons-count">{persons}</Text>
-          <Pressable onPress={() => setPersons(p => p + 1)} style={styles.personsBtn} testID="persons-plus">
-            <Feather name="plus" size={18} color={theme.color.onSurface} />
-          </Pressable>
+      {/* Composition tray */}
+      <View style={styles.tray}>
+        <View style={styles.trayHeader}>
+          <Text style={styles.trayTitle}>Composizione del pasto</Text>
+          <Text style={styles.trayHint}>Aggiungi più piatti scorrendo sotto</Text>
         </View>
+
+        {items.length === 0 ? (
+          <View style={styles.trayEmpty}>
+            <Feather name="inbox" size={22} color={theme.color.borderStrong} />
+            <Text style={styles.trayEmptyTxt}>Nessun piatto aggiunto</Text>
+            <Text style={styles.trayEmptySub}>Scegli dai tuoi piatti qui sotto</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.trayScroll}
+          >
+            {items.map((it, idx) => {
+              const courseLabel = courses.find(c => c.id === it.course)?.label || it.course;
+              return (
+                <View key={`${it.dish_id}_${idx}`} style={styles.itemCard} testID={`tray-item-${idx}`}>
+                  <View style={styles.itemHead}>
+                    <Text style={styles.itemCourse}>{courseLabel}</Text>
+                    <Pressable onPress={() => removeItem(idx)} hitSlop={8} testID={`tray-remove-${idx}`}>
+                      <Feather name="x" size={16} color={theme.color.onSurfaceTertiary} />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.itemName} numberOfLines={2}>{it.dish_name}</Text>
+                  <View style={styles.itemPersons}>
+                    <Pressable
+                      onPress={() => changePersons(idx, -1)}
+                      style={styles.pBtn} testID={`tray-minus-${idx}`}
+                    >
+                      <Feather name="minus" size={14} color={theme.color.onSurface} />
+                    </Pressable>
+                    <Text style={styles.pCount}>{it.persons}p</Text>
+                    <Pressable
+                      onPress={() => changePersons(idx, 1)}
+                      style={styles.pBtn} testID={`tray-plus-${idx}`}
+                    >
+                      <Feather name="plus" size={14} color={theme.color.onSurface} />
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
+      {/* Dish picker */}
       <View style={styles.searchBar}>
         <Feather name="search" size={16} color={theme.color.onSurfaceTertiary} />
         <TextInput
@@ -121,38 +196,53 @@ export default function PlannerSlot() {
           <Text style={styles.emptySub}>Aggiungilo prima nel tab Piatti.</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}>
-          {dishes.map(d => (
-            <Pressable
-              key={d.id}
-              testID={`select-dish-${d.id}`}
-              onPress={() => setSelected(d.id)}
-              style={[styles.dishRow, selected === d.id && styles.dishRowActive]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dishName}>{d.name}</Text>
-                <Text style={styles.dishMeta}>{d.ingredients?.length || 0} ingredienti</Text>
-              </View>
-              {selected === d.id && <Feather name="check" size={20} color={theme.color.brandPrimary} />}
-            </Pressable>
-          ))}
-        </ScrollView>
+        <FlatList
+          data={dishes}
+          keyExtractor={(d) => d.id}
+          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}
+          renderItem={({ item: d }) => {
+            const already = usedIds.has(d.id);
+            return (
+              <Pressable
+                testID={`select-dish-${d.id}`}
+                onPress={() => addDish(d)}
+                style={[styles.dishRow, already && styles.dishRowActive]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dishName}>{d.name}</Text>
+                  <Text style={styles.dishMeta}>
+                    {d.ingredients?.length || 0} ingredienti
+                    {already ? ' · già in composizione' : ''}
+                  </Text>
+                </View>
+                <View style={styles.addChip}>
+                  <Feather name="plus" size={16} color={theme.color.brandPrimary} />
+                </View>
+              </Pressable>
+            );
+          }}
+          ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
+        />
       )}
 
       <View style={styles.footer}>
-        {currentDishId ? (
-          <Pressable onPress={() => save(null)} style={styles.clearBtn} testID="slot-clear">
+        {hasItems ? (
+          <Pressable onPress={() => setItems([])} style={styles.clearBtn} testID="slot-clear">
             <Feather name="trash-2" size={16} color={theme.color.error} />
-            <Text style={styles.clearTxt}>Rimuovi</Text>
+            <Text style={styles.clearTxt}>Svuota</Text>
           </Pressable>
         ) : null}
         <Pressable
-          onPress={() => selected && save(selected)}
-          disabled={!selected || saving}
-          style={[styles.saveBtn, !selected && { opacity: 0.5 }]}
+          onPress={save}
+          disabled={saving}
+          style={styles.saveBtn}
           testID="slot-save"
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>Salva</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : (
+            <Text style={styles.saveTxt}>
+              {hasItems ? `Salva (${items.length} piatti)` : 'Salva (svuota slot)'}
+            </Text>
+          )}
         </Pressable>
       </View>
     </SafeAreaView>
@@ -165,11 +255,45 @@ const styles = StyleSheet.create({
   hBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   hTitle: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface },
   hSub: { fontSize: 12, color: theme.color.onSurfaceTertiary, marginTop: 2 },
-  personsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.color.divider },
-  personsLabel: { fontSize: 14, color: theme.color.onSurface, fontWeight: '500' },
-  personsCtl: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4 },
-  personsBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
-  personsCount: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, minWidth: 32, textAlign: 'center' },
+
+  tray: {
+    backgroundColor: theme.color.surfaceSecondary,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1, borderBottomColor: theme.color.divider,
+  },
+  trayHeader: { paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm },
+  trayTitle: { fontFamily: theme.font.display, fontSize: 14, color: theme.color.onSurface },
+  trayHint: { fontSize: 11, color: theme.color.onSurfaceTertiary, marginTop: 2 },
+  trayEmpty: {
+    alignItems: 'center', paddingVertical: theme.spacing.md, gap: 4,
+  },
+  trayEmptyTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
+  trayEmptySub: { fontSize: 11, color: theme.color.onSurfaceTertiary },
+  trayScroll: { paddingHorizontal: theme.spacing.lg, gap: 10, paddingVertical: 2 },
+  itemCard: {
+    width: 160, backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
+    padding: theme.spacing.sm, gap: 4,
+  },
+  itemHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  itemCourse: {
+    fontSize: 10, color: theme.color.brandPrimary, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  itemName: { fontSize: 13, color: theme.color.onSurface, fontWeight: '500', minHeight: 34 },
+  itemPersons: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderRadius: theme.radius.pill, padding: 3,
+    marginTop: 4, alignSelf: 'flex-start',
+  },
+  pBtn: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pCount: { fontFamily: theme.font.display, fontSize: 13, color: theme.color.onSurface, minWidth: 26, textAlign: 'center' },
+
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.md, marginHorizontal: theme.spacing.lg, paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.md, height: 44 },
   search: { flex: 1, fontSize: 15, color: theme.color.onSurface },
   seg: { backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, padding: 4, marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.md, minHeight: 42 },
@@ -180,10 +304,20 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.xl },
   emptyTxt: { fontSize: 15, color: theme.color.onSurfaceSecondary },
   emptySub: { fontSize: 12, color: theme.color.onSurfaceTertiary, marginTop: 4 },
-  dishRow: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface, marginBottom: theme.spacing.sm },
-  dishRowActive: { borderColor: theme.color.brandPrimary, borderWidth: 2, backgroundColor: theme.color.surfaceSecondary },
+  dishRow: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
+    backgroundColor: theme.color.surface,
+  },
+  dishRowActive: { borderColor: theme.color.brandSecondary, backgroundColor: '#E5EDDF' },
   dishName: { fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface },
   dishMeta: { fontSize: 12, color: theme.color.onSurfaceTertiary, marginTop: 2 },
+  addChip: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: theme.color.brandTertiary,
+    alignItems: 'center', justifyContent: 'center',
+  },
   footer: { flexDirection: 'row', gap: 10, padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.color.divider, backgroundColor: theme.color.surface },
   clearBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: theme.spacing.lg, backgroundColor: theme.color.surfaceSecondary, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.color.border },
   clearTxt: { color: theme.color.error, fontWeight: '500' },

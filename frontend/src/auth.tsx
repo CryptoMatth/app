@@ -2,8 +2,10 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { api, clearToken, setToken, getToken } from './api';
 
 export type Course = { id: string; label: string };
+export type PlannerSpan = 'weekly' | 'biweekly';
 export type UserPreferences = {
   week_start_day: number; // 0=Mon..6=Sun
+  planner_span: PlannerSpan;
   courses: Course[];
 };
 export type User = {
@@ -14,6 +16,7 @@ export type User = {
 
 const DEFAULT_PREFS: UserPreferences = {
   week_start_day: 5,
+  planner_span: 'weekly',
   courses: [
     { id: 'primo', label: 'Primo' },
     { id: 'secondo', label: 'Secondo' },

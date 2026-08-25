@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 12: backend-only testing of multi-item planner slots + biweekly planner_span preference. 22/22 new tests pass and 26/26 iteration-11 regression tests still pass (48/48 combined). Preference `planner_span` defaults to 'weekly', accepts 'biweekly', rejects invalid values with 422, appears in /auth/me, and works in combined updates with week_start_day + courses (and partial updates don't reset other fields). Multi-item PUT /api/planner/slot correctly saves items, resolves dish_name/course/persons per item, aggregates ingredients across items in shopping list (scaled by persons/servings), gracefully ignores non-existent dish_ids without failing the whole request, clears the slot when items=[] or items=null with no dish_id, and clears the slot when ALL requested dish_ids are missing. Legacy single-dish body still works and is wrapped as items[0]. Updating a slot removes previous ingredient contributions and adds the new ones. Duplicate week with a 3-dish slot correctly copies items and adds shopping contributions on the target week (source contributions are preserved). Duplicate overwrites target slots and their previous shopping contributions. Lazy migration: a legacy flat slot (with dish_id at top level) injected directly in MongoDB is normalized to the {items:[...]} shape by GET /planner/{week}. GET /planner-weeks lists only weeks with items after normalization. Auth guard on planner endpoints still enforced (401 without Bearer). Full iteration-11 regression (auth register/login/me/logout, recovery/verify, preferences CRUD and validation, dishes CRUD + duplicate + custom course + filter, shopping CRUD + reorder + toggle + clear-checked, export/import, cross-user isolation, admin stats/users/detail/password-reset/delete/export-json/export-csv) still passing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_multi_items.py",
+    "/app/backend/tests/test_iteration11_admin_prefs.py",
+    "/app/test_reports/pytest/pytest_iteration12.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:_remove_planner_source_from_shopping iterates ALL user shopping items and rewrites them each time a slot changes; fine at current scale but O(N) per slot update. If a user ever has hundreds of shopping items or you support bulk slot updates, consider a targeted query on `sources.week_start`/`day_index`/`meal` before rewriting.",
+    "server.py:update_slot inserts the plan doc first (line 834) and then always attempts a $set/$unset; on the very first call for a week the initial insert stores empty slots, which is fine but produces two writes. Minor perf detail only.",
+    "server.py:duplicate_week deletes the whole target plan document before re-inserting; if source has empty slots after normalization, target ends up as a plan with slots={} (not fully absent). Not harmful but slightly asymmetric with the empty-planner return path (which returns an in-memory empty doc without inserting).",
+    "server.py:_normalize_slot silently drops legacy slots with neither `items` nor `dish_id` (returns items=[]) and _normalize_slots filters those out — correct behavior, but there is no admin telemetry if this happens. Consider logging a warning in the branch that receives an unknown slot shape.",
+    "server.py:PlannerSlotItem accepts `persons` unbounded on the low side (Pydantic default int=1 but no `ge=1`); update_slot clamps with max(1, ...) which is defensive but the model itself should probably declare `persons: int = Field(1, ge=1)` for clearer 422s.",
+    "server.py file is now 1268 lines — still under the 2000 threshold but approaching the point where you should split routers (planner, shopping, admin, auth, dishes) into modules for maintainability.",
+    "Prior iteration-11 comments still stand: admin.require_admin should use secrets.compare_digest; /auth/password does not invalidate other sessions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_multi_items.py"
+  ],
+  "success_rate": {"backend": "100% (48/48 combined; 22/22 new iteration-12)", "frontend": "not tested (backend only requested)"},
+  "seed_data_creation": "Each test registers a fresh ephemeral user with a random timestamp/uuid-suffixed username (prefixes: psp/pspme/pspb/pspw/pspi/pspc/psppa/mi1/mi2/mi3/mi4/mish/miag/mimd/miam/miup/dup/dupo/lazy/regE/regW). One test seeds a legacy-shape slot directly in MongoDB via motor to verify lazy migration. No cleanup performed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration-12 focused suite: /app/backend/tests/test_iteration12_multi_items.py (22 tests, ~50s). Iteration-11 regression: /app/backend/tests/test_iteration11_admin_prefs.py (26 tests). Combined they run in ~102s under pytest-xdist. During parallel runs the public URL (meal-prep-master-2.preview.emergentagent.com) occasionally times out (~5-10% of the time) — retry once before treating as a real failure. Base URL is read from EXPO_BACKEND_URL / EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env. Admin password from ADMIN_PASSWORD env var. New preference field: `planner_span` (weekly|biweekly, default weekly) — expected in /auth/me and /auth/preferences. Slot shape on the wire is always {items:[{dish_id,dish_name,course,persons}]}; legacy client PUT with top-level dish_id/persons still accepted (wrapped as items[0]). Missing dish_ids are silently dropped, not 404.",
+  "rca_of_issue": "N/A - no issues found. One transient ConnectTimeout on the public URL during parallel run; retrying the single test passed in 4.93s. Considered infrastructure flake, not a code bug."
+}

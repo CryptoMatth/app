@@ -87,6 +87,7 @@ DEFAULT_COURSES: List[Dict[str, Any]] = [
 # 0 = Monday, 6 = Sunday (Python weekday convention).
 # Historically PlanEat starts weeks on Saturday (=5).
 DEFAULT_WEEK_START_DAY = 5
+DEFAULT_PLANNER_SPAN = "weekly"  # "weekly" (7d) or "biweekly" (14d)
 
 
 def _course_id(label: str) -> str:
@@ -97,6 +98,7 @@ def _course_id(label: str) -> str:
 def _default_prefs() -> Dict[str, Any]:
     return {
         "week_start_day": DEFAULT_WEEK_START_DAY,
+        "planner_span": DEFAULT_PLANNER_SPAN,
         "courses": [dict(c) for c in DEFAULT_COURSES],
     }
 
@@ -140,10 +142,18 @@ class DuplicateWeekBody(BaseModel):
     target_week_start: str
 
 
+class PlannerSlotItem(BaseModel):
+    dish_id: str
+    persons: int = 1
+
+
 class PlannerSlotUpdate(BaseModel):
     week_start: str
     day_index: int
     meal: Literal["pranzo", "cena"]
+    # New (preferred) multi-dish form:
+    items: Optional[List[PlannerSlotItem]] = None
+    # Legacy single-dish form (still supported for old clients):
     dish_id: Optional[str] = None
     persons: int = 1
 
@@ -166,6 +176,7 @@ class CourseItem(BaseModel):
 
 class PreferencesBody(BaseModel):
     week_start_day: Optional[int] = None  # 0=Mon..6=Sun
+    planner_span: Optional[Literal["weekly", "biweekly"]] = None
     courses: Optional[List[CourseItem]] = None
 
 
@@ -318,6 +329,8 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     # Backfill any missing keys (older accounts predating prefs)
     if "week_start_day" not in prefs:
         prefs["week_start_day"] = DEFAULT_WEEK_START_DAY
+    if "planner_span" not in prefs:
+        prefs["planner_span"] = DEFAULT_PLANNER_SPAN
     if not prefs.get("courses"):
         prefs["courses"] = [dict(c) for c in DEFAULT_COURSES]
     return {
@@ -530,6 +543,8 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         if body.week_start_day < 0 or body.week_start_day > 6:
             raise HTTPException(422, "week_start_day deve essere tra 0 (Lun) e 6 (Dom)")
         prefs["week_start_day"] = int(body.week_start_day)
+    if body.planner_span is not None:
+        prefs["planner_span"] = body.planner_span
     if body.courses is not None:
         # Enforce at least one course and unique ids
         if len(body.courses) == 0:
@@ -734,6 +749,38 @@ async def _remove_planner_source_from_shopping(user_id: str, week_start: str, da
                     {"$set": {"sources": remaining, "planner_qty": new_planner_qty}},
                 )
 
+def _normalize_slot(slot: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Return a slot in the new `{items: [...]}` form.
+
+    Historical slots stored a single dish flat on the slot object:
+        {dish_id, dish_name, course, persons}
+    New slots use:
+        {items: [{dish_id, dish_name, course, persons}]}
+    We normalize on read so clients only deal with the new shape.
+    """
+    if not slot:
+        return None
+    if isinstance(slot.get("items"), list):
+        return {"items": [dict(x) for x in slot["items"]]}
+    if slot.get("dish_id"):
+        return {"items": [{
+            "dish_id": slot["dish_id"],
+            "dish_name": slot.get("dish_name", ""),
+            "course": slot.get("course", ""),
+            "persons": int(slot.get("persons") or 1),
+        }]}
+    return {"items": []}
+
+
+def _normalize_slots(slots: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for k, v in (slots or {}).items():
+        norm = _normalize_slot(v)
+        if norm and norm["items"]:
+            out[k] = norm
+    return out
+
+
 @api_router.get("/planner-weeks")
 async def list_planner_weeks(current_user=Depends(get_current_user)):
     """List all weeks that have any slots, most recent first, for the duplicate picker."""
@@ -742,10 +789,12 @@ async def list_planner_weeks(current_user=Depends(get_current_user)):
         {"_id": 0, "week_start": 1, "slots": 1},
     ).sort("week_start", -1)
     rows = await cursor.to_list(200)
-    return [
-        {"week_start": r["week_start"], "count": len(r.get("slots", {}))}
-        for r in rows if r.get("slots")
-    ]
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        norm = _normalize_slots(r.get("slots", {}) or {})
+        if norm:
+            out.append({"week_start": r["week_start"], "count": len(norm)})
+    return out
 
 
 
@@ -759,6 +808,7 @@ async def get_planner(week_start: str, current_user=Depends(get_current_user)):
         # 7 days x 2 meals, empty
         empty = {"user_id": current_user["user_id"], "week_start": week_start, "slots": {}}
         return empty
+    plan["slots"] = _normalize_slots(plan.get("slots", {}) or {})
     return plan
 
 
@@ -766,33 +816,62 @@ async def get_planner(week_start: str, current_user=Depends(get_current_user)):
 async def update_slot(body: PlannerSlotUpdate, current_user=Depends(get_current_user)):
     user_id = current_user["user_id"]
     slot_key = f"{body.day_index}_{body.meal}"
+
+    # Resolve new items list (multi form takes priority, else legacy single, else empty)
+    new_items: List[Dict[str, Any]] = []
+    if body.items is not None:
+        for it in body.items:
+            if not it.dish_id:
+                continue
+            new_items.append({"dish_id": it.dish_id, "persons": max(1, int(it.persons or 1))})
+    elif body.dish_id:
+        new_items.append({"dish_id": body.dish_id, "persons": max(1, int(body.persons or 1))})
+
+    # Ensure plan doc exists
     plan = await db.weekly_plans.find_one({"user_id": user_id, "week_start": body.week_start}, {"_id": 0})
     if not plan:
         plan = {"user_id": user_id, "week_start": body.week_start, "slots": {}}
         await db.weekly_plans.insert_one(dict(plan))
 
-    old_slot = plan.get("slots", {}).get(slot_key)
-    # Remove old slot's contribution
-    if old_slot:
+    # Always clear existing shopping contributions of that slot (whatever shape it had)
+    if plan.get("slots", {}).get(slot_key):
         await _remove_planner_source_from_shopping(user_id, body.week_start, body.day_index, body.meal)
 
-    if body.dish_id:
-        dish = await db.dishes.find_one({"id": body.dish_id, "user_id": user_id}, {"_id": 0})
-        if not dish:
-            raise HTTPException(404, "Piatto non trovato")
-        new_slot = {"dish_id": body.dish_id, "dish_name": dish["name"], "course": dish["course"],
-                    "persons": max(1, body.persons)}
-        await db.weekly_plans.update_one(
-            {"user_id": user_id, "week_start": body.week_start},
-            {"$set": {f"slots.{slot_key}": new_slot}},
-        )
-        await _add_dish_to_shopping(user_id, body.week_start, body.day_index, body.meal, dish, body.persons)
+    if new_items:
+        # Fetch dish docs, add contributions, and persist slot
+        resolved_items: List[Dict[str, Any]] = []
+        for it in new_items:
+            dish = await db.dishes.find_one({"id": it["dish_id"], "user_id": user_id}, {"_id": 0})
+            if not dish:
+                # Ignore missing dishes gracefully rather than 404 the whole update
+                continue
+            resolved_items.append({
+                "dish_id": dish["id"],
+                "dish_name": dish["name"],
+                "course": dish.get("course", ""),
+                "persons": it["persons"],
+            })
+            await _add_dish_to_shopping(user_id, body.week_start, body.day_index, body.meal, dish, it["persons"])
+        if not resolved_items:
+            # All requested dishes missing → unset slot
+            await db.weekly_plans.update_one(
+                {"user_id": user_id, "week_start": body.week_start},
+                {"$unset": {f"slots.{slot_key}": ""}},
+            )
+        else:
+            await db.weekly_plans.update_one(
+                {"user_id": user_id, "week_start": body.week_start},
+                {"$set": {f"slots.{slot_key}": {"items": resolved_items}}},
+            )
     else:
         await db.weekly_plans.update_one(
             {"user_id": user_id, "week_start": body.week_start},
             {"$unset": {f"slots.{slot_key}": ""}},
         )
+
     plan = await db.weekly_plans.find_one({"user_id": user_id, "week_start": body.week_start}, {"_id": 0})
+    if plan:
+        plan["slots"] = _normalize_slots(plan.get("slots", {}) or {})
     return plan
 
 
@@ -811,20 +890,26 @@ async def duplicate_week(body: DuplicateWeekBody, current_user=Depends(get_curre
             await _remove_planner_source_from_shopping(user_id, body.target_week_start, int(day_index), meal)
         await db.weekly_plans.delete_one({"user_id": user_id, "week_start": body.target_week_start})
 
-    # Create new target from source slots
-    new_slots = dict(source.get("slots", {}))
+    # Normalize source slots to items form, then persist to target
+    src_slots = _normalize_slots(source.get("slots", {}) or {})
     await db.weekly_plans.insert_one({
         "user_id": user_id,
         "week_start": body.target_week_start,
-        "slots": new_slots,
+        "slots": src_slots,
     })
-    # Add ingredients for each slot
-    for slot_key, slot in new_slots.items():
-        day_index, meal = slot_key.split("_")
-        dish = await db.dishes.find_one({"id": slot["dish_id"], "user_id": user_id}, {"_id": 0})
-        if dish:
-            await _add_dish_to_shopping(user_id, body.target_week_start, int(day_index), meal, dish, slot.get("persons", 2))
+    # Add ingredients for each item in each slot
+    for slot_key, slot in src_slots.items():
+        day_index_str, meal = slot_key.split("_")
+        day_index = int(day_index_str)
+        for it in slot.get("items", []):
+            dish = await db.dishes.find_one({"id": it["dish_id"], "user_id": user_id}, {"_id": 0})
+            if dish:
+                await _add_dish_to_shopping(
+                    user_id, body.target_week_start, day_index, meal, dish, int(it.get("persons") or 1)
+                )
     plan = await db.weekly_plans.find_one({"user_id": user_id, "week_start": body.target_week_start}, {"_id": 0})
+    if plan:
+        plan["slots"] = _normalize_slots(plan.get("slots", {}) or {})
     return plan
 
 

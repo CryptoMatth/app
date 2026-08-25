@@ -19,12 +19,17 @@ export default function PreferencesSettings() {
   const { prefs, updatePreferences } = useAuth();
 
   const [weekStart, setWeekStart] = useState<number>(prefs.week_start_day);
+  const [span, setSpan] = useState<'weekly' | 'biweekly'>(prefs.planner_span);
   const [courses, setCourses] = useState<Course[]>(prefs.courses);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [editing, setEditing] = useState<{ index: number | null; label: string } | null>(null);
 
-  useEffect(() => { setWeekStart(prefs.week_start_day); setCourses(prefs.courses); }, [prefs]);
+  useEffect(() => {
+    setWeekStart(prefs.week_start_day);
+    setSpan(prefs.planner_span);
+    setCourses(prefs.courses);
+  }, [prefs]);
   useEffect(() => {
     if (!msg) return;
     const t = setTimeout(() => setMsg(null), 4000);
@@ -33,20 +38,21 @@ export default function PreferencesSettings() {
 
   const dirty = useMemo(() => {
     if (weekStart !== prefs.week_start_day) return true;
+    if (span !== prefs.planner_span) return true;
     if (courses.length !== prefs.courses.length) return true;
     for (let i = 0; i < courses.length; i++) {
       if (courses[i].label !== prefs.courses[i]?.label) return true;
       if (courses[i].id !== prefs.courses[i]?.id) return true;
     }
     return false;
-  }, [weekStart, courses, prefs]);
+  }, [weekStart, span, courses, prefs]);
 
   const save = async () => {
     Keyboard.dismiss();
     setBusy(true);
     setMsg(null);
     try {
-      await updatePreferences({ week_start_day: weekStart, courses });
+      await updatePreferences({ week_start_day: weekStart, planner_span: span, courses });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMsg({ kind: 'ok', text: 'Preferenze salvate.' });
     } catch (e: any) {
@@ -143,6 +149,36 @@ export default function PreferencesSettings() {
                   testID={`day-chip-${o.value}`}
                 >
                   <Text style={[styles.dayChipTxt, active && styles.dayChipTxtActive]}>{o.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Planner span */}
+        <View style={s.section}>
+          <Text style={s.sectionH}>Durata del Planner</Text>
+          <Text style={s.sectionSub}>
+            Scegli se pianificare una settimana alla volta o due settimane in un colpo solo.
+          </Text>
+          <View style={styles.spanRow}>
+            {([
+              { key: 'weekly', label: 'Settimanale', sub: '7 giorni', icon: 'calendar' as const },
+              { key: 'biweekly', label: 'Bi-settimanale', sub: '14 giorni', icon: 'columns' as const },
+            ]).map(o => {
+              const active = span === o.key;
+              return (
+                <Pressable
+                  key={o.key}
+                  onPress={() => { Haptics.selectionAsync(); setSpan(o.key as any); }}
+                  style={[styles.spanCard, active && styles.spanCardActive]}
+                  testID={`span-${o.key}`}
+                >
+                  <View style={[styles.spanIcon, active && { backgroundColor: theme.color.brandPrimary }]}>
+                    <Feather name={o.icon} size={18} color={active ? '#fff' : theme.color.brandPrimary} />
+                  </View>
+                  <Text style={[styles.spanLabel, active && { color: theme.color.brandPrimary, fontWeight: '700' }]}>{o.label}</Text>
+                  <Text style={styles.spanSub}>{o.sub}</Text>
                 </Pressable>
               );
             })}
@@ -264,6 +300,23 @@ const styles = StyleSheet.create({
   },
   dayChipTxt: { fontSize: 14, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
   dayChipTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },
+  spanRow: { flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm },
+  spanCard: {
+    flex: 1, padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
+    alignItems: 'flex-start', gap: 6,
+  },
+  spanCardActive: {
+    borderColor: theme.color.brandPrimary, borderWidth: 2,
+    backgroundColor: theme.color.brandTertiary,
+  },
+  spanIcon: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: theme.color.brandTertiary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  spanLabel: { fontSize: 14, color: theme.color.onSurface, fontWeight: '600' },
+  spanSub: { fontSize: 11, color: theme.color.onSurfaceTertiary },
   courseRow: {
     flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
     backgroundColor: theme.color.surface,

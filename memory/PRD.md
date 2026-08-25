@@ -30,8 +30,16 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 
 ## Preferenze utente (giu 2026)
 - `week_start_day` (0=Lun..6=Dom, default 5=Sab): il Planner ordina i 7 giorni partendo da qui
+- `planner_span` (`weekly` | `biweekly`, default `weekly`): scelta tra 7 giorni o 14 giorni di pianificazione
 - `courses` (lista `{id, label}`): categorie personalizzabili per i piatti; default Primo/Secondo/Contorno/Dolce; possibilità di aggiungerne di custom (es. Antipasto, Colazione)
 - Il campo `course` sui piatti è ora una stringa libera; l'id viene generato dalla label
+
+## Multi-piatto per pasto (giu 2026)
+- Ogni slot Pranzo/Cena può contenere N piatti, ciascuno con proprio numero di persone
+- Schema DB: `slots[key] = {items: [{dish_id, dish_name, course, persons}, …]}`
+- Normalizzazione lazy: gli slot legacy (`{dish_id, ...}` piatti) vengono convertiti a `items[0]` al primo GET
+- L'API `PUT /planner/slot` accetta sia la nuova forma (`items: []`) che la vecchia (`dish_id/persons`) per retro-compat
+- Ogni item contribuisce indipendentemente alla lista Spesa; rimuovendo un piatto rimuoviamo solo la sua quota
 
 ## Admin (giu 2026)
 - Endpoint sotto `/api/admin/*` protetti da header `X-Admin-Password` (variabile env `ADMIN_PASSWORD` in `backend/.env`)
