@@ -54,12 +54,28 @@ const SLIDES: Slide[] = [
     bulletKeys: ['tut.s4.b1', 'tut.s4.b2', 'tut.s4.b3'],
   },
   {
+    icon: 'package',
+    color: theme.color.brandSecondary,
+    bg: '#E5EDDF',
+    titleKey: 'tut.s6.title',
+    bodyKey: 'tut.s6.body',
+    bulletKeys: ['tut.s6.b1', 'tut.s6.b2', 'tut.s6.b3'],
+  },
+  {
     icon: 'shield',
     color: theme.color.brandSecondary,
     bg: '#E5EDDF',
     titleKey: 'tut.s5.title',
     bodyKey: 'tut.s5.body',
     bulletKeys: ['tut.s5.b1', 'tut.s5.b2', 'tut.s5.b3'],
+  },
+  {
+    icon: 'star',
+    color: theme.color.brand,
+    bg: '#F5E8D8',
+    titleKey: 'tut.s7.title',
+    bodyKey: 'tut.s7.body',
+    bulletKeys: ['tut.s7.b1', 'tut.s7.b2', 'tut.s7.b3', 'tut.s7.b4'],
   },
 ];
 
@@ -125,21 +141,26 @@ export default function Tutorial() {
       >
         {SLIDES.map((sl, i) => (
           <View key={i} style={[styles.slide, { width }]} testID={`tutorial-slide-${i}`}>
-            <View style={[styles.iconWrap, { backgroundColor: sl.bg }]}>
-              <Feather name={sl.icon} size={54} color={sl.color} />
-            </View>
-            <Text style={styles.title}>{t(sl.titleKey)}</Text>
-            <Text style={styles.body}>{t(sl.bodyKey)}</Text>
-            {sl.bulletKeys?.length ? (
-              <View style={styles.bullets}>
-                {sl.bulletKeys.map((bk, j) => (
-                  <View key={j} style={styles.bulletRow}>
-                    <View style={[styles.bulletDot, { backgroundColor: sl.color }]} />
-                    <Text style={styles.bulletTxt}>{t(bk)}</Text>
-                  </View>
-                ))}
+            <ScrollView
+              contentContainerStyle={styles.slideInner}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: sl.bg }]}>
+                <Feather name={sl.icon} size={54} color={sl.color} />
               </View>
-            ) : null}
+              <Text style={styles.title}>{t(sl.titleKey)}</Text>
+              <Text style={styles.body}>{t(sl.bodyKey)}</Text>
+              {sl.bulletKeys?.length ? (
+                <View style={styles.bullets}>
+                  {sl.bulletKeys.map((bk, j) => (
+                    <View key={j} style={styles.bulletRow}>
+                      <View style={[styles.bulletDot, { backgroundColor: sl.color }]} />
+                      <Text style={styles.bulletTxt}>{t(bk)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </ScrollView>
           </View>
         ))}
       </ScrollView>
@@ -186,7 +207,11 @@ const styles = StyleSheet.create({
   skipBtn: { paddingHorizontal: theme.spacing.md, paddingVertical: 4 },
   skipTxt: { color: theme.color.onSurfaceSecondary, fontWeight: '500' },
   slide: {
+    flex: 1,
+  },
+  slideInner: {
     padding: theme.spacing.xl, alignItems: 'center', justifyContent: 'flex-start',
+    paddingBottom: theme.spacing.xxl,
   },
   iconWrap: {
     width: 140, height: 140, borderRadius: 70, alignItems: 'center', justifyContent: 'center',

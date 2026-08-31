@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -45,7 +45,7 @@ export default function Frigorifero() {
   const [items, setItems] = useState<FridgeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [upsell, setUpsell] = useState(!isPro);
+  const [upsell, setUpsell] = useState(false);
 
   const catById = useMemo(() => {
     const m: Record<string, any> = {};
@@ -100,7 +100,10 @@ export default function Frigorifero() {
         <View style={styles.header}>
           <Text style={styles.h1}>{t('fridge.title')}</Text>
         </View>
-        <View style={styles.lockCenter}>
+        <ScrollView
+          contentContainerStyle={styles.lockScroll}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.lockCircle}>
             <Feather name="lock" size={38} color={theme.color.brand} />
           </View>
@@ -110,7 +113,8 @@ export default function Frigorifero() {
             <Feather name="star" size={16} color="#fff" />
             <Text style={styles.lockCtaTxt}>{t('pro.cta')}</Text>
           </Pressable>
-        </View>
+          <Text style={styles.lockPrice}>{t('pro.price')}</Text>
+        </ScrollView>
         <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="fridge" />
       </SafeAreaView>
     );
@@ -208,7 +212,7 @@ export default function Frigorifero() {
           keyExtractor={g => g.key}
           contentContainerStyle={{
             padding: theme.spacing.lg,
-            paddingBottom: 100 + Math.max(insets.bottom, 0),
+            paddingBottom: 60 + Math.max(insets.bottom, 0),
           }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
           renderItem={({ item: group }) => (
@@ -222,19 +226,6 @@ export default function Frigorifero() {
             </View>
           )}
         />
-      )}
-
-      {!loading && items.length > 0 && (
-        <View style={[styles.fabWrap, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
-          <Pressable
-            onPress={() => { Haptics.selectionAsync(); router.push('/ai-suggest'); }}
-            style={styles.aiFab}
-            testID="ai-suggest-btn"
-          >
-            <Feather name="zap" size={18} color="#fff" />
-            <Text style={styles.aiFabTxt}>{t('ai.button')}</Text>
-          </Pressable>
-        </View>
       )}
     </SafeAreaView>
   );
@@ -266,25 +257,14 @@ const styles = StyleSheet.create({
   badgeTxt: { fontSize: 11, fontWeight: '600' },
   delBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   // Locked state
-  lockCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, gap: 16 },
+  lockScroll: {
+    flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+    padding: theme.spacing.xl, paddingBottom: theme.spacing.xxxl, gap: 16,
+  },
   lockCircle: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#F5E8D8', alignItems: 'center', justifyContent: 'center' },
   lockTitle: { fontFamily: theme.font.display, fontSize: 22, color: theme.color.onSurface, textAlign: 'center' },
   lockBody: { fontSize: 14, color: theme.color.onSurfaceSecondary, textAlign: 'center', maxWidth: 300 },
   lockCta: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.color.brand, paddingHorizontal: 24, paddingVertical: 12, borderRadius: theme.radius.pill },
   lockCtaTxt: { color: '#fff', fontWeight: '600' },
-  // AI FAB
-  fabWrap: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    alignItems: 'center', pointerEvents: 'box-none',
-    paddingHorizontal: theme.spacing.lg,
-  },
-  aiFab: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: theme.color.brand,
-    paddingHorizontal: 22, paddingVertical: 13,
-    borderRadius: theme.radius.pill,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18, shadowRadius: 10, elevation: 6,
-  },
-  aiFabTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  lockPrice: { fontSize: 12, color: theme.color.onSurfaceTertiary, fontStyle: 'italic', marginTop: -6 },
 });

@@ -153,15 +153,4 @@ export const api = {
   editFridge: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expiries: string[] }>) =>
     req(`/fridge/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFridge: (id: string) => req(`/fridge/${id}`, { method: 'DELETE' }),
-
-  // AI suggestions (Pro feature)
-  aiSuggestDishes: (params?: { count?: number; course?: string; include_pantry_staples?: boolean }) =>
-    req<{ dishes: any[]; model: string }>('/ai/suggest-dishes', {
-      method: 'POST',
-      body: JSON.stringify({
-        count: params?.count ?? 4,
-        course: params?.course,
-        include_pantry_staples: params?.include_pantry_staples ?? true,
-      }),
-    }),
 };

@@ -101,13 +101,18 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 ## Data (MongoDB)
 - users (con array `recovery_codes` di `{code_hash, used_at}`), user_sessions (TTL su expires_at), dishes, weekly_plans, shopping_items, fridge_items, photos
 
-## AI Suggestions "Cosa cucino?" (giu 2026, Pro)
-- Endpoint `POST /api/ai/suggest-dishes` protetto da `require_pro`
-- Legge `fridge_items` dell'utente, invia prompt strutturato a `openai/gpt-5.4-mini` via Emergent Universal Key (`emergentintegrations.llm.chat.LlmChat`)
-- Genera 3-5 ricette in italiano/inglese (segue `preferences.language`) con schema JSON compatibile con `POST /api/dishes`
-- Frontend: pulsante FAB "Cosa cucino?" nel tab Frigorifero, apre `/ai-suggest`
-- Ogni ricetta: card espandibile con ingredienti + preparazione + note, bottone "Salva in Piatti" che crea il dish
-- Errori gestiti: `empty_fridge` (frigo vuoto) e `ai_error` (fallback rigenera)
+## AI Suggestions "Cosa cucino?" (giu 2026)
+- ~~Endpoint AI rimosso su richiesta utente~~ (consumava credit balance Emergent Universal Key)
+- Feature completamente rimossa: nessun endpoint backend, nessuna schermata, nessuna stringa i18n `ai.*`
+
+## Pro plan (giu 2026)
+- Prezzo comunicato: **2€ una tantum** (non ricorrente)
+- Feature Pro elencate ovunque: Foto piatti/ingredienti, Frigorifero, Notifiche scadenza, Alert surgelati, Backup Google Drive
+- **Settings hub** mostra card Pro-status in cima: "Sei un utente Pro ⭐" (Pro) o "Versione Free · Passa a Pro (2€)" cliccabile (Free)
+- **ProUpsellModal** ora scrollabile completamente (schermi piccoli/notch), badge prezzo `2€ una tantum`, aggiunta feature "Frigorifero" nell'elenco
+- Frigorifero **lock screen** wrappato in `ScrollView` con `flexGrow:1` così anche il testo lungo è scorribile; auto-apertura modale disabilitata
+- Tutorial ora 7 slide: benvenuto, piatti, planner, spesa, **Frigorifero (marcato Pro €2)**, ultimo consiglio recovery, **PlanEat Pro (elenco completo funzionalità sbloccabili)**
+- Ogni slide del tutorial ora ha `ScrollView` interno per gestire contenuti lunghi su schermi piccoli
 
 ## Icon
 Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta sage top-right, calendario+check bottom-left. Adaptive icon con safe area 66%.

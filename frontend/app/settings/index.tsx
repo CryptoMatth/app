@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
+import { useIsPro, ProUpsellModal } from '@/src/ProGate';
 
 type Row = {
   key: string;
@@ -25,8 +26,10 @@ export default function SettingsHome() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { t } = useTranslation();
+  const isPro = useIsPro();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [upsell, setUpsell] = useState(false);
 
   const doLogout = async () => {
     setBusy(true);
@@ -134,6 +137,27 @@ export default function SettingsHome() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 40 }}>
+        {/* Pro status card */}
+        <Pressable
+          onPress={() => !isPro && setUpsell(true)}
+          disabled={isPro}
+          style={[proCardStyles.card, isPro ? proCardStyles.cardPro : proCardStyles.cardFree]}
+          testID="pro-status-card"
+        >
+          <View style={[proCardStyles.iconWrap, { backgroundColor: isPro ? 'rgba(255,255,255,0.22)' : '#F5E8D8' }]}>
+            <Feather name={isPro ? 'star' : 'lock'} size={20} color={isPro ? '#fff' : theme.color.brand} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[proCardStyles.title, { color: isPro ? '#fff' : theme.color.onSurface }]}>
+              {isPro ? t('settings.pro.activeTitle') : t('settings.pro.freeTitle')}
+            </Text>
+            <Text style={[proCardStyles.sub, { color: isPro ? 'rgba(255,255,255,0.85)' : theme.color.onSurfaceSecondary }]}>
+              {isPro ? t('settings.pro.activeSub') : t('settings.pro.freeSub')}
+            </Text>
+          </View>
+          {!isPro && <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />}
+        </Pressable>
+
         {sections.map(sec => (
           <View key={sec.title} style={s.section}>
             <Text style={s.sectionH}>{sec.title}</Text>
@@ -181,6 +205,32 @@ export default function SettingsHome() {
           </View>
         </View>
       </Modal>
+
+      <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="settings" />
     </SafeAreaView>
   );
 }
+
+const proCardStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginBottom: theme.spacing.lg,
+  },
+  cardPro: {
+    backgroundColor: theme.color.brand,
+    borderColor: theme.color.brand,
+  },
+  cardFree: {
+    backgroundColor: theme.color.surface,
+    borderColor: theme.color.border,
+  },
+  iconWrap: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title: { fontSize: 15, fontWeight: '700' },
+  sub: { fontSize: 12, marginTop: 2, lineHeight: 16 },
+});

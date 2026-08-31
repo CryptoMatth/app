@@ -1,7 +1,6 @@
 import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useState, PropsWithChildren } from 'react';
-import { useRouter } from 'expo-router';
 import { theme } from './theme';
 import { useAuth } from './auth';
 import { useTranslation } from './i18n';
@@ -63,25 +62,33 @@ export function ProUpsellModal({ open, onClose, feature }: {
   return (
     <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.mOverlay} onPress={onClose}>
-        <Pressable style={styles.mCard} onPress={e => e.stopPropagation?.()}>
-          <View style={styles.mIcon}>
-            <Feather name="star" size={26} color={theme.color.brand} />
-          </View>
-          <Text style={styles.mTitle}>{t('pro.upsell.title')}</Text>
-          <Text style={styles.mSub}>{t('pro.upsell.sub')}</Text>
-          <ScrollView style={{ maxHeight: 260 }} contentContainerStyle={{ paddingVertical: 6 }}>
+        <Pressable style={styles.mCardWrap} onPress={e => e.stopPropagation?.()}>
+          <ScrollView
+            style={styles.mCardScroll}
+            contentContainerStyle={styles.mCard}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.mIcon}>
+              <Feather name="star" size={26} color={theme.color.brand} />
+            </View>
+            <View style={styles.priceBadge}>
+              <Text style={styles.priceBadgeTxt}>{t('pro.price')}</Text>
+            </View>
+            <Text style={styles.mTitle}>{t('pro.upsell.title')}</Text>
+            <Text style={styles.mSub}>{t('pro.upsell.sub')}</Text>
             <ProFeatureRow icon="camera" title={t('pro.feat.photos.t')} body={t('pro.feat.photos.b')} />
+            <ProFeatureRow icon="package" title={t('pro.feat.fridge.t')} body={t('pro.feat.fridge.b')} />
             <ProFeatureRow icon="clock" title={t('pro.feat.expiry.t')} body={t('pro.feat.expiry.b')} />
             <ProFeatureRow icon="cloud" title={t('pro.feat.freezer.t')} body={t('pro.feat.freezer.b')} />
             <ProFeatureRow icon="upload-cloud" title={t('pro.feat.backup.t')} body={t('pro.feat.backup.b')} />
+            <Pressable onPress={onClose} style={styles.mCta} testID="pro-upsell-cta">
+              <Feather name="star" size={16} color="#fff" />
+              <Text style={styles.mCtaTxt}>{t('pro.cta')}</Text>
+            </Pressable>
+            <Pressable onPress={onClose} style={styles.mLater} testID="pro-upsell-later">
+              <Text style={styles.mLaterTxt}>{t('pro.later')}</Text>
+            </Pressable>
           </ScrollView>
-          <Pressable onPress={onClose} style={styles.mCta} testID="pro-upsell-cta">
-            <Feather name="star" size={16} color="#fff" />
-            <Text style={styles.mCtaTxt}>{t('pro.cta')}</Text>
-          </Pressable>
-          <Pressable onPress={onClose} style={styles.mLater} testID="pro-upsell-later">
-            <Text style={styles.mLaterTxt}>{t('pro.later')}</Text>
-          </Pressable>
         </Pressable>
       </Pressable>
     </Modal>
@@ -131,8 +138,22 @@ const styles = StyleSheet.create({
   },
   badgeSmallTxt: { color: '#fff', fontWeight: '700', fontSize: 9, letterSpacing: 0.4 },
   mOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
-  mCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 380, borderWidth: 1, borderColor: theme.color.border },
+  mCardWrap: {
+    width: '100%', maxWidth: 380, maxHeight: '90%',
+    borderRadius: theme.radius.lg, backgroundColor: theme.color.surface,
+    borderWidth: 1, borderColor: theme.color.border, overflow: 'hidden',
+  },
+  mCardScroll: { flexGrow: 0 },
+  mCard: { padding: theme.spacing.xl },
   mIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#F5E8D8', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start', marginBottom: theme.spacing.md },
+  priceBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: theme.color.brand,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: theme.radius.pill,
+    marginBottom: 8,
+  },
+  priceBadgeTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
   mTitle: { fontFamily: theme.font.display, fontSize: 20, color: theme.color.onSurface, marginBottom: 4 },
   mSub: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginBottom: theme.spacing.md, lineHeight: 18 },
   featRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8 },
