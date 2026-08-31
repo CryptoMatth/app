@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { PasswordInput } from '@/src/PasswordInput';
 
 export default function Forgot() {
   const [username, setUsername] = useState('');
@@ -63,25 +64,19 @@ export default function Forgot() {
           autoCapitalize="characters" autoCorrect={false}
           style={styles.input}
         />
-        <TextInput
+        <PasswordInput
           testID="forgot-newpw-input"
           placeholder="Nuova password (min 6)"
-          placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw} onChangeText={setPw}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
           style={styles.input}
+          toggleTestID="forgot-newpw-toggle"
         />
-        <TextInput
+        <PasswordInput
           testID="forgot-newpw2-input"
           placeholder="Ripeti nuova password"
-          placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw2} onChangeText={setPw2}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
           style={styles.input}
+          toggleTestID="forgot-newpw2-toggle"
         />
         {err ? <Text style={styles.err} testID="forgot-error">{err}</Text> : null}
 

@@ -8,6 +8,7 @@ import { useRouter, Link } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { PasswordInput } from '@/src/PasswordInput';
 
 export default function Register() {
   const [username, setUsername] = useState('');
@@ -57,25 +58,19 @@ export default function Register() {
           autoCapitalize="none" autoCorrect={false}
           style={styles.input}
         />
-        <TextInput
+        <PasswordInput
           testID="register-password-input"
           placeholder="Password (min 6 caratteri)"
-          placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw} onChangeText={setPw}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
           style={styles.input}
+          toggleTestID="register-password-toggle"
         />
-        <TextInput
+        <PasswordInput
           testID="register-password2-input"
           placeholder="Ripeti password"
-          placeholderTextColor={theme.color.onSurfaceTertiary}
           value={pw2} onChangeText={setPw2}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
           style={styles.input}
+          toggleTestID="register-password2-toggle"
         />
         {err ? <Text style={styles.err} testID="register-error">{err}</Text> : null}
         <Text style={styles.helper}>Username: 3-30 caratteri. Solo lettere, numeri, punto (.) e underscore (_).</Text>

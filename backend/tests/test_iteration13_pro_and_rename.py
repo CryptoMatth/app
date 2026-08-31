@@ -44,7 +44,7 @@ API = f"{BASE_URL}/api"
 ADMIN_PW = os.environ.get("ADMIN_PASSWORD") or "planeat-admin-CH4ngeMe-2026"
 ADMIN_H = {"X-Admin-Password": ADMIN_PW}
 
-FOUNDERS = ("halley", "matteo", "admin")
+FOUNDERS = ("halley",)  # iter-14 narrowed FOUNDER_USERNAMES to just halley
 
 
 # ---------------- helpers ----------------
@@ -124,8 +124,7 @@ class TestFounderWhitelist:
         ("halley", "halley"),
         ("Halley", "halley"),
         ("HALLEY", "halley"),
-        ("matteo", "matteo"),
-        ("admin", "admin"),
+        # matteo/admin removed from FOUNDER_USERNAMES in iter-14
     ])
     def test_founder_registration_marks_pro(self, input_username, stored):
         _delete_user_by_username(stored)
@@ -225,9 +224,10 @@ class TestAdminEntitlementEndpoint:
 
     def test_founder_admin_grant_is_still_pro_after_revoke(self):
         """A founder username stays is_pro=True even if admin explicitly revokes.
-        (Because whitelist wins over entitlements.pro.active.)"""
-        _delete_user_by_username("admin")
-        reg = _register("admin")
+        (Because whitelist wins over entitlements.pro.active.)
+        Iter-14: FOUNDER_USERNAMES narrowed to just {halley}, so we use halley here."""
+        _delete_user_by_username("halley")
+        reg = _register("halley")
         uid = reg["user"]["user_id"]
         token = reg["session_token"]
         # Revoke via admin
@@ -239,7 +239,7 @@ class TestAdminEntitlementEndpoint:
         me = requests.get(f"{API}/auth/me", headers=_auth(token), timeout=10).json()
         assert me["is_pro"] is True  # founder whitelist wins
         assert me["pro_source"] == "founder"
-        _delete_user_by_username("admin")
+        _delete_user_by_username("halley")
 
 
 # =====================================================================
@@ -360,10 +360,13 @@ class TestDishRenamePropagation:
         assert plan["slots"]["0_pranzo"]["items"][0]["dish_name"] == "Alpha"
 
     def test_non_name_changes_do_not_alter_planner_or_shopping(self):
-        """Change course/preparation/notes/servings → planner items[] and shopping
+        """Change course/preparation/notes only → planner items[] and shopping
         sources[] remain untouched (dish_name unchanged, shopping planner_qty
-        remains based on the persons setting from the slot, NOT the new
-        `servings` on the dish, because we did not re-apply the slot)."""
+        remains based on the persons setting from the slot).
+
+        Iter-14 update: `servings` and `ingredients` changes DO recompute
+        shopping now, so this test keeps servings+ingredients identical and
+        only mutates course/prep/notes."""
         reg = _register(_uniq("rn5"))
         token = reg["session_token"]
         # Dish w/ servings=2 → slot persons=2 → 1x multiplier
@@ -380,11 +383,11 @@ class TestDishRenamePropagation:
         farina_before = next(x for x in s_before if x["name"] == "Farina")
         assert farina_before["planner_qty"] == 100.0
 
-        # Non-name update
+        # Non-name update (course/prep/notes only, keep servings + ingredients identical)
         r = requests.put(f"{API}/dishes/{dish['id']}", headers=_auth(token), json={
             "name": "Gamma",  # unchanged
             "course": "secondo",
-            "servings": 5,
+            "servings": 2,  # unchanged (iter-14: servings change would trigger recompute)
             "preparation": "p2",
             "notes": "n2",
             "ingredients": [{"name": "Farina", "quantity": 100, "unit": "g"}],
@@ -396,8 +399,6 @@ class TestDishRenamePropagation:
         plan = requests.get(f"{API}/planner/{WEEK}", headers=_auth(token), timeout=10).json()
         item = plan["slots"]["1_cena"]["items"][0]
         assert item["dish_name"] == "Gamma"
-        # Note: `course` on the slot item is cached from the slot-put time. Not
-        # required to update on non-name dish changes per spec.
         s_after = requests.get(f"{API}/shopping", headers=_auth(token), timeout=10).json()
         farina_after = next(x for x in s_after if x["name"] == "Farina")
         assert farina_after["planner_qty"] == farina_before["planner_qty"], (farina_before, farina_after)

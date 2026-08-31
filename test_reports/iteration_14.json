@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 14 backend-only testing: dish edit → shopping list recompute + FOUNDER_USERNAMES narrowed to {halley}. Wrote 15 new tests in /app/backend/tests/test_iteration14_dish_edit_propagation.py — all pass. Regression suites: iter-11 26/26, iter-12 22/22, iter-13 19/19 (after aligning 4 stale iter-13 assumptions to the new iter-14 spec — see 'updated_files'), iter-14 15/15 → 82/82 sequential. Verified: (a) PUT /api/dishes/{id} with an ingredient rename (`riso`→`risotto`) removes the old row when no other sources contribute and adds the new row scaled by slot persons (200g at persons=2, servings=1); (b) adding a new ingredient (zafferano 5g) → new row @ 10g appears; (c) removing an ingredient AND changing another's quantity in the same PUT correctly cleans the removed row and scales the kept row (risotto 150g × 2 persons = 300g); (d) changing dish `servings` alone (1→2) with same ingredients halves the shopping planner contribution (200g → 100g); (e) changing ONLY course/preparation/notes (name+ingredients+servings unchanged) does NOT touch shopping — same source_ids preserved before/after; (f) multi-item slot: editing dish A's ingredients updates A's contribution AND leaves dish B's sources (same slot) byte-identical (source_ids preserved); (g) multi-week: same dish placed in weeks 2026-08-24 and 2026-08-31 with different persons — one PUT correctly recomputes BOTH weeks (persons=1×20 + persons=3×20 = 80g) and emits sources for both week_starts; (h) legacy flat slot form (slot doc has `dish_id` directly, no `items[]`) — after mutating the stored slot to the legacy shape via direct MongoDB write, PUT /dishes still recomputes it (leg 100→250 × persons=2 → planner_qty=500g); (i) manual shopping items (no `sources`) are NEVER modified by dish updates — id, name, manual_qty preserved across two PUT /dishes calls; (j) editing an orphan dish (not referenced in any slot) leaves shopping identical (no new rows, no mutations to unrelated rows). Founder whitelist: (k) halley/Halley/HALLEY all normalize to halley and get is_pro:true, pro_source:'founder'; (l) matteo AND admin registration → is_pro:false, pro_source:null (previously founders, now NOT); (m) admin can still POST /api/admin/users/{id}/entitlements/pro {active:true} on matteo → is_pro:true, pro_source:'admin_grant'. Note (carried over from iter-13, NOT reintroduced here): the pro_source='admin_grant' after revoke minor bug is unaffected by this iteration and remains pending main-agent's fix. One test-parallelism flake observed: running iter-13 and iter-14 concurrently under pytest-xdist both mutate the fixed founder username `halley` (delete+register) → 409 conflict. Running the two files sequentially (or serially inside a single worker) resolves it; product code is fine. Recommend using per-test unique founder-suffix or an xdist_group marker if future iterations keep both suites parallel.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/auth/me (carried over from iter-13, NOT re-verified)",
+        "issue": "After admin POST /entitlements/pro {active:false} on a non-founder, pro_source still returns 'admin_grant' instead of null. server.py:351 `pro_ent.get('source') or ...` short-circuits on the stored source regardless of active. Fix suggestion: `'admin_grant' if pro_ent.get('active') else None`. Unrelated to iter-14 changes but still open."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_dish_edit_propagation.py",
+    "/app/test_reports/pytest/pytest_iteration14.xml"
+  ],
+  "action_items": [
+    "(Optional, test infra) Add pytest-xdist `xdist_group` markers or unique-suffixed usernames to iter-13 + iter-14 founder tests so they can safely run in parallel — currently the shared `halley` fixture creates a delete+register race across workers. Repro: `pytest tests/test_iteration13_pro_and_rename.py tests/test_iteration14_dish_edit_propagation.py -n 2` intermittently 409s. Not a product bug.",
+    "(Carried over from iter-13) Fix pro_source in server.py _user_public so it returns None when is_pro is False for non-founders: change `pro_source = 'founder' if is_founder else (pro_ent.get('source') or ('admin_grant' if pro_ent.get('active') else None))` to `pro_source = 'founder' if is_founder else ('admin_grant' if pro_ent.get('active') else None)`.",
+    "(Nice-to-have) The recompute in update_dish loops ALL user weekly_plans (server.py:709-733). At scale, filter to `slots.$**.dish_id == dish_id` via a targeted query. Current scale is fine."
+  ],
+  "critical_code_review_comments": [
+    "server.py:838-866 (_remove_dish_source_from_shopping): correctly scopes deletion by (week_start, day_index, meal, dish_id) so sibling dishes and manual items are preserved — matches iter-14 spec. Loads up to 1000 shopping_items per user into memory; at very large scale consider `$pull` with array_filters instead of read-modify-write. Not a blocker.",
+    "server.py:707-733 (update_dish recompute): the sequence remove-then-add per slot means shopping rows briefly lose the source between the two awaits. Given single-process asyncio and no cross-request atomicity contract, acceptable. Consider a two-phase compute (collect all deltas, then apply) if you ever run this behind concurrent workers on the same user.",
+    "server.py:673-676 (ings_changed detection): compares full ingredient dict lists. Pydantic-serialized `.dict()` will match the DB shape here because Ingredient has exactly {name,quantity,unit}. If a field is added later, keep in mind that order matters here — a reorder-only change would trigger a full recompute even though the shopping outcome is identical. Fine but slightly wasteful.",
+    "server.py:93 FOUNDER_USERNAMES = {\"halley\"}: confirmed narrowed. If more founder usernames are ever needed, this remains case-normalized via `(user_doc.get('username') or '').lower() in FOUNDER_USERNAMES`.",
+    "server.py is now 1384 lines — still under the 2000 soft cap but growing. Recommend splitting routers (auth, dishes, planner/shopping, admin) into separate modules soon.",
+    "The iter-13 minor bug on pro_source-after-revoke is still present (server.py:351)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_dish_edit_propagation.py (new, 15 tests)",
+    "/app/backend/tests/test_iteration13_pro_and_rename.py (aligned 4 stale assertions to iter-14 spec: FOUNDERS constant narrowed to (halley,); test_founder_registration_marks_pro parametrize dropped matteo/admin; test_founder_admin_grant_is_still_pro_after_revoke uses halley instead of admin; test_non_name_changes_do_not_alter_planner_or_shopping now keeps servings unchanged since iter-14 makes servings-change trigger shopping recompute — comment added inline explaining the change)."
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 iter-14 new + 67/67 iter-11+12+13 regression when run sequentially = 82/82). Parallel iter-13+iter-14 xdist run has a shared-halley race → not a product issue.",
+    "frontend": "not tested (backend-only requested)"
+  },
+  "seed_data_creation": "All tests use ephemeral users with prefixed timestamp+uuid usernames (ir1/iar/sv1/nn1/mm1/mw1/lg1/mn1/or1). Founder tests DELETE any pre-existing halley/matteo/admin via /api/admin/users before registering and clean up afterward. TestLegacySlotForm briefly writes directly to MongoDB via pymongo to simulate legacy `{dish_id, dish_name, course, persons}` slot shape. No production data mutated.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter-14 suite: /app/backend/tests/test_iteration14_dish_edit_propagation.py (15 tests, ~48s). Uses direct MongoDB access (pymongo) in TestLegacySlotForm to inject legacy slot form — needs MONGO_URL + DB_NAME in env. Combined 82-test regression takes ~3.5min sequentially. FOUNDER_USERNAMES = {halley} only. Iter-13 test file has been updated to reflect this — no more matteo/admin founder assumptions there. If you need to run iter-13 + iter-14 in parallel with pytest-xdist, group the founder tests via xdist_group markers or use unique usernames; currently both files mutate `halley` and can race under -n auto.",
+  "rca_of_issue": "N/A — all iter-14 features work as specified. Only two carry-over items: (1) iter-13 pro_source-after-revoke bug (unrelated to iter-14 code paths); (2) the delete+register-halley race under pytest-xdist parallel scheduling is a test-file interaction, not a product bug — see action_items."
+}

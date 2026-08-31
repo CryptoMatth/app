@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
+import { PasswordInput } from '@/src/PasswordInput';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -145,12 +146,12 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
             autoCapitalize="none" autoCorrect={false}
             style={s.input}
           />
-          <TextInput
+          <PasswordInput
             testID="edit-username-password"
-            placeholder="Password attuale" placeholderTextColor={theme.color.onSurfaceTertiary}
+            placeholder="Password attuale"
             value={pw} onChangeText={setPw}
-            autoCapitalize="none" autoCorrect={false} secureTextEntry
             style={s.input}
+            toggleTestID="edit-username-password-toggle"
           />
           {err ? <Text style={s.err} testID="edit-username-error">{err}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
@@ -196,19 +197,21 @@ function ChangePasswordModal({ open, onClose, onSave }: {
           <Text style={s.modalH}>Cambia password</Text>
           <Text style={s.modalP}>Serve la password attuale per confermare la modifica.</Text>
           <View style={{ height: theme.spacing.md }} />
-          <TextInput testID="edit-password-old"
-            placeholder="Password attuale" placeholderTextColor={theme.color.onSurfaceTertiary}
+          <PasswordInput testID="edit-password-old"
+            placeholder="Password attuale"
             value={oldPw} onChangeText={setOldPw}
-            autoCapitalize="none" autoCorrect={false} secureTextEntry style={s.input} />
-          <TextInput testID="edit-password-new"
-            placeholder="Nuova password (min 6)" placeholderTextColor={theme.color.onSurfaceTertiary}
+            style={s.input}
+            toggleTestID="edit-password-old-toggle" />
+          <PasswordInput testID="edit-password-new"
+            placeholder="Nuova password (min 6)"
             value={newPw} onChangeText={setNewPw}
-            autoCapitalize="none" autoCorrect={false} secureTextEntry style={s.input} />
-          <TextInput testID="edit-password-new2"
-            placeholder="Ripeti nuova password" placeholderTextColor={theme.color.onSurfaceTertiary}
+            style={s.input}
+            toggleTestID="edit-password-new-toggle" />
+          <PasswordInput testID="edit-password-new2"
+            placeholder="Ripeti nuova password"
             value={newPw2} onChangeText={setNewPw2}
-            autoCapitalize="none" autoCorrect={false} secureTextEntry style={s.input} />
-          {err ? <Text style={s.err} testID="edit-password-error">{err}</Text> : null}
+            style={s.input}
+            toggleTestID="edit-password-new2-toggle" />          {err ? <Text style={s.err} testID="edit-password-error">{err}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
             <Pressable onPress={onClose} style={s.btnGhost} disabled={busy} testID="edit-password-cancel">
               <Text style={s.btnGhostTxt}>Annulla</Text>

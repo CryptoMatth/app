@@ -89,8 +89,8 @@ DEFAULT_COURSES: List[Dict[str, Any]] = [
 DEFAULT_WEEK_START_DAY = 5
 DEFAULT_PLANNER_SPAN = "weekly"  # "weekly" (7d) or "biweekly" (14d)
 
-# Usernames that automatically get all Pro entitlements without paying (admins/founder).
-FOUNDER_USERNAMES = {"halley", "matteo", "admin"}
+# Usernames that automatically get all Pro entitlements without paying (founder).
+FOUNDER_USERNAMES = {"halley"}
 
 
 def _course_id(label: str) -> str:
@@ -652,23 +652,31 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
         raise HTTPException(404, "Piatto non trovato")
 
     new_name = body.name.strip()
+    new_ingredients = [ing.dict() for ing in body.ingredients]
+    new_servings = max(1, body.servings)
+
     res = await db.dishes.update_one(
         {"id": dish_id, "user_id": user_id},
         {"$set": {
             "name": new_name,
             "course": body.course,
-            "ingredients": [ing.dict() for ing in body.ingredients],
+            "ingredients": new_ingredients,
             "preparation": body.preparation,
             "notes": body.notes,
-            "servings": max(1, body.servings),
+            "servings": new_servings,
         }},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Piatto non trovato")
 
-    # Propagate rename to any planner slot that references this dish
-    if new_name != old.get("name"):
-        # Find plans that reference this dish in any slot's items[]
+    # Detect what changed
+    name_changed = new_name != old.get("name")
+    # Ingredients or servings changes → need to recompute shopping contributions
+    ings_changed = (new_ingredients != old.get("ingredients", []) or
+                     new_servings != old.get("servings", 1))
+
+    # 1. Propagate name to slots + sources (fast path, no shopping recompute)
+    if name_changed:
         plans_cursor = db.weekly_plans.find(
             {"user_id": user_id, "slots": {"$exists": True}},
             {"_id": 1, "slots": 1},
@@ -682,18 +690,47 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
                         if it.get("dish_id") == dish_id and it.get("dish_name") != new_name:
                             it["dish_name"] = new_name
                             changed = True
-                    # Legacy flat form (safety net)
                 elif slot.get("dish_id") == dish_id and slot.get("dish_name") != new_name:
                     slot["dish_name"] = new_name
                     changed = True
             if changed:
                 await db.weekly_plans.update_one({"_id": plan["_id"]}, {"$set": {"slots": slots}})
-        # Propagate rename inside shopping_items.sources[]
         await db.shopping_items.update_many(
             {"user_id": user_id, "sources.dish_id": dish_id},
             {"$set": {"sources.$[s].dish_name": new_name}},
             array_filters=[{"s.dish_id": dish_id}],
         )
+
+    # 2. Recompute shopping if ingredients/servings changed:
+    #    for every slot referencing this dish, remove its OLD contributions
+    #    and re-add fresh ones with the new ingredient list.
+    if ings_changed:
+        updated_dish = await db.dishes.find_one({"id": dish_id, "user_id": user_id}, {"_id": 0})
+        plans_cursor = db.weekly_plans.find(
+            {"user_id": user_id, "slots": {"$exists": True}},
+            {"_id": 1, "week_start": 1, "slots": 1},
+        )
+        async for plan in plans_cursor:
+            week_start = plan.get("week_start")
+            slots = plan.get("slots") or {}
+            for slot_key, slot in slots.items():
+                try:
+                    day_str, meal = slot_key.split("_", 1)
+                    day_index = int(day_str)
+                except (ValueError, AttributeError):
+                    continue
+                # New multi-item form
+                if isinstance(slot.get("items"), list):
+                    for it in slot["items"]:
+                        if it.get("dish_id") == dish_id:
+                            persons = int(it.get("persons") or 1)
+                            await _remove_dish_source_from_shopping(user_id, week_start, day_index, meal, dish_id)
+                            await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons)
+                # Legacy single-item form
+                elif slot.get("dish_id") == dish_id:
+                    persons = int(slot.get("persons") or 1)
+                    await _remove_dish_source_from_shopping(user_id, week_start, day_index, meal, dish_id)
+                    await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons)
 
     d = await db.dishes.find_one({"id": dish_id}, {"_id": 0})
     return d
@@ -789,6 +826,37 @@ async def _remove_planner_source_from_shopping(user_id: str, week_start: str, da
         if removed_qty > 0:
             new_planner_qty = max(0.0, it.get("planner_qty", 0.0) - removed_qty)
             # If nothing left (no manual, no planner), delete the row
+            if new_planner_qty <= 0.0001 and it.get("manual_qty", 0.0) <= 0.0001 and len(remaining) == 0:
+                await db.shopping_items.delete_one({"id": it["id"], "user_id": user_id})
+            else:
+                await db.shopping_items.update_one(
+                    {"id": it["id"], "user_id": user_id},
+                    {"$set": {"sources": remaining, "planner_qty": new_planner_qty}},
+                )
+
+
+async def _remove_dish_source_from_shopping(user_id: str, week_start: str, day_index: int,
+                                             meal: str, dish_id: str) -> None:
+    """Remove ONLY the sources contributed by a specific dish inside the given
+    (week, day, meal) slot. Used when a dish gets edited/renamed so we can
+    recompute its ingredient contributions without touching sibling items."""
+    items = await db.shopping_items.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+    for it in items:
+        sources = it.get("sources", [])
+        removed_qty = 0.0
+        remaining = []
+        for s in sources:
+            if (
+                s.get("week_start") == week_start
+                and s.get("day_index") == day_index
+                and s.get("meal") == meal
+                and s.get("dish_id") == dish_id
+            ):
+                removed_qty += s.get("quantity", 0.0)
+            else:
+                remaining.append(s)
+        if removed_qty > 0:
+            new_planner_qty = max(0.0, it.get("planner_qty", 0.0) - removed_qty)
             if new_planner_qty <= 0.0001 and it.get("manual_qty", 0.0) <= 0.0001 and len(remaining) == 0:
                 await db.shopping_items.delete_one({"id": it["id"], "user_id": user_id})
             else:

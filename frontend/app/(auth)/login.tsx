@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Link } from 'expo-router';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { PasswordInput } from '@/src/PasswordInput';
 
 const HERO_URL = 'https://images.unsplash.com/photo-1528712306091-ed0763094c98?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxjb3p5JTIwaG9tZSUyMGNvb2tpbmclMjBraXRjaGVufGVufDB8fHx8MTc4NzMxNTg1NHww&ixlib=rb-4.1.0&q=85';
 
@@ -67,16 +68,13 @@ export default function Login() {
               autoCorrect={false}
               style={styles.input}
             />
-            <TextInput
+            <PasswordInput
               testID="login-password-input"
               placeholder="Password"
-              placeholderTextColor={theme.color.onSurfaceTertiary}
               value={pw}
               onChangeText={setPw}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
               style={styles.input}
+              toggleTestID="login-password-toggle"
             />
             {err ? <Text style={styles.err} testID="login-error">{err}</Text> : null}
 

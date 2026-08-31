@@ -37,8 +37,13 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 ## Entitlements Pro (giu 2026)
 - Campo `entitlements.pro = {active, source, reason, granted_at, revoked_at}` sull'user doc
 - Endpoint admin `POST /api/admin/users/{id}/entitlements/pro` (X-Admin-Password required)
-- **Founder whitelist**: username in `{halley, matteo, admin}` → auto-Pro (source: "founder"). Non modificabile da admin (vince sull'admin revoke).
+- **Founder whitelist**: unico username `halley` → auto-Pro (source: "founder"). Non modificabile da admin (vince sull'admin revoke).
 - `/api/auth/me` restituisce `is_pro` + `pro_source` calcolati
+
+## Propagazione modifiche piatto (ago 2026)
+- Rinomina piatto → nome aggiornato su tutti gli slot Planner e sui `sources[]` in Spesa
+- Cambio ingredienti (rinomina/aggiunta/rimozione ingrediente, cambio quantità, cambio servings) → i contributi in Spesa vengono ricalcolati automaticamente per ogni slot Planner che referenzia quel piatto
+- Rimossi solo i contributi del piatto modificato (siblings multi-item nello stesso slot restano intatti)
 
 ## Bug fix & UX (giu 2026)
 - **Planner slot picker**: tap sul nome del piatto apre i dettagli piatto; solo il pulsante `+` aggiunge alla composizione
