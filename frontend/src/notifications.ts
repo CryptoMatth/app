@@ -68,10 +68,17 @@ function parseIso(s?: string | null): Date | null {
   return new Date(y, m - 1, d);
 }
 
+export type FridgeLite = {
+  id: string;
+  name: string;
+  expiries?: string[];
+  category_id?: string;
+};
+
 export type ShoppingItemLite = {
   id: string;
   name: string;
-  expires_at?: string | null;
+  expires_at?: string | null;  // deprecated (kept for compat)
   category_id?: string;
   checked?: boolean;
 };
@@ -90,7 +97,7 @@ function hasFrozen(m: PlannedMeal): boolean {
 
 /** Cancel & re-schedule everything based on the given state. */
 export async function reschedule(
-  items: ShoppingItemLite[],
+  fridge: FridgeLite[],
   plans: PlannedMeal[],
   prefs: NotifPrefs,
 ): Promise<{ scheduled: number; skipped: number }> {
@@ -109,26 +116,27 @@ export async function reschedule(
   let scheduled = 0;
   let skipped = 0;
 
-  // Expiry notifications
-  for (const it of items) {
-    if (it.checked || !it.expires_at) continue;
-    const d = parseIso(it.expires_at);
-    if (!d) continue;
-    const warn = new Date(d);
-    warn.setDate(warn.getDate() - prefs.expiry_days_ahead);
-    warn.setHours(notifyHour, 0, 0, 0);
-    if (warn.getTime() <= now.getTime()) { skipped++; continue; }
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🕐 In scadenza',
-          body: `${it.name} scade tra ${prefs.expiry_days_ahead} giorn${prefs.expiry_days_ahead === 1 ? 'o' : 'i'}.`,
-          data: { tag: TAG, kind: 'expiry', item_id: it.id },
-        },
-        trigger: { type: 'date' as any, date: warn } as any,
-      });
-      scheduled++;
-    } catch { skipped++; }
+  // Expiry notifications — one per (fridge item, expiry date)
+  for (const it of fridge) {
+    for (const iso of (it.expiries || [])) {
+      const d = parseIso(iso);
+      if (!d) continue;
+      const warn = new Date(d);
+      warn.setDate(warn.getDate() - prefs.expiry_days_ahead);
+      warn.setHours(notifyHour, 0, 0, 0);
+      if (warn.getTime() <= now.getTime()) { skipped++; continue; }
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🕐 In scadenza',
+            body: `${it.name} scade tra ${prefs.expiry_days_ahead} giorn${prefs.expiry_days_ahead === 1 ? 'o' : 'i'}.`,
+            data: { tag: TAG, kind: 'expiry', item_id: it.id },
+          },
+          trigger: { type: 'date' as any, date: warn } as any,
+        });
+        scheduled++;
+      } catch { skipped++; }
+    }
   }
 
   // Freezer alerts (24h before planned meals)

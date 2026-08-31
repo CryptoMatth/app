@@ -6,7 +6,7 @@ import { theme } from '@/src/theme';
 import { hasSeenOnboarding } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { api } from '@/src/api';
-import { reschedule, readNotifPrefs, type PlannedMeal, type ShoppingItemLite } from '@/src/notifications';
+import { reschedule, readNotifPrefs, type PlannedMeal, type FridgeLite } from '@/src/notifications';
 import { parseIso, addDays } from '@/src/week';
 
 export default function TabsLayout() {
@@ -40,8 +40,8 @@ export default function TabsLayout() {
     let cancelled = false;
     (async () => {
       try {
-        const [items, weeks, dishes] = await Promise.all([
-          api.listShopping(),
+        const [fridge, weeks, dishes] = await Promise.all([
+          api.listFridge().catch(() => []),
           api.listPlannerWeeks(),
           api.listDishes(),
         ]);
@@ -78,7 +78,7 @@ export default function TabsLayout() {
             }
           } catch {}
         }
-        await reschedule(items as ShoppingItemLite[], plans, np);
+        await reschedule(fridge as FridgeLite[], plans, np);
       } catch {}
     })();
     return () => { cancelled = true; };
@@ -125,6 +125,14 @@ export default function TabsLayout() {
           title: t('nav.spesa'),
           tabBarIcon: ({ color, size }) => <Feather name="shopping-cart" size={size} color={color} />,
           tabBarButtonTestID: 'tab-spesa',
+        }}
+      />
+      <Tabs.Screen
+        name="frigorifero"
+        options={{
+          title: t('nav.frigorifero'),
+          tabBarIcon: ({ color, size }) => <Feather name="package" size={size} color={color} />,
+          tabBarButtonTestID: 'tab-frigorifero',
         }}
       />
     </Tabs>

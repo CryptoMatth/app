@@ -14,7 +14,7 @@ import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
-import { ExpiryBadge } from '@/src/ExpiryPicker';
+import { useIsPro } from '@/src/ProGate';
 
 type Item = {
   id: string; name: string; unit: string;
@@ -23,7 +23,6 @@ type Item = {
   notes?: string;
   category_id?: string;
   photo_path?: string | null;
-  expires_at?: string | null;
   checked: boolean; order: number;
 };
 
@@ -49,6 +48,7 @@ function uniqueDishNames(item: Item): string[] {
 export default function Spesa() {
   const { t, tCat } = useTranslation();
   const { prefs } = useAuth();
+  const isPro = useIsPro();
   const insets = useSafeAreaInsets();
   const cats = prefs.ingredient_categories;
   const catById = useMemo(() => {
@@ -283,7 +283,6 @@ export default function Spesa() {
                           ? `  ·  ${uniqueDishNames(item).join(', ')}`
                           : ''}
                     </Text>
-                    <ExpiryBadge iso={item.expires_at} />
                     {item.notes ? (
                       <View style={styles.notesRow}>
                         <Feather name="edit-2" size={11} color={theme.color.onSurfaceTertiary} />
@@ -335,7 +334,7 @@ export default function Spesa() {
             </View>
             <Text style={styles.modalH}>{t('spesa.clearConfirm.title', { n: boughtCount })}</Text>
             <Text style={styles.modalP}>
-              {t('spesa.clearConfirm.body')}
+              {isPro ? t('spesa.clearConfirm.bodyPro') : t('spesa.clearConfirm.body')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable

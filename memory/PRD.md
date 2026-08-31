@@ -99,7 +99,15 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Admin: `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/password`, `DELETE /admin/users/{id}`, `GET /admin/stats`, `GET /admin/export`, `GET /admin/export.csv`
 
 ## Data (MongoDB)
-- users (con array `recovery_codes` di `{code_hash, used_at}`), user_sessions (TTL su expires_at), dishes, weekly_plans, shopping_items
+- users (con array `recovery_codes` di `{code_hash, used_at}`), user_sessions (TTL su expires_at), dishes, weekly_plans, shopping_items, fridge_items, photos
+
+## AI Suggestions "Cosa cucino?" (giu 2026, Pro)
+- Endpoint `POST /api/ai/suggest-dishes` protetto da `require_pro`
+- Legge `fridge_items` dell'utente, invia prompt strutturato a `openai/gpt-5.4-mini` via Emergent Universal Key (`emergentintegrations.llm.chat.LlmChat`)
+- Genera 3-5 ricette in italiano/inglese (segue `preferences.language`) con schema JSON compatibile con `POST /api/dishes`
+- Frontend: pulsante FAB "Cosa cucino?" nel tab Frigorifero, apre `/ai-suggest`
+- Ogni ricetta: card espandibile con ingredienti + preparazione + note, bottone "Salva in Piatti" che crea il dish
+- Errori gestiti: `empty_fridge` (frigo vuoto) e `ai_error` (fallback rigenera)
 
 ## Icon
 Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta sage top-right, calendario+check bottom-left. Adaptive icon con safe area 66%.

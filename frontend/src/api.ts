@@ -134,9 +134,9 @@ export const api = {
   },
 
   listShopping: () => req('/shopping'),
-  addManual: (name: string, quantity: number, unit: string, notes = '', category_id?: string, photo_path?: string | null, expires_at?: string | null) =>
-    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes, category_id, photo_path, expires_at }) }),
-  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expires_at: string | null }>) =>
+  addManual: (name: string, quantity: number, unit: string, notes = '', category_id?: string, photo_path?: string | null) =>
+    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes, category_id, photo_path }) }),
+  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null }>) =>
     req(`/shopping/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleShopping: (id: string, checked: boolean) =>
     req(`/shopping/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ checked }) }),
@@ -145,4 +145,23 @@ export const api = {
   reorderShopping: (ordered_ids: string[]) =>
     req('/shopping/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
   clearChecked: () => req('/shopping/clear-checked', { method: 'POST' }),
+
+  // Frigorifero (Pro feature)
+  listFridge: () => req('/fridge'),
+  addFridge: (data: { name: string; quantity: number; unit: string; notes?: string; category_id?: string; photo_path?: string | null; expiries?: string[] }) =>
+    req('/fridge', { method: 'POST', body: JSON.stringify(data) }),
+  editFridge: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expiries: string[] }>) =>
+    req(`/fridge/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteFridge: (id: string) => req(`/fridge/${id}`, { method: 'DELETE' }),
+
+  // AI suggestions (Pro feature)
+  aiSuggestDishes: (params?: { count?: number; course?: string; include_pantry_staples?: boolean }) =>
+    req<{ dishes: any[]; model: string }>('/ai/suggest-dishes', {
+      method: 'POST',
+      body: JSON.stringify({
+        count: params?.count ?? 4,
+        course: params?.course,
+        include_pantry_staples: params?.include_pantry_staples ?? true,
+      }),
+    }),
 };

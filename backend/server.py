@@ -68,7 +68,6 @@ class ShoppingItemManual(BaseModel):
     notes: str = ""
     category_id: Optional[str] = None
     photo_path: Optional[str] = None  # Pro feature
-    expires_at: Optional[str] = None  # ISO date (Pro feature)
 
 
 class ShoppingItemUpdate(BaseModel):
@@ -78,7 +77,26 @@ class ShoppingItemUpdate(BaseModel):
     notes: Optional[str] = None
     category_id: Optional[str] = None
     photo_path: Optional[str] = None
-    expires_at: Optional[str] = None
+
+
+class FridgeItemCreate(BaseModel):
+    name: str
+    quantity: float
+    unit: str
+    notes: str = ""
+    category_id: Optional[str] = None
+    photo_path: Optional[str] = None
+    expiries: List[str] = []  # ISO dates (YYYY-MM-DD)
+
+
+class FridgeItemUpdate(BaseModel):
+    name: Optional[str] = None
+    quantity: Optional[float] = None
+    unit: Optional[str] = None
+    notes: Optional[str] = None
+    category_id: Optional[str] = None
+    photo_path: Optional[str] = None
+    expiries: Optional[List[str]] = None
 
 
 class ShoppingItemToggle(BaseModel):
@@ -87,6 +105,12 @@ class ShoppingItemToggle(BaseModel):
 
 class ShoppingReorder(BaseModel):
     ordered_ids: List[str]
+
+
+class AiSuggestRequest(BaseModel):
+    count: int = 4  # how many dishes to propose (3..5)
+    course: Optional[str] = None  # optional course filter (e.g. "primo")
+    include_pantry_staples: bool = True  # allow suggesting basic staples (oil, salt, ...)
 
 
 USERNAME_RE = re.compile(r"^[a-z0-9_.]{3,30}$")
@@ -1205,7 +1229,6 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
         "notes": body.notes,
         "category_id": body.category_id or "altro",
         "photo_path": body.photo_path,
-        "expires_at": body.expires_at,
         "checked": False,
         "order": next_order,
         "created_at": _now(),
@@ -1228,8 +1251,6 @@ async def edit_item(item_id: str, body: ShoppingItemUpdate, current_user=Depends
         update_set["category_id"] = body.category_id
     if body.photo_path is not None:
         update_set["photo_path"] = body.photo_path
-    if body.expires_at is not None:
-        update_set["expires_at"] = body.expires_at
     # Manual qty adjustment
     if body.quantity is not None:
         new_manual = max(0.0, float(body.quantity))
@@ -1329,14 +1350,384 @@ async def reorder(body: ShoppingReorder, current_user=Depends(get_current_user))
     return {"ok": True}
 
 
+def _fridge_key(name: str, unit: str) -> str:
+    return f"{name.strip().lower()}|{unit.strip().lower()}"
+
+
+async def _cleanup_expired_fridge(user_id: str) -> int:
+    """Auto-remove fridge items whose LATEST expiry is in the past."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    to_remove: List[str] = []
+    async for it in db.fridge_items.find({"user_id": user_id}, {"_id": 0}):
+        exps = [e for e in (it.get("expiries") or []) if isinstance(e, str)]
+        if not exps:
+            continue  # keep items without any date
+        latest = max(exps)
+        if latest < today:
+            to_remove.append(it["id"])
+    if to_remove:
+        await db.fridge_items.delete_many({"user_id": user_id, "id": {"$in": to_remove}})
+    return len(to_remove)
+
+
 @api_router.post("/shopping/clear-checked")
 async def clear_checked(current_user=Depends(get_current_user)):
-    """Delete ALL checked items, regardless of source (planner or manual)."""
-    await db.shopping_items.delete_many({
-        "user_id": current_user["user_id"],
-        "checked": True,
-    })
+    """Mark ALL checked shopping items as bought.
+    For Pro users the items are moved to the Frigorifero (fridge) collection
+    instead of being deleted, so expirations can be tracked.
+    For non-Pro users the historical behavior is preserved (delete only).
+    """
+    user_id = current_user["user_id"]
+    is_pro = _is_pro(current_user)
+    if is_pro:
+        # Move each checked shopping item to fridge_items (merge by name+unit key).
+        cursor = db.shopping_items.find({"user_id": user_id, "checked": True}, {"_id": 0})
+        checked_items = await cursor.to_list(length=None)
+        moved = 0
+        for si in checked_items:
+            fkey = _fridge_key(si.get("name", ""), si.get("unit", ""))
+            total_qty = float(si.get("manual_qty", 0.0)) + float(si.get("planner_qty", 0.0))
+            existing = await db.fridge_items.find_one({"user_id": user_id, "key": fkey}, {"_id": 0})
+            if existing:
+                await db.fridge_items.update_one(
+                    {"user_id": user_id, "key": fkey},
+                    {"$set": {
+                        "quantity": float(existing.get("quantity", 0.0)) + total_qty,
+                        "photo_path": existing.get("photo_path") or si.get("photo_path"),
+                        "category_id": existing.get("category_id") or si.get("category_id") or "altro",
+                        "updated_at": _now(),
+                    }},
+                )
+            else:
+                await db.fridge_items.insert_one({
+                    "id": _uid(),
+                    "user_id": user_id,
+                    "key": fkey,
+                    "name": si.get("name", ""),
+                    "unit": si.get("unit", ""),
+                    "quantity": total_qty,
+                    "category_id": si.get("category_id") or "altro",
+                    "photo_path": si.get("photo_path"),
+                    "notes": si.get("notes", ""),
+                    "expiries": [],
+                    "created_at": _now(),
+                })
+            moved += 1
+        # Also cleanup any freshly-expired items while we're here
+        await _cleanup_expired_fridge(user_id)
+        await db.shopping_items.delete_many({"user_id": user_id, "checked": True})
+        return {"ok": True, "moved_to_fridge": moved}
+    # Free tier: legacy behavior — just delete
+    result = await db.shopping_items.delete_many({"user_id": user_id, "checked": True})
+    return {"ok": True, "moved_to_fridge": 0, "deleted": result.deleted_count}
+
+
+# -------------------- Frigorifero (Pro feature) --------------------
+@api_router.get("/fridge")
+async def list_fridge(current_user=Depends(require_pro)):
+    user_id = current_user["user_id"]
+    await _cleanup_expired_fridge(user_id)
+    cursor = db.fridge_items.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
+    items = await cursor.to_list(length=None)
+    return items
+
+
+@api_router.post("/fridge")
+async def add_fridge(body: FridgeItemCreate, current_user=Depends(require_pro)):
+    user_id = current_user["user_id"]
+    key = _fridge_key(body.name, body.unit)
+    doc = {
+        "id": _uid(),
+        "user_id": user_id,
+        "key": key,
+        "name": body.name.strip(),
+        "unit": body.unit.strip(),
+        "quantity": float(body.quantity),
+        "category_id": body.category_id or "altro",
+        "photo_path": body.photo_path,
+        "notes": body.notes,
+        "expiries": sorted([e for e in (body.expiries or []) if isinstance(e, str) and len(e) == 10]),
+        "created_at": _now(),
+    }
+    await db.fridge_items.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.patch("/fridge/{item_id}")
+async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depends(require_pro)):
+    user_id = current_user["user_id"]
+    update_set: Dict[str, Any] = {}
+    if body.name is not None: update_set["name"] = body.name.strip()
+    if body.unit is not None: update_set["unit"] = body.unit.strip()
+    if body.quantity is not None: update_set["quantity"] = float(body.quantity)
+    if body.notes is not None: update_set["notes"] = body.notes
+    if body.category_id is not None: update_set["category_id"] = body.category_id
+    if body.photo_path is not None: update_set["photo_path"] = body.photo_path
+    if body.expiries is not None:
+        update_set["expiries"] = sorted([e for e in body.expiries if isinstance(e, str) and len(e) == 10])
+    if body.name is not None or body.unit is not None:
+        # rebuild key
+        cur = await db.fridge_items.find_one({"user_id": user_id, "id": item_id}, {"_id": 0})
+        if cur:
+            new_name = update_set.get("name", cur["name"])
+            new_unit = update_set.get("unit", cur["unit"])
+            update_set["key"] = _fridge_key(new_name, new_unit)
+    if not update_set:
+        return {"ok": True}
+    update_set["updated_at"] = _now()
+    result = await db.fridge_items.update_one(
+        {"user_id": user_id, "id": item_id},
+        {"$set": update_set},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    doc = await db.fridge_items.find_one({"user_id": user_id, "id": item_id}, {"_id": 0})
+    return doc
+
+
+@api_router.delete("/fridge/{item_id}")
+async def delete_fridge(item_id: str, current_user=Depends(require_pro)):
+    user_id = current_user["user_id"]
+    result = await db.fridge_items.delete_one({"user_id": user_id, "id": item_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
     return {"ok": True}
+
+
+# -------------------- AI Suggestions (Pro feature) --------------------
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+AI_MODEL_PROVIDER = "openai"
+AI_MODEL_NAME = "gpt-5.4-mini"  # cost-optimised
+
+
+def _valid_course_ids(prefs: Dict[str, Any]) -> List[str]:
+    courses = prefs.get("courses") or []
+    return [c.get("id") for c in courses if c.get("id")]
+
+
+def _valid_category_ids(prefs: Dict[str, Any]) -> List[str]:
+    cats = prefs.get("ingredient_categories") or []
+    return [c.get("id") for c in cats if c.get("id")]
+
+
+@api_router.post("/ai/suggest-dishes")
+async def ai_suggest_dishes(body: AiSuggestRequest, current_user=Depends(require_pro)):
+    """Suggest 3-5 dishes based on the current user's fridge items.
+
+    Uses the Emergent Universal Key (gpt-5.4-mini). Returns dish objects
+    compatible with POST /api/dishes so the client can save them 1-tap.
+    """
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=503, detail="AI service not configured")
+
+    user_id = current_user["user_id"]
+    await _cleanup_expired_fridge(user_id)
+    cursor = db.fridge_items.find({"user_id": user_id}, {"_id": 0})
+    fridge = await cursor.to_list(length=None)
+    if not fridge:
+        raise HTTPException(status_code=400, detail="empty_fridge")
+
+    prefs = current_user.get("preferences") or {}
+    lang = (prefs.get("language") or "it").lower()
+    valid_courses = _valid_course_ids(prefs) or ["primo", "secondo", "contorno", "dolce"]
+    valid_categories = _valid_category_ids(prefs) or [c["id"] for c in DEFAULT_INGREDIENT_CATEGORIES]
+
+    # Compact fridge summary sent to the model
+    fridge_lines: List[str] = []
+    for it in fridge:
+        line = f"- {it.get('name', '?')}"
+        q = it.get('quantity')
+        u = it.get('unit')
+        if q and u:
+            line += f" ({q} {u})"
+        elif u:
+            line += f" ({u})"
+        cat = it.get('category_id')
+        if cat:
+            line += f" [cat={cat}]"
+        exps = it.get('expiries') or []
+        if exps:
+            line += f" scad:{','.join(sorted(exps)[:2])}"
+        fridge_lines.append(line)
+    fridge_txt = "\n".join(fridge_lines)
+
+    count = max(3, min(5, int(body.count or 4)))
+    course_hint = f'Suggerisci SOLO piatti con course="{body.course}".' if body.course else ""
+
+    # Language-aware prompts
+    if lang == "en":
+        system_msg = (
+            "You are a professional home cook helping a user decide what to cook using ONLY the "
+            "ingredients they currently have. You output STRICT JSON — no prose, no code fences.\n"
+            "Prioritise ingredients that are closer to expiration. Prefer simple, tasty, real dishes. "
+            "Keep quantities realistic for the servings requested. Reply ALWAYS in English."
+        )
+        user_msg = (
+            f"I have these ingredients in my fridge/pantry:\n{fridge_txt}\n\n"
+            f"Please suggest {count} dishes I can make. {course_hint}\n\n"
+            "Return ONLY valid JSON matching this exact schema:\n"
+            "{\n"
+            '  "dishes": [\n'
+            "    {\n"
+            '      "name": "string",\n'
+            '      "course": "one of: ' + ", ".join(valid_courses) + '",\n'
+            '      "servings": 2,\n'
+            '      "ingredients": [\n'
+            "        {\n"
+            '          "name": "string",\n'
+            '          "quantity": number,\n'
+            '          "unit": "g|kg|ml|l|pz|cucchiaio|cucchiaino|tazza|q.b.",\n'
+            '          "category_id": "one of: ' + ", ".join(valid_categories) + '"\n'
+            "        }\n"
+            "      ],\n"
+            '      "preparation": "step-by-step instructions as ONE string with newline-separated steps",\n'
+            '      "notes": "optional short tip"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Do not add fields. Do not wrap in markdown."
+        )
+    else:  # it
+        system_msg = (
+            "Sei un cuoco casalingo esperto e aiuti l'utente a decidere cosa cucinare usando "
+            "SOLO gli ingredienti che ha già. Restituisci SEMPRE JSON valido, senza testo, senza "
+            "code fence.\nDai priorità agli ingredienti in scadenza. Proponi piatti semplici, "
+            "gustosi e realistici. Quantità coerenti con le porzioni richieste. "
+            "Rispondi SEMPRE in italiano."
+        )
+        user_msg = (
+            f"Ho questi ingredienti in casa:\n{fridge_txt}\n\n"
+            f"Proponi {count} piatti che posso cucinare. {course_hint}\n\n"
+            "Rispondi SOLO con JSON valido esattamente in questo schema:\n"
+            "{\n"
+            '  "dishes": [\n'
+            "    {\n"
+            '      "name": "string",\n'
+            '      "course": "uno tra: ' + ", ".join(valid_courses) + '",\n'
+            '      "servings": 2,\n'
+            '      "ingredients": [\n'
+            "        {\n"
+            '          "name": "string",\n'
+            '          "quantity": numero,\n'
+            '          "unit": "g|kg|ml|l|pz|cucchiaio|cucchiaino|tazza|q.b.",\n'
+            '          "category_id": "uno tra: ' + ", ".join(valid_categories) + '"\n'
+            "        }\n"
+            "      ],\n"
+            '      "preparation": "istruzioni passo-passo come UNICA stringa con passi separati da a-capo",\n'
+            '      "notes": "consiglio breve (facoltativo)"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Non aggiungere campi. Non usare markdown."
+        )
+
+    # Call Emergent LLM
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+    except Exception as e:  # pragma: no cover
+        logging.getLogger(__name__).error(f"emergentintegrations import failed: {e}")
+        raise HTTPException(status_code=503, detail="AI service unavailable")
+
+    chat = (
+        LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"ai-suggest-{user_id}-{uuid.uuid4().hex[:8]}",
+            system_message=system_msg,
+        )
+        .with_model(AI_MODEL_PROVIDER, AI_MODEL_NAME)
+    )
+
+    try:
+        raw = await chat.send_message(UserMessage(text=user_msg))
+    except Exception as e:
+        logging.getLogger(__name__).exception(f"AI call failed: {e}")
+        raise HTTPException(status_code=502, detail="AI request failed")
+
+    # LlmChat.send_message may return str or an object with .text — normalise
+    text = raw if isinstance(raw, str) else getattr(raw, "text", None) or getattr(raw, "content", None) or str(raw)
+
+    import json as _json
+    # Strip common code-fence wrappers just in case
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+    try:
+        payload = _json.loads(cleaned)
+    except Exception:
+        # Try to extract the first {...} block
+        m = re.search(r"\{[\s\S]*\}", cleaned)
+        if not m:
+            logging.getLogger(__name__).error(f"AI response not JSON: {text[:400]}")
+            raise HTTPException(status_code=502, detail="AI returned invalid response")
+        try:
+            payload = _json.loads(m.group(0))
+        except Exception:
+            raise HTTPException(status_code=502, detail="AI returned invalid response")
+
+    dishes_raw = payload.get("dishes") if isinstance(payload, dict) else payload
+    if not isinstance(dishes_raw, list):
+        raise HTTPException(status_code=502, detail="AI returned invalid response")
+
+    valid_units = {"g", "kg", "ml", "l", "pz", "cucchiaio", "cucchiaino", "tazza", "q.b."}
+    valid_course_set = set(valid_courses)
+    valid_cat_set = set(valid_categories)
+    default_course = valid_courses[0]
+
+    def _clean_dish(d: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(d, dict):
+            return None
+        name = str(d.get("name") or "").strip()
+        if not name:
+            return None
+        course = str(d.get("course") or "").strip().lower()
+        if course not in valid_course_set:
+            course = default_course
+        try:
+            servings = max(1, min(20, int(d.get("servings") or 2)))
+        except Exception:
+            servings = 2
+        ings_raw = d.get("ingredients") or []
+        ings: List[Dict[str, Any]] = []
+        for ing in ings_raw[:30]:
+            if not isinstance(ing, dict):
+                continue
+            iname = str(ing.get("name") or "").strip()
+            if not iname:
+                continue
+            try:
+                iq = float(ing.get("quantity") or 0)
+            except Exception:
+                iq = 0.0
+            iu = str(ing.get("unit") or "pz").strip()
+            if iu not in valid_units:
+                iu = "pz"
+            icat = str(ing.get("category_id") or "").strip()
+            if icat not in valid_cat_set:
+                icat = "altro" if "altro" in valid_cat_set else next(iter(valid_cat_set), "altro")
+            ings.append({
+                "name": iname[:80],
+                "quantity": iq,
+                "unit": iu,
+                "category_id": icat,
+            })
+        prep = str(d.get("preparation") or "").strip()
+        notes = str(d.get("notes") or "").strip()
+        return {
+            "name": name[:120],
+            "course": course,
+            "servings": servings,
+            "ingredients": ings,
+            "preparation": prep,
+            "notes": notes,
+        }
+
+    dishes = [x for x in (_clean_dish(d) for d in dishes_raw) if x]
+    if not dishes:
+        raise HTTPException(status_code=502, detail="AI returned no usable dishes")
+
+    return {"dishes": dishes, "model": AI_MODEL_NAME}
 
 
 @api_router.get("/")
@@ -1596,6 +1987,8 @@ async def startup():
     await db.shopping_items.create_index([("user_id", 1), ("order", 1)])
     await db.photos.create_index([("user_id", 1)])
     await db.photos.create_index("path", unique=True)
+    await db.fridge_items.create_index([("user_id", 1), ("key", 1)])
+    await db.fridge_items.create_index([("user_id", 1), ("created_at", -1)])
 
     # Initialize Emergent Object Storage (idempotent)
     try:
