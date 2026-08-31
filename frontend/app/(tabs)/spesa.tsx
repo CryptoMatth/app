@@ -211,20 +211,21 @@ export default function Spesa() {
           <Text style={styles.emptyP}>{t('spesa.empty.sub')}</Text>
         </View>
       ) : (
-        <DraggableFlatList
-          data={groupedItems}
-          keyExtractor={(item) => item.id}
-          onDragEnd={({ data }) => onReorder(data)}
-          onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)}
-          activationDistance={12}
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            padding: theme.spacing.lg,
-            paddingBottom: 180 + Math.max(insets.bottom, 0),
-          }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />
-          }
+        <View style={{ flex: 1 }}>
+          <DraggableFlatList
+            data={groupedItems}
+            keyExtractor={(item) => item.id}
+            onDragEnd={({ data }) => onReorder(data)}
+            onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)}
+            activationDistance={12}
+            containerStyle={{ flex: 1 }}
+            contentContainerStyle={{
+              padding: theme.spacing.lg,
+              paddingBottom: 180 + Math.max(insets.bottom, 0),
+            }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />
+            }
           renderItem={({ item, drag, isActive }: RenderItemParams<Item>) => {
             const showHeader = !item.checked && firstOfCategory.has(item.id);
             const catId = item.category_id || 'altro';
@@ -285,7 +286,8 @@ export default function Spesa() {
             );
           }}
           ItemSeparatorComponent={() => <View style={{ height: theme.spacing.sm }} />}
-        />
+          />
+        </View>
       )}
 
       <View style={styles.actions}>
