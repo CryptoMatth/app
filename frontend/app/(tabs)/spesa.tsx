@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -45,6 +45,7 @@ function uniqueDishNames(item: Item): string[] {
 export default function Spesa() {
   const { t, tCat } = useTranslation();
   const { prefs } = useAuth();
+  const insets = useSafeAreaInsets();
   const cats = prefs.ingredient_categories;
   const catById = useMemo(() => {
     const m: Record<string, typeof cats[number]> = {};
@@ -169,7 +170,8 @@ export default function Spesa() {
           <View style={{ flex: 1 }}>
             <Text style={styles.h1}>{t('spesa.title')}</Text>
             <Text style={styles.sub}>
-              {items.length} · {boughtCount > 0 ? `${boughtCount} ✓` : ''}
+              {items.length === 1 ? t('spesa.count.item') : t('spesa.count.items', { n: items.length })}
+              {boughtCount > 0 ? ` · ${t('spesa.count.bought', { n: boughtCount })}` : ''}
             </Text>
           </View>
           <View style={styles.headerRight}>
@@ -215,7 +217,11 @@ export default function Spesa() {
           onDragEnd={({ data }) => onReorder(data)}
           onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)}
           activationDistance={12}
-          contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 160 }}
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: theme.spacing.lg,
+            paddingBottom: 180 + Math.max(insets.bottom, 0),
+          }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />
           }

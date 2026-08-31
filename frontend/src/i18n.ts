@@ -122,6 +122,9 @@ const IT: Dict = {
 
   // ---- Spesa tab ----
   'spesa.title': 'Spesa',
+  'spesa.count.items': '{n} ingredienti',
+  'spesa.count.item': '1 ingrediente',
+  'spesa.count.bought': '{n} presi',
   'spesa.empty.title': 'Lista vuota',
   'spesa.empty.sub': 'Aggiungi elementi manuali o assegna piatti nel Planner.',
   'spesa.newItem': 'Nuovo elemento',
@@ -484,6 +487,9 @@ const EN: Dict = {
   'planner.biweekly.note': 'This currently copies only the selected destination week. For the second one, use the “Duplicate” button next to its header (or temporarily switch to the weekly Planner).',
 
   'spesa.title': 'Shopping',
+  'spesa.count.items': '{n} items',
+  'spesa.count.item': '1 item',
+  'spesa.count.bought': '{n} bought',
   'spesa.empty.title': 'Empty list',
   'spesa.empty.sub': 'Add items manually or plan dishes in the Planner.',
   'spesa.newItem': 'New item',
