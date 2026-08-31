@@ -11,6 +11,7 @@ import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
+import { PhotoThumb } from '@/src/PhotoPicker';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[]; preparation: string; servings: number };
 
@@ -128,7 +129,8 @@ export default function Piatti() {
               onPress={() => router.push(`/dish/${item.id}`)}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}
             >
-              <View style={{ flex: 1 }}>
+              <PhotoThumb path={(item as any).photo_path} size={48} rounded fallbackIcon="coffee" />
+              <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.cardMeta}>
                   {t('piatti.meta', { n: item.ingredients?.length || 0, s: item.servings })}

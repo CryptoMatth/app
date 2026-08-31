@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, Modal, Alert, Keyboard, ScrollView,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, Modal, Alert, Keyboard, ScrollView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useAuth, Course, IngredientCategory } from '@/src/auth';
+import { useAuth, Course, IngredientCategory, NotificationPrefs } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { weekStartOptions } from '@/src/week';
 import { useTranslation } from '@/src/i18n';
+import { useIsPro, ProUpsellModal } from '@/src/ProGate';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -42,6 +43,9 @@ export default function PreferencesSettings() {
   const [language, setLanguage] = useState<'it' | 'en'>(prefs.language);
   const [courses, setCourses] = useState<Course[]>(prefs.courses);
   const [ingCats, setIngCats] = useState<IngredientCategory[]>(prefs.ingredient_categories);
+  const [notif, setNotif] = useState<NotificationPrefs>(prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true });
+  const isPro = useIsPro();
+  const [upsell, setUpsell] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [editing, setEditing] = useState<EditingCat>(null);
@@ -52,6 +56,7 @@ export default function PreferencesSettings() {
     setLanguage(prefs.language);
     setCourses(prefs.courses);
     setIngCats(prefs.ingredient_categories);
+    setNotif(prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true });
   }, [prefs]);
   useEffect(() => {
     if (!msg) return;
@@ -74,8 +79,13 @@ export default function PreferencesSettings() {
       if (ingCats[i].id !== prefs.ingredient_categories[i]?.id) return true;
       if ((ingCats[i].icon || '') !== (prefs.ingredient_categories[i]?.icon || '')) return true;
     }
+    const pn = prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true };
+    if (notif.enabled !== pn.enabled) return true;
+    if (notif.expiry_days_ahead !== pn.expiry_days_ahead) return true;
+    if (notif.notify_hour !== pn.notify_hour) return true;
+    if (notif.freezer_enabled !== pn.freezer_enabled) return true;
     return false;
-  }, [weekStart, span, language, courses, ingCats, prefs]);
+  }, [weekStart, span, language, courses, ingCats, notif, prefs]);
 
   const save = async () => {
     Keyboard.dismiss();
@@ -88,6 +98,7 @@ export default function PreferencesSettings() {
         language,
         courses,
         ingredient_categories: ingCats,
+        notifications: notif,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMsg({ kind: 'ok', text: t('prefs.saved') });
@@ -300,6 +311,91 @@ export default function PreferencesSettings() {
           </Pressable>
         </View>
 
+        {/* --- Notifications (Pro) --- */}
+        <View style={s.section}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={s.sectionH}>{t('notif.h')}</Text>
+            {!isPro && (
+              <View style={notifStyles.proBadge}>
+                <Feather name="lock" size={9} color="#fff" />
+                <Text style={notifStyles.proBadgeTxt}>PRO</Text>
+              </View>
+            )}
+          </View>
+          <Text style={s.sectionSub}>{t('notif.sub')}</Text>
+
+          <View style={notifStyles.row}>
+            <Text style={notifStyles.rowLabel}>{t('notif.enabled')}</Text>
+            <Pressable
+              onPress={() => {
+                if (!isPro) { setUpsell(true); return; }
+                Haptics.selectionAsync();
+                setNotif(n => ({ ...n, enabled: !n.enabled }));
+              }}
+              style={[notifStyles.switch, notif.enabled && notifStyles.switchOn]}
+              testID="notif-enabled"
+            >
+              <View style={[notifStyles.thumb, notif.enabled && notifStyles.thumbOn]} />
+            </Pressable>
+          </View>
+
+          <View style={{ opacity: (notif.enabled && isPro) ? 1 : 0.45 }} pointerEvents={(notif.enabled && isPro) ? 'auto' : 'none'}>
+            <Text style={notifStyles.subLabel}>{t('notif.expiryDays')}</Text>
+            <View style={notifStyles.chipsRow}>
+              {[0, 1, 2, 3, 7].map(d => {
+                const active = notif.expiry_days_ahead === d;
+                return (
+                  <Pressable
+                    key={d}
+                    onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, expiry_days_ahead: d })); }}
+                    style={[notifStyles.chip, active && notifStyles.chipActive]}
+                    testID={`notif-days-${d}`}
+                  >
+                    <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>
+                      {d === 0 ? t('common.today') : `${d}g`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={notifStyles.subLabel}>{t('notif.expiryTime')}</Text>
+            <View style={notifStyles.chipsRow}>
+              {[7, 9, 12, 18, 20].map(h => {
+                const active = notif.notify_hour === h;
+                return (
+                  <Pressable
+                    key={h}
+                    onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, notify_hour: h })); }}
+                    style={[notifStyles.chip, active && notifStyles.chipActive]}
+                    testID={`notif-hour-${h}`}
+                  >
+                    <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{h}:00</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={notifStyles.row}>
+              <Text style={notifStyles.rowLabel}>{t('notif.freezer')}</Text>
+              <Pressable
+                onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, freezer_enabled: !n.freezer_enabled })); }}
+                style={[notifStyles.switch, notif.freezer_enabled && notifStyles.switchOn]}
+                testID="notif-freezer"
+              >
+                <View style={[notifStyles.thumb, notif.freezer_enabled && notifStyles.thumbOn]} />
+              </Pressable>
+            </View>
+          </View>
+
+          {Platform.OS === 'web' && notif.enabled && (
+            <View style={notifStyles.warn}>
+              <Feather name="info" size={12} color={theme.color.brand} />
+              <Text style={notifStyles.warnTxt}>{t('notif.nativeOnly')}</Text>
+            </View>
+          )}
+        </View>
+
         {msg ? (
           <View style={[s.msgBox, msg.kind === 'err' ? s.msgErr : s.msgOk]} testID="prefs-msg">
             <Feather name={msg.kind === 'err' ? 'alert-circle' : 'check-circle'} size={16}
@@ -360,9 +456,29 @@ export default function PreferencesSettings() {
           </View>
         </View>
       </Modal>
+      <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="notifications" />
     </SafeAreaView>
   );
 }
+
+const notifStyles = StyleSheet.create({
+  proBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, backgroundColor: theme.color.brand },
+  proBadgeTxt: { color: '#fff', fontWeight: '700', fontSize: 9 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: theme.spacing.sm },
+  rowLabel: { fontSize: 14, color: theme.color.onSurface, flex: 1 },
+  subLabel: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: theme.spacing.md, marginBottom: 6, fontWeight: '500' },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
+  chipActive: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
+  chipTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
+  chipTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },
+  switch: { width: 44, height: 26, borderRadius: 13, backgroundColor: theme.color.borderStrong, padding: 3, justifyContent: 'center' },
+  switchOn: { backgroundColor: theme.color.brandPrimary },
+  thumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
+  thumbOn: { alignSelf: 'flex-end' },
+  warn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: theme.spacing.sm, padding: 10, backgroundColor: '#FDE2CE', borderRadius: theme.radius.md },
+  warnTxt: { flex: 1, fontSize: 11, color: theme.color.brand, fontStyle: 'italic' },
+});
 
 const styles = StyleSheet.create({
   saveHeader: { minWidth: 60, height: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm },

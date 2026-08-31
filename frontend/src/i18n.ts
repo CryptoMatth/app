@@ -58,6 +58,50 @@ const IT: Dict = {
   'common.merge': 'Unisci',
   'common.refresh': 'Aggiorna',
 
+  // ---- Pro upsell + gating ----
+  'pro.upsell.title': 'Sblocca PlanEat Pro',
+  'pro.upsell.sub': 'Ottieni tutte le funzionalità avanzate per portare la tua cucina al livello successivo.',
+  'pro.feat.photos.t': 'Foto piatti & ingredienti',
+  'pro.feat.photos.b': 'Aggiungi una foto ad ogni piatto, ingrediente e voce della spesa.',
+  'pro.feat.expiry.t': 'Scadenze intelligenti',
+  'pro.feat.expiry.b': 'Notifica configurabile prima che un prodotto scada.',
+  'pro.feat.freezer.t': 'Alert surgelati',
+  'pro.feat.freezer.b': 'Avviso 24h prima di un pasto che usa ingredienti congelati.',
+  'pro.feat.backup.t': 'Backup automatico',
+  'pro.feat.backup.b': 'Sincronizzazione settimanale silenziosa su Google Drive.',
+  'pro.cta': 'Passa a Pro',
+  'pro.later': 'Forse più tardi',
+  'pro.lockedFeature': 'Funzionalità Pro',
+
+  // ---- Photo picker ----
+  'photo.title': 'Foto',
+  'photo.add': 'Aggiungi foto',
+  'photo.change': 'Cambia foto',
+  'photo.permTitle': 'Permesso foto necessario',
+  'photo.permBody': 'Consenti l\'accesso alle foto per aggiungere immagini ai tuoi piatti.',
+  'photo.openSettings': 'Apri impostazioni',
+
+  // ---- Expiry + freezer ----
+  'expiry.h': 'Scadenza',
+  'expiry.set': 'Imposta scadenza',
+  'expiry.clear': 'Rimuovi scadenza',
+  'expiry.today': 'Scade oggi',
+  'expiry.tomorrow': 'Scade domani',
+  'expiry.in': 'Scade tra {n} gg',
+  'expiry.expired': 'Scaduto da {n} gg',
+  'expiry.expiredToday': 'Scaduto oggi',
+
+  // ---- Notification preferences ----
+  'notif.h': 'Notifiche',
+  'notif.sub': 'Ricevi promemoria per scadenze e surgelati.',
+  'notif.enabled': 'Attive',
+  'notif.expiryDays': 'Preavviso scadenza (giorni)',
+  'notif.expiryTime': 'Ora della notifica',
+  'notif.freezer': 'Alert surgelati (24h prima)',
+  'notif.permTitle': 'Permesso notifiche necessario',
+  'notif.permBody': 'Consenti le notifiche per ricevere promemoria scadenze e surgelati.',
+  'notif.nativeOnly': 'Le notifiche funzionano solo su build nativa (non in Expo Go/web preview).',
+
   // ---- Piatti tab ----
   'piatti.title': 'Piatti',
   'piatti.subtitle': 'Il tuo ricettario personale',
@@ -426,6 +470,50 @@ const EN: Dict = {
   'common.restore': 'Restore',
   'common.merge': 'Merge',
   'common.refresh': 'Refresh',
+
+  // ---- Pro upsell + gating ----
+  'pro.upsell.title': 'Unlock PlanEat Pro',
+  'pro.upsell.sub': 'Get every advanced feature and take your kitchen to the next level.',
+  'pro.feat.photos.t': 'Dish & ingredient photos',
+  'pro.feat.photos.b': 'Add a photo to every dish, ingredient and shopping item.',
+  'pro.feat.expiry.t': 'Smart expiration alerts',
+  'pro.feat.expiry.b': 'Customizable notification before a product expires.',
+  'pro.feat.freezer.t': 'Freezer alerts',
+  'pro.feat.freezer.b': '24h heads-up for planned meals that use frozen ingredients.',
+  'pro.feat.backup.t': 'Automatic backup',
+  'pro.feat.backup.b': 'Silent weekly sync to Google Drive.',
+  'pro.cta': 'Upgrade to Pro',
+  'pro.later': 'Maybe later',
+  'pro.lockedFeature': 'Pro feature',
+
+  // ---- Photo picker ----
+  'photo.title': 'Photo',
+  'photo.add': 'Add photo',
+  'photo.change': 'Change photo',
+  'photo.permTitle': 'Photo permission needed',
+  'photo.permBody': 'Allow photo access to add images to your dishes.',
+  'photo.openSettings': 'Open settings',
+
+  // ---- Expiry + freezer ----
+  'expiry.h': 'Expiration',
+  'expiry.set': 'Set expiration',
+  'expiry.clear': 'Clear expiration',
+  'expiry.today': 'Expires today',
+  'expiry.tomorrow': 'Expires tomorrow',
+  'expiry.in': 'Expires in {n} days',
+  'expiry.expired': 'Expired {n} days ago',
+  'expiry.expiredToday': 'Expired today',
+
+  // ---- Notification preferences ----
+  'notif.h': 'Notifications',
+  'notif.sub': 'Get reminders for expiring items and frozen meals.',
+  'notif.enabled': 'Enabled',
+  'notif.expiryDays': 'Expiry warning (days ahead)',
+  'notif.expiryTime': 'Notification time',
+  'notif.freezer': 'Freezer alerts (24h before)',
+  'notif.permTitle': 'Notification permission needed',
+  'notif.permBody': 'Allow notifications to get reminders for expiry and freezer alerts.',
+  'notif.nativeOnly': 'Notifications only work on a native build (not in Expo Go / web preview).',
 
   'piatti.title': 'Dishes',
   'piatti.subtitle': 'Your personal recipe book',

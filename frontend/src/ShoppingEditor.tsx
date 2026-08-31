@@ -11,6 +11,8 @@ import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
+import { PhotoPicker } from '@/src/PhotoPicker';
+import { ExpiryPicker } from '@/src/ExpiryPicker';
 
 const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'q.b.'];
 
@@ -30,6 +32,8 @@ export default function ShoppingEditor({ id }: Props) {
   const [unit, setUnit] = useState('g');
   const [notes, setNotes] = useState('');
   const [categoryId, setCategoryId] = useState<string>('altro');
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [plannerQty, setPlannerQty] = useState(0);
   const [loading, setLoading] = useState(!isNew);
   const [busy, setBusy] = useState(false);
@@ -47,6 +51,8 @@ export default function ShoppingEditor({ id }: Props) {
           setUnit(it.unit || 'g');
           setNotes(it.notes || '');
           setCategoryId(it.category_id || 'altro');
+          setPhotoPath(it.photo_path || null);
+          setExpiresAt(it.expires_at || null);
           setPlannerQty(it.planner_qty || 0);
         }
       } catch {}
@@ -68,7 +74,7 @@ export default function ShoppingEditor({ id }: Props) {
     try {
       if (isNew) {
         if (q <= 0) { setErr(t('spesa.errors.qtyZero')); setBusy(false); return; }
-        await api.addManual(name.trim(), q, unit, notes, categoryId);
+        await api.addManual(name.trim(), q, unit, notes, categoryId, photoPath, expiresAt);
       } else {
         await api.editShopping(itemId!, {
           name: name.trim(),
@@ -76,6 +82,8 @@ export default function ShoppingEditor({ id }: Props) {
           unit,
           notes,
           category_id: categoryId,
+          photo_path: photoPath,
+          expires_at: expiresAt,
         });
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -106,6 +114,10 @@ export default function ShoppingEditor({ id }: Props) {
         keyboardShouldPersistTaps="handled"
         bottomOffset={80}
       >
+        <View style={{ alignItems: 'center', marginBottom: theme.spacing.sm }}>
+          <PhotoPicker value={photoPath} onChange={setPhotoPath} size={92} testID="shop-photo" />
+        </View>
+
         <Text style={styles.label}>{t('common.name')}</Text>
         <TextInput
           testID="shop-name-input"
@@ -169,6 +181,8 @@ export default function ShoppingEditor({ id }: Props) {
             );
           })}
         </ScrollView>
+
+        <ExpiryPicker value={expiresAt} onChange={setExpiresAt} />
 
         {err ? <Text style={styles.err} testID="shop-error">{err}</Text> : null}
       </KeyboardAwareScrollView>

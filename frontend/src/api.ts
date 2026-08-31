@@ -104,10 +104,39 @@ export const api = {
   exportData: () => req('/export'),
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
 
+  // Photo upload/download (Pro feature)
+  uploadPhoto: async (uri: string, contentType: string): Promise<string> => {
+    const token = await getToken();
+    const filename = uri.split('/').pop() || `photo.${(contentType.split('/')[1] || 'jpg')}`;
+    const form = new FormData();
+    if (Platform.OS === 'web') {
+      const blob = await (await fetch(uri)).blob();
+      form.append('file', blob, filename);
+    } else {
+      form.append('file', { uri, name: filename, type: contentType } as any);
+    }
+    const res = await fetch(`${API_URL}/api/upload/photo`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.message)) || res.statusText;
+      throw new Error(typeof msg === 'string' ? msg : `HTTP ${res.status}`);
+    }
+    return data.path as string;
+  },
+  signPhotoToken: async (path: string): Promise<string> => {
+    const r = await req<{ token: string }>(`/files-token/${encodeURI(path)}`);
+    return r.token;
+  },
+
   listShopping: () => req('/shopping'),
-  addManual: (name: string, quantity: number, unit: string, notes = '', category_id?: string) =>
-    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes, category_id }) }),
-  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string }>) =>
+  addManual: (name: string, quantity: number, unit: string, notes = '', category_id?: string, photo_path?: string | null, expires_at?: string | null) =>
+    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes, category_id, photo_path, expires_at }) }),
+  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expires_at: string | null }>) =>
     req(`/shopping/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleShopping: (id: string, checked: boolean) =>
     req(`/shopping/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ checked }) }),

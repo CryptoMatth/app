@@ -13,6 +13,8 @@ import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
+import { PhotoThumb } from '@/src/PhotoPicker';
+import { ExpiryBadge } from '@/src/ExpiryPicker';
 
 type Item = {
   id: string; name: string; unit: string;
@@ -20,6 +22,8 @@ type Item = {
   sources: { dish_name: string; quantity: number }[];
   notes?: string;
   category_id?: string;
+  photo_path?: string | null;
+  expires_at?: string | null;
   checked: boolean; order: number;
 };
 
@@ -264,7 +268,8 @@ export default function Spesa() {
                       {item.checked && <Feather name="check" size={14} color="#fff" />}
                     </View>
                   </Pressable>
-                  <View style={{ flex: 1 }}>
+                  <PhotoThumb path={item.photo_path} size={36} rounded fallbackIcon="shopping-bag" />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
                     <View style={styles.rowTitleWrap}>
                       {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />}
                       {item.manual_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />}
@@ -278,6 +283,7 @@ export default function Spesa() {
                           ? `  ·  ${uniqueDishNames(item).join(', ')}`
                           : ''}
                     </Text>
+                    <ExpiryBadge iso={item.expires_at} />
                     {item.notes ? (
                       <View style={styles.notesRow}>
                         <Feather name="edit-2" size={11} color={theme.color.onSurfaceTertiary} />

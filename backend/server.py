@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Header, UploadFile, File, Query
+from fastapi.responses import Response
 from fastapi.security.utils import get_authorization_scheme_param
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,6 +18,11 @@ import httpx
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
+
+from storage import (
+    put_object, get_object, sign_token, verify_token,
+    user_photo_path, init_storage,
+)
 
 
 ROOT_DIR = Path(__file__).parent
@@ -42,6 +48,7 @@ class Ingredient(BaseModel):
     quantity: float
     unit: str  # e.g. "g", "kg", "ml", "pz"
     category_id: Optional[str] = None  # matches user's preferences.ingredient_categories
+    photo_path: Optional[str] = None  # Emergent Object Storage path (Pro feature)
 
 
 class DishCreate(BaseModel):
@@ -51,6 +58,7 @@ class DishCreate(BaseModel):
     preparation: str = ""
     servings: int = 1
     notes: str = ""
+    photo_path: Optional[str] = None  # Emergent Object Storage path (Pro feature)
 
 
 class ShoppingItemManual(BaseModel):
@@ -59,6 +67,8 @@ class ShoppingItemManual(BaseModel):
     unit: str
     notes: str = ""
     category_id: Optional[str] = None
+    photo_path: Optional[str] = None  # Pro feature
+    expires_at: Optional[str] = None  # ISO date (Pro feature)
 
 
 class ShoppingItemUpdate(BaseModel):
@@ -67,6 +77,8 @@ class ShoppingItemUpdate(BaseModel):
     unit: Optional[str] = None
     notes: Optional[str] = None
     category_id: Optional[str] = None
+    photo_path: Optional[str] = None
+    expires_at: Optional[str] = None
 
 
 class ShoppingItemToggle(BaseModel):
@@ -131,6 +143,12 @@ def _default_prefs() -> Dict[str, Any]:
         "language": DEFAULT_LANGUAGE,
         "courses": [dict(c) for c in DEFAULT_COURSES],
         "ingredient_categories": [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES],
+        "notifications": {
+            "enabled": False,
+            "expiry_days_ahead": 1,
+            "notify_hour": 9,
+            "freezer_enabled": True,
+        },
     }
 
 
@@ -212,12 +230,20 @@ class IngredientCategoryItem(BaseModel):
     color: Optional[str] = None
 
 
+class NotificationPrefs(BaseModel):
+    enabled: Optional[bool] = None
+    expiry_days_ahead: Optional[int] = None  # notify N days before expiration
+    notify_hour: Optional[int] = None  # 0..23
+    freezer_enabled: Optional[bool] = None
+
+
 class PreferencesBody(BaseModel):
     week_start_day: Optional[int] = None  # 0=Mon..6=Sun
     planner_span: Optional[Literal["weekly", "biweekly"]] = None
     language: Optional[Literal["it", "en"]] = None
     courses: Optional[List[CourseItem]] = None
     ingredient_categories: Optional[List[IngredientCategoryItem]] = None
+    notifications: Optional[NotificationPrefs] = None
 
 
 # -------------------- Helpers --------------------
@@ -377,6 +403,8 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         prefs["courses"] = [dict(c) for c in DEFAULT_COURSES]
     if not prefs.get("ingredient_categories"):
         prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
+    if not prefs.get("notifications"):
+        prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "notify_hour": 9, "freezer_enabled": True}
 
     # Compute pro entitlement (founder whitelist OR explicit DB flag)
     ents = user_doc.get("entitlements") or {}
@@ -410,6 +438,19 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def _is_pro(user_doc: Dict[str, Any]) -> bool:
+    ents = user_doc.get("entitlements") or {}
+    pro_ent = ents.get("pro") or {}
+    is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
+    return bool(is_founder or pro_ent.get("active"))
+
+
+async def require_pro(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if not _is_pro(user):
+        raise HTTPException(status_code=402, detail="Pro subscription required")
     return user
 
 
@@ -665,6 +706,16 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         if not cleaned_ic:
             raise HTTPException(422, "Nessuna categoria ingrediente valida fornita")
         prefs["ingredient_categories"] = cleaned_ic
+    if body.notifications is not None:
+        cur = prefs.get("notifications") or {}
+        n = body.notifications
+        if n.enabled is not None: cur["enabled"] = bool(n.enabled)
+        if n.expiry_days_ahead is not None:
+            cur["expiry_days_ahead"] = max(0, min(30, int(n.expiry_days_ahead)))
+        if n.notify_hour is not None:
+            cur["notify_hour"] = max(0, min(23, int(n.notify_hour)))
+        if n.freezer_enabled is not None: cur["freezer_enabled"] = bool(n.freezer_enabled)
+        prefs["notifications"] = cur
     await db.users.update_one(
         {"user_id": current_user["user_id"]},
         {"$set": {"preferences": prefs, "updated_at": _now()}},
@@ -706,6 +757,7 @@ async def create_dish(body: DishCreate, current_user=Depends(get_current_user)):
         "preparation": body.preparation,
         "notes": body.notes,
         "servings": max(1, body.servings),
+        "photo_path": body.photo_path,
         "created_at": _now(),
     }
     await db.dishes.insert_one(dish)
@@ -741,6 +793,7 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
             "preparation": body.preparation,
             "notes": body.notes,
             "servings": new_servings,
+            "photo_path": body.photo_path,
         }},
     )
     if res.matched_count == 0:
@@ -1151,6 +1204,8 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
         "sources": [],
         "notes": body.notes,
         "category_id": body.category_id or "altro",
+        "photo_path": body.photo_path,
+        "expires_at": body.expires_at,
         "checked": False,
         "order": next_order,
         "created_at": _now(),
@@ -1171,6 +1226,10 @@ async def edit_item(item_id: str, body: ShoppingItemUpdate, current_user=Depends
         update_set["notes"] = body.notes
     if body.category_id is not None:
         update_set["category_id"] = body.category_id
+    if body.photo_path is not None:
+        update_set["photo_path"] = body.photo_path
+    if body.expires_at is not None:
+        update_set["expires_at"] = body.expires_at
     # Manual qty adjustment
     if body.quantity is not None:
         new_manual = max(0.0, float(body.quantity))
@@ -1283,6 +1342,95 @@ async def clear_checked(current_user=Depends(get_current_user)):
 @api_router.get("/")
 async def root():
     return {"message": "Cucina di Casa API"}
+
+
+# -------------------- Photo upload (Pro feature) --------------------
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"}
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024  # 4 MB after client-side compression
+
+
+@api_router.post("/upload/photo")
+async def upload_photo(
+    file: UploadFile = File(...),
+    current_user=Depends(require_pro),
+):
+    """Upload a photo (dish/ingredient/shopping). Returns storage path."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {content_type}")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 4MB)")
+
+    ext_map = {
+        "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+        "image/webp": "webp", "image/heic": "heic", "image/heif": "heif",
+    }
+    ext = ext_map.get(content_type, "jpg")
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    path = user_photo_path(current_user["user_id"], filename)
+    try:
+        await put_object(path, data, content_type)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Photo upload failed: {e}")
+        raise HTTPException(status_code=502, detail="Storage upload failed")
+
+    # Persist ownership so future GETs can be authorized
+    await db.photos.insert_one({
+        "path": path,
+        "user_id": current_user["user_id"],
+        "content_type": content_type,
+        "size": len(data),
+        "created_at": _now(),
+    })
+    return {"path": path, "size": len(data), "content_type": content_type}
+
+
+@api_router.get("/files/{path:path}")
+async def get_photo(
+    path: str,
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Serve a stored photo. Authenticated via bearer OR short-lived ?token= (web)."""
+    # Look up ownership from our DB
+    meta = await db.photos.find_one({"path": path}, {"_id": 0})
+    if not meta:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    authorized = False
+    # 1) Bearer token path
+    if authorization:
+        try:
+            user = await get_current_user(authorization=authorization)
+            if user["user_id"] == meta["user_id"]:
+                authorized = True
+        except HTTPException:
+            pass
+    # 2) Signed query token path (for web <img>)
+    if not authorized and token and verify_token(path, token):
+        authorized = True
+
+    if not authorized:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        data, ctype = await get_object(path)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Photo fetch failed: {e}")
+        raise HTTPException(status_code=502, detail="Storage read failed")
+    return Response(content=data, media_type=ctype, headers={"Cache-Control": "public, max-age=3600"})
+
+
+@api_router.get("/files-token/{path:path}")
+async def sign_photo(path: str, current_user=Depends(get_current_user)):
+    """Issue a short-lived HMAC token so <img> tags on web can auth read."""
+    meta = await db.photos.find_one({"path": path}, {"_id": 0})
+    if not meta or meta.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"token": sign_token(path, ttl_seconds=3600)}
 
 
 # -------------------- Export / Import --------------------
@@ -1446,6 +1594,14 @@ async def startup():
     await db.weekly_plans.create_index([("user_id", 1), ("week_start", 1)], unique=True)
     await db.shopping_items.create_index([("user_id", 1), ("key", 1)])
     await db.shopping_items.create_index([("user_id", 1), ("order", 1)])
+    await db.photos.create_index([("user_id", 1)])
+    await db.photos.create_index("path", unique=True)
+
+    # Initialize Emergent Object Storage (idempotent)
+    try:
+        await init_storage()
+    except Exception as e:
+        logger.warning(f"Object storage init deferred: {e}")
 
 
 async def _migrate_email_to_username():

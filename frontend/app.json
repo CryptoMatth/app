@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.mealprepmaster.op32ei"
+      "bundleIdentifier": "com.emergent.mealprepmaster.op32ei",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Add photos to your dishes and shopping items",
+        "NSCameraUsageDescription": "Take photos of dishes and ingredients"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +22,12 @@
         "backgroundColor": "#C66241"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.mealprepmaster.op32ei"
+      "package": "com.emergent.mealprepmaster.op32ei",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -35,7 +44,15 @@
           "resizeMode": "contain",
           "backgroundColor": "#FDFBF7"
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Add photos to your dishes and shopping items",
+          "cameraPermission": "Take photos of dishes and ingredients"
+        }
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

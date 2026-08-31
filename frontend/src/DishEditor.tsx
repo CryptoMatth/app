@@ -11,8 +11,9 @@ import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
+import { PhotoPicker } from '@/src/PhotoPicker';
 
-type Ing = { name: string; quantity: string; unit: string; category_id?: string };
+type Ing = { name: string; quantity: string; unit: string; category_id?: string; photo_path?: string | null };
 const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'q.b.'];
 
 type Props = {
@@ -37,6 +38,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
   const [ingredients, setIngredients] = useState<Ing[]>([{ name: '', quantity: '', unit: 'g', category_id: defaultCatId }]);
   const [preparation, setPreparation] = useState('');
   const [notes, setNotes] = useState('');
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!dishId);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -53,12 +55,14 @@ export default function DishEditor({ id, initialCourse }: Props) {
         setName(d.name);
         setCourse(d.course);
         setServings(String(d.servings || 1));
+        setPhotoPath(d.photo_path || null);
         setIngredients((d.ingredients || []).length > 0
           ? d.ingredients.map((i: any) => ({
               name: i.name,
               quantity: String(i.quantity),
               unit: i.unit,
               category_id: i.category_id || defaultCatId,
+              photo_path: i.photo_path || null,
             }))
           : [{ name: '', quantity: '', unit: 'g', category_id: defaultCatId }]);
         setPreparation(d.preparation || '');
@@ -84,6 +88,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
         quantity: parseFloat((i.quantity || '0').replace(',', '.')) || 0,
         unit: i.unit,
         category_id: i.category_id || defaultCatId,
+        photo_path: i.photo_path || null,
       }));
     setBusy(true);
     try {
@@ -94,6 +99,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
         preparation,
         notes,
         servings: Math.max(1, parseInt(servings) || 1),
+        photo_path: photoPath,
       };
       if (dishId && dishId !== 'new') await api.updateDish(dishId, body);
       else await api.createDish(body);
@@ -160,6 +166,16 @@ export default function DishEditor({ id, initialCourse }: Props) {
         keyboardShouldPersistTaps="handled"
         bottomOffset={80}
       >
+          <View style={{ alignItems: 'center', marginBottom: theme.spacing.sm }}>
+            <PhotoPicker
+              value={photoPath}
+              onChange={setPhotoPath}
+              size={120}
+              rounded={false}
+              testID="dish-photo"
+            />
+          </View>
+
           <Text style={styles.label}>{t('piatti.field.name')}</Text>
           <TextInput
             testID="dish-name"

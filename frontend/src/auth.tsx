@@ -5,12 +5,19 @@ export type Course = { id: string; label: string };
 export type IngredientCategory = { id: string; label: string; icon?: string | null; color?: string | null };
 export type PlannerSpan = 'weekly' | 'biweekly';
 export type Lang = 'it' | 'en';
+export type NotificationPrefs = {
+  enabled: boolean;
+  expiry_days_ahead: number;
+  notify_hour: number;
+  freezer_enabled: boolean;
+};
 export type UserPreferences = {
   week_start_day: number; // 0=Mon..6=Sun
   planner_span: PlannerSpan;
   language: Lang;
   courses: Course[];
   ingredient_categories: IngredientCategory[];
+  notifications?: NotificationPrefs;
 };
 export type User = {
   user_id: string;
@@ -41,12 +48,14 @@ const DEFAULT_PREFS: UserPreferences = {
     { id: 'dispensa', label: 'Dispensa', icon: '🫙', color: '#A38963' },
     { id: 'altro', label: 'Altro', icon: '📦', color: '#8C8478' },
   ],
+  notifications: { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true },
 };
 
 type AuthCtx = {
   user: User | null;
   loading: boolean;
   prefs: UserPreferences;
+  token: string | null;
   loginUsername: (username: string, pw: string) => Promise<void>;
   register: (username: string, pw: string, pw2: string) => Promise<string[]>;
   logout: () => Promise<void>;
@@ -62,15 +71,18 @@ const Ctx = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [token, setTokenState] = useState<string | null>(null);
 
   const bootstrap = useCallback(async () => {
     try {
       const t = await getToken();
+      setTokenState(t);
       if (!t) { setUser(null); return; }
       const u = await api.me();
       setUser(u);
     } catch {
       await clearToken();
+      setTokenState(null);
       setUser(null);
     } finally {
       setLoading(false);
@@ -82,17 +94,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginUsername = async (username: string, pw: string) => {
     const res = await api.login(username, pw);
     await setToken(res.session_token);
+    setTokenState(res.session_token);
     setUser(res.user);
   };
   const register = async (username: string, pw: string, pw2: string) => {
     const res = await api.register(username, pw, pw2);
     await setToken(res.session_token);
+    setTokenState(res.session_token);
     setUser(res.user);
     return (res.recovery_codes || []) as string[];
   };
   const logout = async () => {
     try { await api.logout(); } catch {}
     await clearToken();
+    setTokenState(null);
     setUser(null);
   };
   const refresh = async () => {
@@ -108,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const recoveryVerify = async (username: string, code: string, new_password: string) => {
     const res = await api.recoveryVerify(username, code, new_password);
     await setToken(res.session_token);
+    setTokenState(res.session_token);
     setUser(res.user);
   };
   const updatePreferences = async (data: Partial<UserPreferences>) => {
@@ -121,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider
       value={{
-        user, loading, prefs,
+        user, loading, prefs, token,
         loginUsername, register, logout, refresh,
         updateUsername, updatePassword, recoveryVerify,
         updatePreferences,
