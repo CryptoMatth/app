@@ -9,14 +9,15 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { theme } from '@/src/theme';
 import { markOnboardingSeen } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 
 type Slide = {
   icon: keyof typeof Feather.glyphMap;
   color: string;
   bg: string;
-  title: string;
-  body: string;
-  bullets?: string[];
+  titleKey: string;
+  bodyKey: string;
+  bulletKeys?: string[];
 };
 
 const SLIDES: Slide[] = [
@@ -24,66 +25,47 @@ const SLIDES: Slide[] = [
     icon: 'coffee',
     color: theme.color.brandPrimary,
     bg: theme.color.brandTertiary,
-    title: 'Benvenuto in PlanEat 🍽️',
-    body: 'Organizza pasti e spesa della settimana in un\'unica app, senza più liste sparse tra frigo e messaggi.',
-    bullets: [
-      'Salva i tuoi piatti preferiti',
-      'Pianifica la settimana in un tocco',
-      'La lista spesa si compila da sola',
-    ],
+    titleKey: 'tut.s1.title',
+    bodyKey: 'tut.s1.body',
+    bulletKeys: ['tut.s1.b1', 'tut.s1.b2', 'tut.s1.b3'],
   },
   {
     icon: 'book-open',
     color: theme.color.brandPrimary,
     bg: theme.color.brandTertiary,
-    title: 'Piatti · il tuo ricettario',
-    body: 'Crea le tue ricette una sola volta. Puoi separarle in Primi e Secondi, aggiungere ingredienti con quantità, preparazione e note.',
-    bullets: [
-      'Tocca "Nuovo piatto" per iniziare',
-      'Duplica una ricetta simile per andare veloce',
-      'Cerca velocemente dalla barra di ricerca',
-    ],
+    titleKey: 'tut.s2.title',
+    bodyKey: 'tut.s2.body',
+    bulletKeys: ['tut.s2.b1', 'tut.s2.b2', 'tut.s2.b3'],
   },
   {
     icon: 'calendar',
     color: theme.color.brandSecondary,
     bg: '#E5EDDF',
-    title: 'Planner · la settimana',
-    body: 'Sette giorni (sabato → venerdì) con Pranzo e Cena. Tocca uno slot per assegnare un piatto e indicare per quante persone.',
-    bullets: [
-      'La spesa si aggiorna automaticamente',
-      'Usa "Oggi" per tornare alla settimana corrente',
-      'Duplica una settimana passata con l\'icona 📋',
-    ],
+    titleKey: 'tut.s3.title',
+    bodyKey: 'tut.s3.body',
+    bulletKeys: ['tut.s3.b1', 'tut.s3.b2', 'tut.s3.b3'],
   },
   {
     icon: 'shopping-cart',
     color: theme.color.brand,
     bg: '#F5E8D8',
-    title: 'Spesa · sempre pronta',
-    body: 'La lista si compila da sola dal Planner. Puoi anche aggiungere elementi extra a mano.',
-    bullets: [
-      '🟢 Verdi = dal Planner  ·  🟠 Arancioni = manuali',
-      'Trascina per riordinare, spunta al supermercato',
-      'Tocca "Rimuovi presi" a fine spesa',
-    ],
+    titleKey: 'tut.s4.title',
+    bodyKey: 'tut.s4.body',
+    bulletKeys: ['tut.s4.b1', 'tut.s4.b2', 'tut.s4.b3'],
   },
   {
     icon: 'shield',
     color: theme.color.brandSecondary,
     bg: '#E5EDDF',
-    title: 'Un ultimo consiglio',
-    body: 'Nei tuoi Codici di Recupero hai la chiave per rientrare se dimentichi la password. Salvali in un posto sicuro dalla schermata Impostazioni.',
-    bullets: [
-      'Trovi tutto in Impostazioni ⚙️',
-      'Puoi anche esportare un backup dei tuoi dati',
-      'Rivedi questo tutorial in qualsiasi momento',
-    ],
+    titleKey: 'tut.s5.title',
+    bodyKey: 'tut.s5.body',
+    bulletKeys: ['tut.s5.b1', 'tut.s5.b2', 'tut.s5.b3'],
   },
 ];
 
 export default function Tutorial() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
@@ -125,7 +107,7 @@ export default function Tutorial() {
         </View>
         {!isLast ? (
           <Pressable onPress={skip} style={styles.skipBtn} testID="tutorial-skip" hitSlop={10}>
-            <Text style={styles.skipTxt}>Salta</Text>
+            <Text style={styles.skipTxt}>{t('tut.skip')}</Text>
           </Pressable>
         ) : (
           <View style={{ width: 60 }} />
@@ -141,19 +123,19 @@ export default function Tutorial() {
         scrollEventThrottle={16}
         style={{ flex: 1 }}
       >
-        {SLIDES.map((s, i) => (
+        {SLIDES.map((sl, i) => (
           <View key={i} style={[styles.slide, { width }]} testID={`tutorial-slide-${i}`}>
-            <View style={[styles.iconWrap, { backgroundColor: s.bg }]}>
-              <Feather name={s.icon} size={54} color={s.color} />
+            <View style={[styles.iconWrap, { backgroundColor: sl.bg }]}>
+              <Feather name={sl.icon} size={54} color={sl.color} />
             </View>
-            <Text style={styles.title}>{s.title}</Text>
-            <Text style={styles.body}>{s.body}</Text>
-            {s.bullets?.length ? (
+            <Text style={styles.title}>{t(sl.titleKey)}</Text>
+            <Text style={styles.body}>{t(sl.bodyKey)}</Text>
+            {sl.bulletKeys?.length ? (
               <View style={styles.bullets}>
-                {s.bullets.map((b, j) => (
+                {sl.bulletKeys.map((bk, j) => (
                   <View key={j} style={styles.bulletRow}>
-                    <View style={[styles.bulletDot, { backgroundColor: s.color }]} />
-                    <Text style={styles.bulletTxt}>{b}</Text>
+                    <View style={[styles.bulletDot, { backgroundColor: sl.color }]} />
+                    <Text style={styles.bulletTxt}>{t(bk)}</Text>
                   </View>
                 ))}
               </View>
@@ -174,12 +156,12 @@ export default function Tutorial() {
 
         {isLast ? (
           <Pressable onPress={finish} style={styles.primaryBtn} testID="tutorial-finish">
-            <Text style={styles.primaryTxt}>Inizia ad usare PlanEat</Text>
+            <Text style={styles.primaryTxt}>{t('tut.finish')}</Text>
             <Feather name="arrow-right" size={18} color="#fff" />
           </Pressable>
         ) : (
           <Pressable onPress={() => goTo(index + 1)} style={styles.primaryBtn} testID="tutorial-next">
-            <Text style={styles.primaryTxt}>Avanti</Text>
+            <Text style={styles.primaryTxt}>{t('tut.next')}</Text>
             <Feather name="chevron-right" size={20} color="#fff" />
           </Pressable>
         )}

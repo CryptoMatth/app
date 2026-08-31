@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 15 backend-only testing: ingredient_categories + language preference + Ingredient.category_id propagation to shopping. Wrote 21 new tests in /app/backend/tests/test_iteration15_categories_and_language.py — ALL 21 pass in 46.7s. Coverage: (A) Language pref — fresh user defaults to 'it'; PUT {language:'en'} accepted and persisted with existing categories preserved; invalid language 'fr' → 422 with no side effects; both 'it' and 'en' accepted. (B) Ingredient categories defaults — fresh user has exactly 9 defaults in the specified order (verdura, frutta, carne_pesce, latticini, pane_farinacei, surgelati, bevande, dispensa, altro) each with correct label + non-empty icon + hex color. (C) Ingredient categories update — labels-only body generates slug ids ('Fresco'→'fresco','Congelato'→'congelato'); empty list → 422; duplicate labels (including case-insensitive) de-duplicated keeping first; duplicate ids get suffixed (_2, _3…); icon + color round-trip preserved; 31 items → 422 (max 30). (D) Combined update — {language:'en', week_start_day:0, ingredient_categories:[…]} applied atomically and confirmed by re-GET. (E) Ingredient.category_id propagation — dish ingredient {name:'insalata', category_id:'verdura'} on planner → shopping row has category_id='verdura' and planner_qty=100; ingredient without category → row defaults to category_id='altro'. (F) ShoppingItemManual.category_id — POST /shopping with category_id sets it; without it defaults to 'altro'. (G) ShoppingItemUpdate.category_id — PATCH /shopping/{id} with {category_id:'frutta'} updates. (H) Never-overwrite — manual gelato@surgelati + later planner dish with gelato ingredient@frutta → row stays 'surgelati' AND planner_qty aggregates correctly (100g planner over 200g manual); adding second portion of the same dish preserves original category_id='verdura' with planner_qty=300. (I) Inherit-when-missing — legacy row without category_id inherits ingredient's category_id when a dish is added (verified by directly $unset category_id via MongoDB, then adding a dish with category_id='pane_farinacei' → row inherits 'pane_farinacei'). (J) Legacy safety — GET /shopping with a legacy row (category_id $unset in DB) returns 200 and row has category_id absent/None, no 500. Regression: iter-14 15/15 pass (89s). iter-11 + iter-12 + iter-13 combined 66/67 pass — the one failure is the known xdist halley-race documented in iter-14 report (test_founder_registration_marks_pro[Halley-halley] 409 conflict when two workers concurrently delete+re-register 'halley'); NOT a product bug, unaffected by iter-15 changes. All iter-15 tests use ephemeral unique usernames (lg1/lg2/lg3/lg4/ic1..ic8/cp1/cp2/mc1..mc3/nov1..nov3/lg) — no shared fixtures, no founder mutation, safe under xdist.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_categories_and_language.py",
+    "/app/test_reports/pytest/pytest_iteration15.xml"
+  ],
+  "action_items": [
+    "(Optional, from iter-14, unchanged) Add pytest-xdist xdist_group markers or unique-suffixed usernames to iter-13/iter-14 founder tests so parallel runs of those two files stop racing on the shared 'halley' fixture. Not a product bug, and iter-15 itself is unaffected.",
+    "(Nice-to-have, non-blocking) Consider validating ingredient.category_id against the user's current preferences.ingredient_categories on POST/PUT /dishes and POST/PATCH /shopping — right now any string is accepted (even a category the user has deleted). Current behavior is forgiving and matches the review spec (which does not require validation), but it could surface as orphan categories in the UI. Suggestion: soft-validate (log/warn) or fall back to 'altro' when the id doesn't exist in the user's list.",
+    "(Optional) Icon length is truncated to 8 chars in the PUT /auth/preferences handler (server.py:662). Multi-codepoint emojis (e.g. flag emojis or ZWJ sequences like 👨‍👩‍👧) can exceed 8 bytes when encoded and get corrupted. If richer emoji support matters, count grapheme clusters rather than bytes/chars."
+  ],
+  "critical_code_review_comments": [
+    "server.py:106-116 DEFAULT_INGREDIENT_CATEGORIES: 9 categories with stable ids matches the spec exactly. Nice: 'altro' is last, which pairs with the 'category_id or altro' fallback in shopping insertions.",
+    "server.py:127-134 _default_prefs: correctly seeds language + ingredient_categories via deep-copied dicts (list of dicts, not shared refs). Good.",
+    "server.py:374-379 _user_public backfill: correctly backfills language and ingredient_categories for pre-iter-15 accounts on read. Older docs won't 500 or return None.",
+    "server.py:634-667 PUT /auth/preferences ingredient_categories block: min=1, max=30, id de-dup with _2/_3 suffix, label de-dup case-insensitive, icon truncated to 8 chars, color to 16 chars. Symmetric with the existing courses block — good consistency. Note: icon truncation is byte/char-based, so complex emoji can be corrupted (see action item).",
+    "server.py:847-893 _add_dish_to_shopping: (a) existing row + no category_id yet → inherits ingredient's category_id; (b) existing row WITH category_id → NEVER touched (correct never-overwrite semantics); (c) new row → category_id = ingredient's or 'altro' default. Matches spec exactly. Verified end-to-end.",
+    "server.py:1122-1160 add_manual: when the (name,unit) key already exists, only sets category_id if the existing row lacks one AND the body provides one. New rows default to 'altro' when body.category_id is falsy. Consistent with _add_dish_to_shopping semantics.",
+    "server.py:1163-1173 edit_item: sets category_id whenever body.category_id is not None. This means a PATCH can UPDATE a category (unlike the never-overwrite rule in planner sync). This is correct — an explicit user PATCH should of course override. Just calling out the asymmetry for clarity.",
+    "server.py:1473 lines — up from 1384 in iter-14. Still under the 2000 soft cap but the split-into-routers action item from iter-14 remains valid.",
+    "No new deprecated Expo/React Native packages touched (backend-only change)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_categories_and_language.py (new, 21 tests, ~47s parallel / ~90s serial)"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21 iter-15 new) + 15/15 iter-14 regression + 66/67 iter-11+12+13 (one xdist flake documented in iter-14, product code fine) = 102/103 combined.",
+    "frontend": "not tested (backend-only requested)"
+  },
+  "seed_data_creation": "All 21 iter-15 tests register ephemeral users with unique prefixes (lg1/lg2/lg3/lg4, ic1..ic8, cp1/cp2, mc1..mc3, nov1..nov3, lg). No founder mutation, no admin-user mutation. Two tests directly $unset the category_id field on a shopping item via pymongo (using MONGO_URL + DB_NAME) to simulate legacy pre-iter-15 rows — no production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter-15 suite: /app/backend/tests/test_iteration15_categories_and_language.py (21 tests, ~47s under pytest-xdist). Safe to run in parallel — no shared fixtures. Uses direct MongoDB access (pymongo) in TestCategoryNotOverwritten::test_manual_without_category_then_dish_with_category_inherits and TestLegacyShoppingItems to $unset category_id and simulate legacy rows — requires MONGO_URL + DB_NAME in env (auto-loaded via /app/backend/.env). Default ingredient_categories are the 9-item list at server.py:106-116. Language accepts only 'it' | 'en' via Literal (422 on anything else). Ingredient category propagation logic lives at server.py:847-893 (_add_dish_to_shopping), 1122-1160 (add_manual), 1163-1173 (edit_item).",
+  "rca_of_issue": "N/A — all iter-15 features work as specified. The single xdist regression flake on iter-13's Halley-halley registration is a test-file interaction (concurrent delete+register of the fixed 'halley' username across workers) previously documented in iter-14 report, not a product bug and unaffected by iter-15 code."
+}

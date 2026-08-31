@@ -11,6 +11,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 import {
   weekStartFor, addDays, isoDate, weekRangeLabel, todayIndexInWeek,
   orderedDayLabels, parseIso, weekStartLabels,
@@ -20,11 +21,6 @@ type SlotItem = { dish_id: string; dish_name: string; course: string; persons: n
 type Slot = { items: SlotItem[] };
 type Plan = { week_start: string; slots: Record<string, Slot> };
 type WeekRow = { week_start: string; count: number };
-
-const MEALS: { key: 'pranzo' | 'cena'; label: string; icon: any }[] = [
-  { key: 'pranzo', label: 'Pranzo', icon: 'sun' },
-  { key: 'cena', label: 'Cena', icon: 'moon' },
-];
 
 /** Extract items from a slot in either legacy or new shape. */
 function itemsOf(slot: any): SlotItem[] {
@@ -41,12 +37,17 @@ function itemsOf(slot: any): SlotItem[] {
 
 export default function Planner() {
   const { prefs } = useAuth();
+  const { t, lang, locale, tCourse } = useTranslation();
+  const MEALS: { key: 'pranzo' | 'cena'; label: string; icon: any }[] = [
+    { key: 'pranzo', label: t('planner.pranzo'), icon: 'sun' },
+    { key: 'cena', label: t('planner.cena'), icon: 'moon' },
+  ];
   const startDay = prefs.week_start_day;
   const isBiweekly = prefs.planner_span === 'biweekly';
   const daysCount = isBiweekly ? 14 : 7;
 
-  const dayLabelsFull = orderedDayLabels(startDay, true);
-  const weekSubLabel = weekStartLabels(startDay);
+  const dayLabelsFull = orderedDayLabels(startDay, true, lang);
+  const weekSubLabel = weekStartLabels(startDay, lang);
 
   const [weekStart, setWeekStart] = useState(() => weekStartFor(new Date(), startDay));
   const [plan, setPlan] = useState<Plan | null>(null);       // first week
@@ -136,21 +137,21 @@ export default function Planner() {
 
   const dupPeriodLabel = useMemo(() => {
     if (!dupTargetWeek) return '';
-    return weekRangeLabel(parseIso(dupTargetWeek));
-  }, [dupTargetWeek]);
+    return weekRangeLabel(parseIso(dupTargetWeek), lang);
+  }, [dupTargetWeek, lang]);
 
   const rangeLabel = useMemo(() => {
-    if (!isBiweekly) return weekRangeLabel(weekStart);
-    const start = weekStart.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-    const end = addDays(weekStart, 13).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+    if (!isBiweekly) return weekRangeLabel(weekStart, lang);
+    const start = weekStart.toLocaleDateString(locale, { day: '2-digit', month: 'short' });
+    const end = addDays(weekStart, 13).toLocaleDateString(locale, { day: '2-digit', month: 'short' });
     return `${start} – ${end}`;
-  }, [weekStart, isBiweekly]);
+  }, [weekStart, isBiweekly, lang, locale]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="planner-screen">
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.h1}>Planner</Text>
+          <Text style={styles.h1}>{t('planner.title')}</Text>
           <View style={styles.headerActions}>
             <Pressable
               onPress={() => { Haptics.selectionAsync(); setWeekStart(weekStartFor(new Date(), startDay)); }}
@@ -158,7 +159,7 @@ export default function Planner() {
               testID="week-today"
             >
               <Feather name="calendar" size={16} color={theme.color.onSurface} />
-              <Text style={styles.headerIconTxt}>Oggi</Text>
+              <Text style={styles.headerIconTxt}>{t('common.today')}</Text>
             </Pressable>
             <Pressable
               onPress={() => openDuplicatePicker(isoDate(weekStart))}
@@ -184,7 +185,7 @@ export default function Planner() {
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={styles.weekLabel}>{rangeLabel}</Text>
             <Text style={styles.weekSub}>
-              {isBiweekly ? `${weekSubLabel} · 2 settimane` : weekSubLabel}
+              {isBiweekly ? `${weekSubLabel} · ${t('planner.biweekly.suffix')}` : weekSubLabel}
             </Text>
           </View>
           <Pressable testID="week-next" onPress={() => goWeek(1)} style={styles.weekBtn}>
@@ -203,8 +204,8 @@ export default function Planner() {
           <TipBanner
             storageKey={TutorialKeys.tipPlanner}
             icon="calendar"
-            title="Pianifica il tuo menù settimanale"
-            body="Tocca uno slot Pranzo o Cena per assegnare uno o più piatti. Gli ingredienti finiscono automaticamente nella Spesa."
+            title={t('planner.tip.title')}
+            body={t('planner.tip.body')}
             testID="tip-planner"
           />
 
@@ -223,7 +224,7 @@ export default function Planner() {
                 {showWeekDivider && (
                   <View style={styles.weekDivider} testID="week-2-divider">
                     <View style={styles.weekDividerLine} />
-                    <Text style={styles.weekDividerTxt}>Settimana 2 · {weekRangeLabel(secondWeekStart)}</Text>
+                    <Text style={styles.weekDividerTxt}>{t('planner.biweekly.week2', { range: weekRangeLabel(secondWeekStart, lang) })}</Text>
                     <View style={styles.weekDividerLine} />
                   </View>
                 )}
@@ -232,7 +233,7 @@ export default function Planner() {
                     <Text style={[styles.dayName, isToday && { color: theme.color.brandPrimary }]}>{dayLabelsFull[dayInWeek]}</Text>
                     <Text style={[styles.dayDate, isToday && { color: theme.color.brandPrimary }]}>
                       {d.getDate().toString().padStart(2, '0')}/{(d.getMonth() + 1).toString().padStart(2, '0')}
-                      {isToday ? ' · oggi' : ''}
+                      {isToday ? ` · ${t('planner.today.badge')}` : ''}
                     </Text>
                   </View>
                   {MEALS.map(m => {
@@ -252,7 +253,6 @@ export default function Planner() {
                           {filled ? (
                             <>
                               {its.map((it, idx) => {
-                                const label = prefs.courses.find(c => c.id === it.course)?.label || it.course;
                                 return (
                                   <View key={`${it.dish_id}_${idx}`} style={styles.itemLine}>
                                     <View style={styles.itemDot} />
@@ -263,12 +263,12 @@ export default function Planner() {
                               })}
                               {its.length === 1 && (
                                 <Text style={styles.dishMeta}>
-                                  {(prefs.courses.find(c => c.id === its[0].course)?.label) || its[0].course}
+                                  {tCourse(prefs.courses.find(c => c.id === its[0].course)) || its[0].course}
                                 </Text>
                               )}
                             </>
                           ) : (
-                            <Text style={styles.slotEmpty}>Tocca per aggiungere uno o più piatti</Text>
+                            <Text style={styles.slotEmpty}>{t('planner.slotEmpty')}</Text>
                           )}
                         </View>
                         <Feather name={filled ? 'edit-2' : 'plus'} size={16} color={theme.color.onSurfaceTertiary} />
@@ -291,14 +291,22 @@ export default function Planner() {
         <View style={styles.overlay}>
           <View style={styles.dupCard} testID="duplicate-picker-modal">
             <View style={styles.dupHeader}>
-              <Text style={styles.dupTitle}>Duplica una settimana</Text>
+              <Text style={styles.dupTitle}>{t('planner.duplicate.title')}</Text>
               <Pressable onPress={() => setDupOpen(false)} testID="duplicate-close">
                 <Feather name="x" size={22} color={theme.color.onSurface} />
               </Pressable>
             </View>
             <Text style={styles.dupSub}>
-              Scegli quale settimana copiare in <Text style={{ fontWeight: '600' }}>{dupPeriodLabel}</Text>.
-              {isBiweekly ? ' Per la seconda settimana, ripeti l\'operazione.' : ''}
+              {(() => {
+                const raw = t('planner.duplicate.body', { week: '__WEEK__' });
+                const [before, after] = raw.split('__WEEK__');
+                return (
+                  <>
+                    {before}<Text style={{ fontWeight: '600' }}>{dupPeriodLabel}</Text>{after}
+                    {isBiweekly ? t('planner.duplicate.bodyBiweekly') : ''}
+                  </>
+                );
+              })()}
             </Text>
             {dupLoading ? (
               <View style={{ padding: theme.spacing.xl, alignItems: 'center' }}>
@@ -307,7 +315,7 @@ export default function Planner() {
             ) : availableWeeks.length === 0 ? (
               <View style={{ padding: theme.spacing.xl, alignItems: 'center' }}>
                 <Feather name="calendar" size={32} color={theme.color.borderStrong} />
-                <Text style={styles.dupEmpty}>Non hai ancora settimane pianificate da copiare.</Text>
+                <Text style={styles.dupEmpty}>{t('planner.duplicate.empty')}</Text>
               </View>
             ) : (
               <ScrollView style={{ maxHeight: 320 }}>
@@ -326,8 +334,8 @@ export default function Planner() {
                         <Feather name={isPast ? 'clock' : 'chevron-right'} size={16} color={isPast ? theme.color.brandPrimary : theme.color.brandSecondary} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.dupRowT}>{weekRangeLabel(d)}</Text>
-                        <Text style={styles.dupRowS}>{w.count} pasti · {isPast ? 'settimana passata' : 'settimana futura'}</Text>
+                        <Text style={styles.dupRowT}>{weekRangeLabel(d, lang)}</Text>
+                        <Text style={styles.dupRowS}>{t('planner.duplicate.rowMeta', { n: w.count, when: isPast ? t('planner.duplicate.past') : t('planner.duplicate.future') })}</Text>
                       </View>
                       <Feather name="copy" size={18} color={theme.color.onSurfaceTertiary} />
                     </Pressable>
@@ -339,8 +347,7 @@ export default function Planner() {
               <View style={styles.dupSpanNote}>
                 <Feather name="info" size={12} color={theme.color.onSurfaceTertiary} />
                 <Text style={styles.dupSpanNoteTxt}>
-                  Attualmente l'operazione copia solo la settimana selezionata come destinazione.
-                  Per la seconda usa il pulsante “Duplica” accanto alla sua intestazione (o passa temporaneamente al Planner settimanale).
+                  {t('planner.biweekly.note')}
                 </Text>
               </View>
             ) : null}

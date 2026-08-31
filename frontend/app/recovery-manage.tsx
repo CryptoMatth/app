@@ -8,9 +8,11 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { useTranslation } from '@/src/i18n';
 
 export default function RecoveryManage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [remaining, setRemaining] = useState<number | null>(null);
   const [total, setTotal] = useState<number>(8);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -45,23 +47,23 @@ export default function RecoveryManage() {
         <Pressable onPress={() => router.back()} style={styles.back} testID="recovery-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.h1}>Codici di recupero</Text>
+        <Text style={styles.h1}>{t('rec.manage.header')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
         <View style={styles.card}>
           <View style={styles.iconBig}><Feather name="shield" size={26} color={theme.color.brandPrimary} /></View>
-          <Text style={styles.cardH}>{remaining ?? '—'} di {total} codici rimasti</Text>
+          <Text style={styles.cardH}>{t('rec.manage.remaining', { r: remaining ?? '—', t: total })}</Text>
           <Text style={styles.cardP}>
-            I codici di recupero permettono di reimpostare la password se la dimentichi. Ogni codice può essere usato una sola volta.
+            {t('rec.manage.body')}
           </Text>
         </View>
 
         {newCodes && (
           <View style={styles.newBox}>
-            <Text style={styles.newH}>Nuovi codici</Text>
-            <Text style={styles.newSub}>Salvali subito — non li rivedrai più.</Text>
+            <Text style={styles.newH}>{t('rec.manage.newH')}</Text>
+            <Text style={styles.newSub}>{t('rec.manage.newSub')}</Text>
             <View style={styles.codes}>
               {newCodes.map((c, i) => (
                 <Text key={i} style={styles.code} selectable testID={`new-code-${i}`}>{c}</Text>
@@ -72,9 +74,9 @@ export default function RecoveryManage() {
 
         <Pressable onPress={() => setConfirmOpen(true)} style={styles.dangerBtn} testID="regenerate-btn">
           <Feather name="refresh-cw" size={16} color={theme.color.error} />
-          <Text style={styles.dangerTxt}>Rigenera tutti i codici</Text>
+          <Text style={styles.dangerTxt}>{t('rec.manage.regen')}</Text>
         </Pressable>
-        <Text style={styles.hint}>Attenzione: i vecchi codici smetteranno di funzionare.</Text>
+        <Text style={styles.hint}>{t('rec.manage.warn')}</Text>
       </ScrollView>
 
       <Modal transparent visible={confirmOpen} animationType="fade" onRequestClose={() => setConfirmOpen(false)}>
@@ -83,16 +85,16 @@ export default function RecoveryManage() {
             <View style={styles.modalIcon}>
               <Feather name="alert-triangle" size={24} color={theme.color.error} />
             </View>
-            <Text style={styles.modalH}>Rigenerare i codici?</Text>
+            <Text style={styles.modalH}>{t('rec.manage.confirmTitle')}</Text>
             <Text style={styles.modalP}>
-              I tuoi vecchi codici di recupero non funzioneranno più. Assicurati di salvare i nuovi codici in un luogo sicuro.
+              {t('rec.manage.confirmBody')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => setConfirmOpen(false)} style={styles.btnGhost} disabled={busy}>
-                <Text style={styles.btnGhostTxt}>Annulla</Text>
+                <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable onPress={regenerate} style={styles.btnDanger} disabled={busy} testID="regenerate-confirm">
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Rigenera</Text>}
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('rec.manage.regenerate')}</Text>}
               </Pressable>
             </View>
           </View>

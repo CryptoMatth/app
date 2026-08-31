@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, RefreshControl,
 } from 'react-native';
@@ -8,15 +8,18 @@ import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-nativ
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
+import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 
 type Item = {
   id: string; name: string; unit: string;
   manual_qty: number; planner_qty: number;
   sources: { dish_name: string; quantity: number }[];
   notes?: string;
+  category_id?: string;
   checked: boolean; order: number;
 };
 
@@ -40,6 +43,19 @@ function uniqueDishNames(item: Item): string[] {
 }
 
 export default function Spesa() {
+  const { t, tCat } = useTranslation();
+  const { prefs } = useAuth();
+  const cats = prefs.ingredient_categories;
+  const catById = useMemo(() => {
+    const m: Record<string, typeof cats[number]> = {};
+    for (const c of cats) m[c.id] = c;
+    return m;
+  }, [cats]);
+  const catOrderIdx = useMemo(() => {
+    const m: Record<string, number> = {};
+    cats.forEach((c, i) => (m[c.id] = i));
+    return m;
+  }, [cats]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -48,6 +64,38 @@ export default function Spesa() {
   const [deleting, setDeleting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const router = useRouter();
+
+  // Sort items so they're grouped by category (following prefs order),
+  // then by their own server-side `order` inside a category.
+  const groupedItems = useMemo(() => {
+    const arr = [...items];
+    arr.sort((a, b) => {
+      // Checked items go to the bottom regardless of category
+      if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      const ac = a.category_id || 'altro';
+      const bc = b.category_id || 'altro';
+      const ai = catOrderIdx[ac] ?? 999;
+      const bi = catOrderIdx[bc] ?? 999;
+      if (ai !== bi) return ai - bi;
+      return (a.order || 0) - (b.order || 0);
+    });
+    return arr;
+  }, [items, catOrderIdx]);
+
+  // Build a Set of the first item id in each category so we know where
+  // to render the sticky-ish category header inside renderItem.
+  const firstOfCategory = useMemo(() => {
+    const first: Record<string, string> = {}; // catId -> first item.id (unchecked)
+    for (const it of groupedItems) {
+      if (it.checked) continue;
+      const c = it.category_id || 'altro';
+      if (!first[c]) first[c] = it.id;
+    }
+    return new Set(Object.values(first));
+  }, [groupedItems]);
+  const firstCheckedId = useMemo(() => {
+    return groupedItems.find(i => i.checked)?.id;
+  }, [groupedItems]);
 
   const load = useCallback(async () => {
     try { const list = await api.listShopping(); setItems(list); } catch {}
@@ -119,20 +167,20 @@ export default function Spesa() {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.h1}>Spesa</Text>
+            <Text style={styles.h1}>{t('spesa.title')}</Text>
             <Text style={styles.sub}>
-              {items.length} elementi{boughtCount > 0 ? ` · ${boughtCount} già presi` : ''}
+              {items.length} · {boughtCount > 0 ? `${boughtCount} ✓` : ''}
             </Text>
           </View>
           <View style={styles.headerRight}>
             <View style={styles.legend}>
               <View style={styles.legendItem}>
                 <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />
-                <Text style={styles.legendTxt}>Planner</Text>
+                <Text style={styles.legendTxt}>{t('spesa.legend.planner')}</Text>
               </View>
               <View style={styles.legendItem}>
                 <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />
-                <Text style={styles.legendTxt}>Manuale</Text>
+                <Text style={styles.legendTxt}>{t('spesa.legend.manual')}</Text>
               </View>
             </View>
             <Pressable onPress={() => router.push('/settings')} style={styles.settingsBtn} testID="open-settings">
@@ -146,8 +194,8 @@ export default function Spesa() {
         <TipBanner
           storageKey={TutorialKeys.tipSpesa}
           icon="shopping-cart"
-          title="La spesa si compila da sola"
-          body="Verde = arriva dal Planner, arancione = aggiunto a mano. Trascina per riordinare, spunta al supermercato."
+          title={t('spesa.tip.title')}
+          body={t('spesa.tip.body')}
           testID="tip-spesa"
         />
       </View>
@@ -157,12 +205,12 @@ export default function Spesa() {
       ) : items.length === 0 ? (
         <View style={styles.center}>
           <Feather name="shopping-cart" size={44} color={theme.color.borderStrong} />
-          <Text style={styles.emptyH}>Lista vuota</Text>
-          <Text style={styles.emptyP}>Aggiungi un ingrediente o piani­fica un pasto per iniziare.</Text>
+          <Text style={styles.emptyH}>{t('spesa.empty.title')}</Text>
+          <Text style={styles.emptyP}>{t('spesa.empty.sub')}</Text>
         </View>
       ) : (
         <DraggableFlatList
-          data={items}
+          data={groupedItems}
           keyExtractor={(item) => item.id}
           onDragEnd={({ data }) => onReorder(data)}
           onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)}
@@ -171,33 +219,50 @@ export default function Spesa() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />
           }
-          renderItem={({ item, drag, isActive }: RenderItemParams<Item>) => (
-            <ScaleDecorator>
-              <View style={[styles.row, item.checked && { opacity: 0.55 }, isActive && styles.rowActive]} testID={`shop-item-${item.id}`}>
-                <Pressable onPress={() => toggle(item.id, item.checked)} style={styles.check} testID={`check-${item.id}`}>
-                  <View style={[styles.checkbox, item.checked && styles.checkboxOn]}>
-                    {item.checked && <Feather name="check" size={14} color="#fff" />}
+          renderItem={({ item, drag, isActive }: RenderItemParams<Item>) => {
+            const showHeader = !item.checked && firstOfCategory.has(item.id);
+            const catId = item.category_id || 'altro';
+            const cat = catById[catId];
+            const showBoughtHeader = item.checked && item.id === firstCheckedId;
+            return (
+              <ScaleDecorator>
+                {showHeader && (
+                  <View style={styles.catHeader} testID={`cat-header-${catId}`}>
+                    <Text style={styles.catEmoji}>{cat?.icon || '📦'}</Text>
+                    <Text style={styles.catLabel}>{tCat(cat) || t('spesa.uncategorized')}</Text>
                   </View>
-                </Pressable>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.rowTitleWrap}>
-                    {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />}
-                    {item.manual_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />}
-                    <Text style={[styles.itemName, item.checked && styles.strike]}>{item.name}</Text>
+                )}
+                {showBoughtHeader && (
+                  <View style={[styles.catHeader, { marginTop: theme.spacing.md }]} testID="cat-header-bought">
+                    <Feather name="check-circle" size={14} color={theme.color.onSurfaceTertiary} />
+                    <Text style={[styles.catLabel, { color: theme.color.onSurfaceTertiary }]}>{t('spesa.bought')}</Text>
                   </View>
-                  <Text style={styles.itemQty}>
-                    {formatQty(totalQty(item))} {item.unit}
-                    {item.planner_qty > 0 && item.manual_qty > 0
-                      ? `  ·  ${formatQty(item.planner_qty)}${item.unit} planner + ${formatQty(item.manual_qty)}${item.unit} manuale`
-                      : item.planner_qty > 0
-                        ? `  ·  ${uniqueDishNames(item).join(', ')}`
-                        : ''}
-                  </Text>
-                  {item.notes ? (
-                    <View style={styles.notesRow}>
-                      <Feather name="edit-2" size={11} color={theme.color.onSurfaceTertiary} />
-                      <Text style={styles.notesTxt} numberOfLines={2}>{item.notes}</Text>
+                )}
+                <View style={[styles.row, item.checked && { opacity: 0.55 }, isActive && styles.rowActive]} testID={`shop-item-${item.id}`}>
+                  <Pressable onPress={() => toggle(item.id, item.checked)} style={styles.check} testID={`check-${item.id}`}>
+                    <View style={[styles.checkbox, item.checked && styles.checkboxOn]}>
+                      {item.checked && <Feather name="check" size={14} color="#fff" />}
                     </View>
+                  </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.rowTitleWrap}>
+                      {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />}
+                      {item.manual_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />}
+                      <Text style={[styles.itemName, item.checked && styles.strike]}>{item.name}</Text>
+                    </View>
+                    <Text style={styles.itemQty}>
+                      {formatQty(totalQty(item))} {item.unit}
+                      {item.planner_qty > 0 && item.manual_qty > 0
+                        ? `  ·  ${t('spesa.mix.plannerAndManual', { p: formatQty(item.planner_qty), m: formatQty(item.manual_qty), unit: item.unit })}`
+                        : item.planner_qty > 0
+                          ? `  ·  ${uniqueDishNames(item).join(', ')}`
+                          : ''}
+                    </Text>
+                    {item.notes ? (
+                      <View style={styles.notesRow}>
+                        <Feather name="edit-2" size={11} color={theme.color.onSurfaceTertiary} />
+                        <Text style={styles.notesTxt} numberOfLines={2}>{item.notes}</Text>
+                      </View>
                   ) : null}
                 </View>
                 <Pressable onPress={() => router.push(`/shopping/${item.id}`)} style={styles.iconBtn} testID={`edit-${item.id}`}>
@@ -211,7 +276,8 @@ export default function Spesa() {
                 </Pressable>
               </View>
             </ScaleDecorator>
-          )}
+            );
+          }}
           ItemSeparatorComponent={() => <View style={{ height: theme.spacing.sm }} />}
         />
       )}
@@ -220,12 +286,12 @@ export default function Spesa() {
         {boughtCount > 0 && (
           <Pressable onPress={() => { Haptics.selectionAsync(); setConfirmClearBought(true); }} style={styles.secondary} testID="clear-checked">
             <Feather name="trash-2" size={16} color={theme.color.onSurface} />
-            <Text style={styles.secondaryTxt}>Rimuovi presi</Text>
+            <Text style={styles.secondaryTxt}>{t('spesa.clearBought')}</Text>
           </Pressable>
         )}
         <Pressable onPress={() => router.push('/shopping/new')} style={styles.primary} testID="show-add">
           <Feather name="plus" size={20} color="#fff" />
-          <Text style={styles.primaryTxt}>Aggiungi</Text>
+          <Text style={styles.primaryTxt}>{t('common.add')}</Text>
         </Pressable>
       </View>
 
@@ -240,9 +306,9 @@ export default function Spesa() {
             <View style={styles.modalIcon}>
               <Feather name="trash-2" size={24} color={theme.color.warning} />
             </View>
-            <Text style={styles.modalH}>Rimuovere {boughtCount} elementi presi?</Text>
+            <Text style={styles.modalH}>{t('spesa.clearConfirm.title', { n: boughtCount })}</Text>
             <Text style={styles.modalP}>
-              Gli elementi spuntati verranno eliminati dalla lista della spesa. Se erano dal Planner, i piatti restano pianificati.
+              {t('spesa.clearConfirm.body')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable
@@ -251,7 +317,7 @@ export default function Spesa() {
                 testID="confirm-clear-cancel"
                 disabled={clearing}
               >
-                <Text style={styles.btnGhostTxt}>Annulla</Text>
+                <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
                 onPress={clearBought}
@@ -259,7 +325,7 @@ export default function Spesa() {
                 testID="confirm-clear-confirm"
                 disabled={clearing}
               >
-                {clearing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Rimuovi</Text>}
+                {clearing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('common.remove')}</Text>}
               </Pressable>
             </View>
           </View>
@@ -277,11 +343,11 @@ export default function Spesa() {
             <View style={styles.modalIcon}>
               <Feather name="alert-triangle" size={24} color={theme.color.warning} />
             </View>
-            <Text style={styles.modalH}>Eliminare {'"'}{confirmDelete?.name}{'"'}?</Text>
+            <Text style={styles.modalH}>{t('spesa.deleteConfirm.title', { name: confirmDelete?.name || '' })}</Text>
             <Text style={styles.modalP}>
               {confirmDelete?.planner_qty && confirmDelete.planner_qty > 0
-                ? 'Questo ingrediente è stato aggiunto dal planner. Verrà rimosso completamente dalla lista della spesa, ma i piatti nel planner resteranno.'
-                : 'L\'ingrediente verrà rimosso dalla lista della spesa.'}
+                ? t('spesa.deleteConfirm.bodyPlanner')
+                : t('spesa.deleteConfirm.body')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable
@@ -290,7 +356,7 @@ export default function Spesa() {
                 testID="confirm-cancel"
                 disabled={deleting}
               >
-                <Text style={styles.btnGhostTxt}>Annulla</Text>
+                <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
                 onPress={doDelete}
@@ -298,7 +364,7 @@ export default function Spesa() {
                 testID="confirm-delete"
                 disabled={deleting}
               >
-                {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Elimina</Text>}
+                {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('common.delete')}</Text>}
               </Pressable>
             </View>
           </View>
@@ -319,6 +385,16 @@ const styles = StyleSheet.create({
   legend: { gap: 4, alignItems: 'flex-end' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendTxt: { fontSize: 11, color: theme.color.onSurfaceTertiary },
+  catHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: theme.spacing.sm, paddingVertical: 6,
+    marginTop: theme.spacing.md, marginBottom: 4,
+  },
+  catEmoji: { fontSize: 15 },
+  catLabel: {
+    fontSize: 12, fontWeight: '700', color: theme.color.onSurfaceSecondary,
+    textTransform: 'uppercase', letterSpacing: 0.6,
+  },
   dot: { width: 8, height: 8, borderRadius: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, gap: 8 },
   emptyH: { fontFamily: theme.font.display, fontSize: 20, color: theme.color.onSurface, marginTop: 8 },

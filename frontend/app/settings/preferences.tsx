@@ -1,108 +1,139 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, Modal, Alert, Keyboard,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, Modal, Alert, Keyboard, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useAuth, Course } from '@/src/auth';
+import { useAuth, Course, IngredientCategory } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
-import { WEEK_START_OPTIONS } from '@/src/week';
+import { weekStartOptions } from '@/src/week';
+import { useTranslation } from '@/src/i18n';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
+type EditingCat =
+  | null
+  | {
+      kind: 'course';
+      index: number | null;
+      label: string;
+    }
+  | {
+      kind: 'ing';
+      index: number | null;
+      label: string;
+      icon: string;
+    };
+
+const EMOJI_SUGGESTIONS = ['🥬', '🍎', '🥩', '🥛', '🍞', '❄️', '🥤', '🫙', '📦', '🍫', '🌶️', '🫒', '🥫', '🐟', '🥚', '🌰', '🧀'];
+
 export default function PreferencesSettings() {
   const router = useRouter();
+  const { t, lang, tCourse, tCat } = useTranslation();
   const { prefs, updatePreferences } = useAuth();
+  const WEEK_START_OPTS = weekStartOptions(lang);
 
   const [weekStart, setWeekStart] = useState<number>(prefs.week_start_day);
   const [span, setSpan] = useState<'weekly' | 'biweekly'>(prefs.planner_span);
+  const [language, setLanguage] = useState<'it' | 'en'>(prefs.language);
   const [courses, setCourses] = useState<Course[]>(prefs.courses);
+  const [ingCats, setIngCats] = useState<IngredientCategory[]>(prefs.ingredient_categories);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
-  const [editing, setEditing] = useState<{ index: number | null; label: string } | null>(null);
+  const [editing, setEditing] = useState<EditingCat>(null);
 
   useEffect(() => {
     setWeekStart(prefs.week_start_day);
     setSpan(prefs.planner_span);
+    setLanguage(prefs.language);
     setCourses(prefs.courses);
+    setIngCats(prefs.ingredient_categories);
   }, [prefs]);
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(timer);
   }, [msg]);
 
   const dirty = useMemo(() => {
     if (weekStart !== prefs.week_start_day) return true;
     if (span !== prefs.planner_span) return true;
+    if (language !== prefs.language) return true;
     if (courses.length !== prefs.courses.length) return true;
     for (let i = 0; i < courses.length; i++) {
       if (courses[i].label !== prefs.courses[i]?.label) return true;
       if (courses[i].id !== prefs.courses[i]?.id) return true;
     }
+    if (ingCats.length !== prefs.ingredient_categories.length) return true;
+    for (let i = 0; i < ingCats.length; i++) {
+      if (ingCats[i].label !== prefs.ingredient_categories[i]?.label) return true;
+      if (ingCats[i].id !== prefs.ingredient_categories[i]?.id) return true;
+      if ((ingCats[i].icon || '') !== (prefs.ingredient_categories[i]?.icon || '')) return true;
+    }
     return false;
-  }, [weekStart, span, courses, prefs]);
+  }, [weekStart, span, language, courses, ingCats, prefs]);
 
   const save = async () => {
     Keyboard.dismiss();
     setBusy(true);
     setMsg(null);
     try {
-      await updatePreferences({ week_start_day: weekStart, planner_span: span, courses });
+      await updatePreferences({
+        week_start_day: weekStart,
+        planner_span: span,
+        language,
+        courses,
+        ingredient_categories: ingCats,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setMsg({ kind: 'ok', text: 'Preferenze salvate.' });
+      setMsg({ kind: 'ok', text: t('prefs.saved') });
     } catch (e: any) {
-      setMsg({ kind: 'err', text: e.message || 'Errore salvataggio' });
+      setMsg({ kind: 'err', text: e.message || t('prefs.errors.saveGen') });
     }
     setBusy(false);
   };
 
-  const moveCourse = (i: number, dir: -1 | 1) => {
+  const moveInList = <T,>(arr: T[], setter: (v: T[]) => void, i: number, dir: -1 | 1) => {
     const j = i + dir;
-    if (j < 0 || j >= courses.length) return;
+    if (j < 0 || j >= arr.length) return;
     Haptics.selectionAsync();
-    const next = [...courses];
+    const next = [...arr];
     [next[i], next[j]] = [next[j], next[i]];
-    setCourses(next);
+    setter(next);
   };
 
-  const removeCourse = (i: number) => {
-    if (courses.length <= 1) {
-      Alert.alert('Attenzione', 'Serve almeno una categoria.');
-      return;
-    }
+  const removeFromList = <T,>(arr: T[], setter: (v: T[]) => void, i: number) => {
+    if (arr.length <= 1) { Alert.alert('!', t('prefs.errors.minOne')); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCourses(prev => prev.filter((_, idx) => idx !== i));
+    setter(arr.filter((_, idx) => idx !== i));
   };
-
-  const openAdd = () => setEditing({ index: null, label: '' });
-  const openEdit = (i: number) => setEditing({ index: i, label: courses[i].label });
 
   const commitEdit = () => {
     if (!editing) return;
     const label = editing.label.trim();
     if (!label) return;
-    if (label.length > 40) {
-      Alert.alert('Attenzione', 'Massimo 40 caratteri per categoria.');
-      return;
-    }
-    // Duplicate check (case-insensitive)
-    const dupIdx = courses.findIndex((c, idx) =>
-      c.label.trim().toLowerCase() === label.toLowerCase() && idx !== editing.index
-    );
-    if (dupIdx !== -1) {
-      Alert.alert('Attenzione', 'Esiste già una categoria con questo nome.');
-      return;
-    }
+    if (label.length > 40) { Alert.alert('!', t('prefs.errors.tooMany')); return; }
     Haptics.selectionAsync();
-    if (editing.index === null) {
-      setCourses(prev => [...prev, { id: '', label }]);
+    if (editing.kind === 'course') {
+      // duplicate check
+      const dup = courses.findIndex((c, idx) =>
+        c.label.trim().toLowerCase() === label.toLowerCase() && idx !== editing.index
+      );
+      if (dup !== -1) { Alert.alert('!', t('prefs.errors.duplicate')); return; }
+      if (editing.index === null) setCourses(prev => [...prev, { id: '', label }]);
+      else setCourses(prev => prev.map((c, i) => i === editing.index ? { ...c, label } : c));
     } else {
-      setCourses(prev => prev.map((c, idx) => idx === editing.index ? { ...c, label } : c));
+      const dup = ingCats.findIndex((c, idx) =>
+        c.label.trim().toLowerCase() === label.toLowerCase() && idx !== editing.index
+      );
+      if (dup !== -1) { Alert.alert('!', t('prefs.errors.duplicate')); return; }
+      const icon = (editing.icon || '').trim().slice(0, 4) || null;
+      if (editing.index === null) setIngCats(prev => [...prev, { id: '', label, icon, color: null }]);
+      else setIngCats(prev => prev.map((c, i) => i === editing.index ? { ...c, label, icon } : c));
     }
     setEditing(null);
   };
@@ -113,33 +144,49 @@ export default function PreferencesSettings() {
         <Pressable onPress={() => router.back()} style={s.back} testID="preferences-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={s.h1}>Preferenze</Text>
-        <Pressable
-          onPress={save}
-          disabled={!dirty || busy}
-          style={styles.saveHeader}
-          testID="prefs-save"
-        >
+        <Text style={s.h1}>{t('prefs.header')}</Text>
+        <Pressable onPress={save} disabled={!dirty || busy} style={styles.saveHeader} testID="prefs-save">
           {busy ? (
             <ActivityIndicator size="small" color={theme.color.brandPrimary} />
           ) : (
-            <Text style={[
-              styles.saveHeaderTxt,
-              !dirty && { color: theme.color.onSurfaceTertiary },
-            ]}>Salva</Text>
+            <Text style={[styles.saveHeaderTxt, !dirty && { color: theme.color.onSurfaceTertiary }]}>
+              {t('common.save')}
+            </Text>
           )}
         </Pressable>
       </View>
 
       <KeyboardAwareScrollView contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 60 }}>
+        {/* Language */}
+        <View style={s.section}>
+          <Text style={s.sectionH}>{t('prefs.language.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.language.sub')}</Text>
+          <View style={styles.spanRow}>
+            {[
+              { key: 'it', label: '🇮🇹  Italiano' },
+              { key: 'en', label: '🇬🇧  English' },
+            ].map(o => {
+              const active = language === o.key;
+              return (
+                <Pressable
+                  key={o.key}
+                  onPress={() => { Haptics.selectionAsync(); setLanguage(o.key as any); }}
+                  style={[styles.spanCard, active && styles.spanCardActive]}
+                  testID={`lang-${o.key}`}
+                >
+                  <Text style={[styles.spanLabel, active && { color: theme.color.brandPrimary, fontWeight: '700' }]}>{o.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Week start */}
         <View style={s.section}>
-          <Text style={s.sectionH}>Inizio settimana</Text>
-          <Text style={s.sectionSub}>
-            Il Planner mostrerà i 7 giorni della settimana partendo dal giorno che scegli qui.
-          </Text>
+          <Text style={s.sectionH}>{t('prefs.weekStart.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.weekStart.sub')}</Text>
           <View style={styles.dayGrid}>
-            {WEEK_START_OPTIONS.map(o => {
+            {WEEK_START_OPTS.map(o => {
               const active = weekStart === o.value;
               return (
                 <Pressable
@@ -157,14 +204,12 @@ export default function PreferencesSettings() {
 
         {/* Planner span */}
         <View style={s.section}>
-          <Text style={s.sectionH}>Durata del Planner</Text>
-          <Text style={s.sectionSub}>
-            Scegli se pianificare una settimana alla volta o due settimane in un colpo solo.
-          </Text>
+          <Text style={s.sectionH}>{t('prefs.span.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.span.sub')}</Text>
           <View style={styles.spanRow}>
             {([
-              { key: 'weekly', label: 'Settimanale', sub: '7 giorni', icon: 'calendar' as const },
-              { key: 'biweekly', label: 'Bi-settimanale', sub: '14 giorni', icon: 'columns' as const },
+              { key: 'weekly', label: t('prefs.span.weekly'), sub: t('prefs.span.weeklySub'), icon: 'calendar' as const },
+              { key: 'biweekly', label: t('prefs.span.biweekly'), sub: t('prefs.span.biweeklySub'), icon: 'columns' as const },
             ]).map(o => {
               const active = span === o.key;
               return (
@@ -185,58 +230,74 @@ export default function PreferencesSettings() {
           </View>
         </View>
 
-        {/* Courses */}
+        {/* Dish courses */}
         <View style={s.section}>
-          <Text style={s.sectionH}>Categorie dei piatti</Text>
-          <Text style={s.sectionSub}>
-            Personalizza come raggruppare i tuoi piatti (es. Primo, Secondo, Contorno, Dolce, Antipasto, Colazione…).
-            L'ordine deciso qui è quello che vedi nella scheda Piatti e nel Planner.
-          </Text>
-
+          <Text style={s.sectionH}>{t('prefs.courses.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.courses.sub')}</Text>
           {courses.map((c, i) => (
-            <View key={`${c.id || 'new'}_${i}`} style={styles.courseRow} testID={`course-row-${i}`}>
-              <View style={styles.courseIcon}>
+            <View key={`c_${c.id || 'new'}_${i}`} style={styles.courseRow} testID={`course-row-${i}`}>
+              <View style={[styles.courseIcon, { backgroundColor: theme.color.brandTertiary }]}>
                 <Feather name="tag" size={16} color={theme.color.brandPrimary} />
               </View>
-              <Text style={styles.courseLabel} numberOfLines={1}>{c.label}</Text>
+              <Text style={styles.courseLabel} numberOfLines={1}>{tCourse(c)}</Text>
               <View style={styles.courseActions}>
-                <Pressable
-                  onPress={() => moveCourse(i, -1)}
-                  disabled={i === 0}
-                  style={[styles.iconBtn, i === 0 && { opacity: 0.3 }]}
-                  testID={`course-up-${i}`}
-                >
+                <Pressable onPress={() => moveInList(courses, setCourses, i, -1)} disabled={i === 0}
+                  style={[styles.iconBtn, i === 0 && { opacity: 0.3 }]} testID={`course-up-${i}`}>
                   <Feather name="arrow-up" size={16} color={theme.color.onSurface} />
                 </Pressable>
-                <Pressable
-                  onPress={() => moveCourse(i, 1)}
-                  disabled={i === courses.length - 1}
-                  style={[styles.iconBtn, i === courses.length - 1 && { opacity: 0.3 }]}
-                  testID={`course-down-${i}`}
-                >
+                <Pressable onPress={() => moveInList(courses, setCourses, i, 1)} disabled={i === courses.length - 1}
+                  style={[styles.iconBtn, i === courses.length - 1 && { opacity: 0.3 }]} testID={`course-down-${i}`}>
                   <Feather name="arrow-down" size={16} color={theme.color.onSurface} />
                 </Pressable>
-                <Pressable onPress={() => openEdit(i)} style={styles.iconBtn} testID={`course-edit-${i}`}>
+                <Pressable onPress={() => setEditing({ kind: 'course', index: i, label: tCourse(c) })}
+                  style={styles.iconBtn} testID={`course-edit-${i}`}>
                   <Feather name="edit-2" size={16} color={theme.color.onSurface} />
                 </Pressable>
-                <Pressable onPress={() => removeCourse(i)} style={styles.iconBtn} testID={`course-remove-${i}`}>
+                <Pressable onPress={() => removeFromList(courses, setCourses, i)} style={styles.iconBtn} testID={`course-remove-${i}`}>
                   <Feather name="x" size={16} color={theme.color.error} />
                 </Pressable>
               </View>
             </View>
           ))}
-
-          <Pressable onPress={openAdd} style={styles.addBtn} testID="course-add">
+          <Pressable onPress={() => setEditing({ kind: 'course', index: null, label: '' })} style={styles.addBtn} testID="course-add">
             <Feather name="plus" size={16} color={theme.color.brandPrimary} />
-            <Text style={styles.addBtnTxt}>Aggiungi categoria</Text>
+            <Text style={styles.addBtnTxt}>{t('prefs.addCategory')}</Text>
           </Pressable>
+        </View>
 
-          <View style={styles.hint}>
-            <Feather name="info" size={12} color={theme.color.onSurfaceTertiary} />
-            <Text style={styles.hintTxt}>
-              I piatti già creati mantengono la loro categoria anche se la rinomini. Se elimini una categoria, i piatti che la usano restano nel ricettario ma non appariranno in nessun filtro finché non li riassegni.
-            </Text>
-          </View>
+        {/* Ingredient categories */}
+        <View style={s.section}>
+          <Text style={s.sectionH}>{t('prefs.ingCats.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.ingCats.sub')}</Text>
+          {ingCats.map((c, i) => (
+            <View key={`ic_${c.id || 'new'}_${i}`} style={styles.courseRow} testID={`ing-row-${i}`}>
+              <View style={[styles.courseIcon, { backgroundColor: c.color || theme.color.brandTertiary }]}>
+                <Text style={{ fontSize: 16 }}>{c.icon || '📦'}</Text>
+              </View>
+              <Text style={styles.courseLabel} numberOfLines={1}>{tCat(c)}</Text>
+              <View style={styles.courseActions}>
+                <Pressable onPress={() => moveInList(ingCats, setIngCats, i, -1)} disabled={i === 0}
+                  style={[styles.iconBtn, i === 0 && { opacity: 0.3 }]} testID={`ing-up-${i}`}>
+                  <Feather name="arrow-up" size={16} color={theme.color.onSurface} />
+                </Pressable>
+                <Pressable onPress={() => moveInList(ingCats, setIngCats, i, 1)} disabled={i === ingCats.length - 1}
+                  style={[styles.iconBtn, i === ingCats.length - 1 && { opacity: 0.3 }]} testID={`ing-down-${i}`}>
+                  <Feather name="arrow-down" size={16} color={theme.color.onSurface} />
+                </Pressable>
+                <Pressable onPress={() => setEditing({ kind: 'ing', index: i, label: tCat(c), icon: c.icon || '' })}
+                  style={styles.iconBtn} testID={`ing-edit-${i}`}>
+                  <Feather name="edit-2" size={16} color={theme.color.onSurface} />
+                </Pressable>
+                <Pressable onPress={() => removeFromList(ingCats, setIngCats, i)} style={styles.iconBtn} testID={`ing-remove-${i}`}>
+                  <Feather name="x" size={16} color={theme.color.error} />
+                </Pressable>
+              </View>
+            </View>
+          ))}
+          <Pressable onPress={() => setEditing({ kind: 'ing', index: null, label: '', icon: '' })} style={styles.addBtn} testID="ing-add">
+            <Feather name="plus" size={16} color={theme.color.brandPrimary} />
+            <Text style={styles.addBtnTxt}>{t('prefs.addCategory')}</Text>
+          </Pressable>
         </View>
 
         {msg ? (
@@ -248,33 +309,52 @@ export default function PreferencesSettings() {
         ) : null}
       </KeyboardAwareScrollView>
 
-      {/* Edit/Add course modal */}
+      {/* Edit modal (courses + ing cats) */}
       <Modal transparent visible={!!editing} animationType="fade" onRequestClose={() => setEditing(null)}>
         <View style={s.overlay}>
-          <View style={s.modalCard} testID="course-modal">
+          <View style={s.modalCard} testID="cat-modal">
             <Text style={s.modalH}>
-              {editing?.index === null ? 'Nuova categoria' : 'Rinomina categoria'}
+              {editing?.index === null ? t('prefs.newCategory') : t('prefs.renameCategory')}
             </Text>
-            <Text style={s.modalP}>Es. Primo, Antipasto, Dolce, Merenda…</Text>
+            <Text style={s.modalP}>
+              {editing?.kind === 'course' ? t('prefs.courseExamplePh') : t('prefs.ingExamplePh')}
+            </Text>
             <View style={{ height: theme.spacing.md }} />
             <TextInput
-              testID="course-modal-input"
-              placeholder="Nome categoria"
+              testID="cat-modal-input"
+              placeholder={t('common.name')}
               placeholderTextColor={theme.color.onSurfaceTertiary}
               value={editing?.label || ''}
-              onChangeText={(t) => setEditing(prev => prev ? { ...prev, label: t } : prev)}
-              autoFocus
-              maxLength={40}
-              style={s.input}
-              onSubmitEditing={commitEdit}
-              returnKeyType="done"
+              onChangeText={(text) => setEditing(prev => (prev ? { ...prev, label: text } : prev))}
+              autoFocus maxLength={40} style={s.input}
+              onSubmitEditing={commitEdit} returnKeyType="done"
             />
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
-              <Pressable onPress={() => setEditing(null)} style={s.btnGhost} testID="course-modal-cancel">
-                <Text style={s.btnGhostTxt}>Annulla</Text>
+            {editing?.kind === 'ing' && (
+              <>
+                <Text style={{ fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 8, marginBottom: 4 }}>{t('prefs.icon.h')}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {EMOJI_SUGGESTIONS.map(e => (
+                    <Pressable
+                      key={e}
+                      onPress={() => setEditing(prev => (prev && prev.kind === 'ing' ? { ...prev, icon: e } : prev))}
+                      style={[
+                        styles.emojiBtn,
+                        editing.icon === e && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandTertiary },
+                      ]}
+                      testID={`emoji-${e}`}
+                    >
+                      <Text style={{ fontSize: 20 }}>{e}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+              <Pressable onPress={() => setEditing(null)} style={s.btnGhost} testID="cat-cancel">
+                <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
-              <Pressable onPress={commitEdit} style={s.btnPrim} testID="course-modal-save">
-                <Text style={s.btnDangerTxt}>{editing?.index === null ? 'Aggiungi' : 'Salva'}</Text>
+              <Pressable onPress={commitEdit} style={s.btnPrim} testID="cat-save">
+                <Text style={s.btnDangerTxt}>{editing?.index === null ? t('common.add') : t('common.save')}</Text>
               </Pressable>
             </View>
           </View>
@@ -289,15 +369,10 @@ const styles = StyleSheet.create({
   saveHeaderTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 15 },
   dayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: theme.spacing.sm },
   dayChip: {
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surfaceSecondary,
-    borderWidth: 1, borderColor: theme.color.border,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
   },
-  dayChipActive: {
-    backgroundColor: theme.color.brandTertiary,
-    borderColor: theme.color.brandPrimary,
-  },
+  dayChipActive: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
   dayChipTxt: { fontSize: 14, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
   dayChipTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },
   spanRow: { flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm },
@@ -306,27 +381,21 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.color.border, backgroundColor: theme.color.surface,
     alignItems: 'flex-start', gap: 6,
   },
-  spanCardActive: {
-    borderColor: theme.color.brandPrimary, borderWidth: 2,
-    backgroundColor: theme.color.brandTertiary,
-  },
+  spanCardActive: { borderColor: theme.color.brandPrimary, borderWidth: 2, backgroundColor: theme.color.brandTertiary },
   spanIcon: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: theme.color.brandTertiary,
+    width: 34, height: 34, borderRadius: 17, backgroundColor: theme.color.brandTertiary,
     alignItems: 'center', justifyContent: 'center',
   },
   spanLabel: { fontSize: 14, color: theme.color.onSurface, fontWeight: '600' },
   spanSub: { fontSize: 11, color: theme.color.onSurfaceTertiary },
   courseRow: {
     flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
-    backgroundColor: theme.color.surface,
-    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
-    paddingVertical: 8, paddingLeft: 12, paddingRight: 4,
-    marginBottom: 8,
+    backgroundColor: theme.color.surface, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border,
+    paddingVertical: 8, paddingLeft: 12, paddingRight: 4, marginBottom: 8,
   },
   courseIcon: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: theme.color.brandTertiary,
     alignItems: 'center', justifyContent: 'center',
   },
   courseLabel: { flex: 1, fontSize: 15, color: theme.color.onSurface, fontWeight: '500' },
@@ -334,12 +403,14 @@ const styles = StyleSheet.create({
   iconBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 10,
-    marginTop: theme.spacing.sm,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1, borderStyle: 'dashed', borderColor: theme.color.brandPrimary,
+    alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, marginTop: theme.spacing.sm,
+    borderRadius: theme.radius.pill, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.color.brandPrimary,
   },
   addBtnTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 14 },
-  hint: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.md, alignItems: 'flex-start' },
-  hintTxt: { flex: 1, fontSize: 11, color: theme.color.onSurfaceTertiary, lineHeight: 15 },
+  emojiBtn: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 4,
+  },
 });

@@ -2,28 +2,39 @@
  * Week utilities. The start-of-week day is configurable per user
  * (0 = Monday, 6 = Sunday). Historically PlanEat started on Saturday (5).
  */
-
-// Full Monday-first labels; helpers below rotate them to the configured start.
-const WEEK_LABELS_FULL_MON = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-const WEEK_LABELS_SHORT_MON = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+import { tStatic, localeOf, type Lang } from './i18n';
 
 // Kept for backwards compatibility (Saturday-based) — used by legacy call sites.
+// These are only used when a lang isn't available; UI code should use the
+// `useTranslation()`-aware helpers below.
 export const DAY_LABELS = ['Sab', 'Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven'];
 export const DAY_LABELS_FULL = ['Sabato', 'Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'];
 
-export const WEEK_START_OPTIONS = [
-  { value: 0, label: 'Lunedì' },
-  { value: 1, label: 'Martedì' },
-  { value: 2, label: 'Mercoledì' },
-  { value: 3, label: 'Giovedì' },
-  { value: 4, label: 'Venerdì' },
-  { value: 5, label: 'Sabato' },
-  { value: 6, label: 'Domenica' },
-];
+/** Localized options for the "week start day" picker. */
+export function weekStartOptions(lang: Lang | undefined) {
+  const keys = ['day.mon', 'day.tue', 'day.wed', 'day.thu', 'day.fri', 'day.sat', 'day.sun'];
+  return keys.map((k, i) => ({ value: i, label: tStatic(lang, k) }));
+}
+
+/** Legacy Italian-only options (kept for backwards compat where lang isn't threaded). */
+export const WEEK_START_OPTIONS = weekStartOptions('it');
+
+function labelsFor(lang: Lang | undefined, full: boolean): string[] {
+  const suffix = full ? '' : '.short';
+  return [
+    tStatic(lang, `day.mon${suffix}`),
+    tStatic(lang, `day.tue${suffix}`),
+    tStatic(lang, `day.wed${suffix}`),
+    tStatic(lang, `day.thu${suffix}`),
+    tStatic(lang, `day.fri${suffix}`),
+    tStatic(lang, `day.sat${suffix}`),
+    tStatic(lang, `day.sun${suffix}`),
+  ];
+}
 
 /** Return the ordered day labels (7 items) starting from `startDay` (0=Mon..6=Sun). */
-export function orderedDayLabels(startDay: number, full = false): string[] {
-  const src = full ? WEEK_LABELS_FULL_MON : WEEK_LABELS_SHORT_MON;
+export function orderedDayLabels(startDay: number, full = false, lang: Lang | undefined = 'it'): string[] {
+  const src = labelsFor(lang, full);
   const out: string[] = [];
   for (let i = 0; i < 7; i++) out.push(src[(startDay + i) % 7]);
   return out;
@@ -57,10 +68,11 @@ export function addDays(d: Date, n: number): Date {
   return c;
 }
 
-export function weekRangeLabel(weekStart: Date): string {
+export function weekRangeLabel(weekStart: Date, lang: Lang | undefined = 'it'): string {
   const end = addDays(weekStart, 6);
   const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
-  return `${weekStart.toLocaleDateString('it-IT', opts)} – ${end.toLocaleDateString('it-IT', opts)}`;
+  const loc = localeOf(lang);
+  return `${weekStart.toLocaleDateString(loc, opts)} – ${end.toLocaleDateString(loc, opts)}`;
 }
 
 export function todayIndexInWeek(weekStart: Date): number | null {
@@ -79,7 +91,7 @@ export function parseIso(s: string): Date {
 }
 
 /** Short arrow label like "lun → dom" for the week strip subtitle. */
-export function weekStartLabels(startDay: number): string {
-  const short = orderedDayLabels(startDay, false);
+export function weekStartLabels(startDay: number, lang: Lang | undefined = 'it'): string {
+  const short = orderedDayLabels(startDay, false, lang);
   return `${short[0].toLowerCase()} → ${short[6].toLowerCase()}`;
 }

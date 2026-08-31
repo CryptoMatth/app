@@ -28,11 +28,30 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - `/settings/backup` — export/import JSON con modalità merge o replace
 - Logout con conferma direttamente dall'hub
 
-## Preferenze utente (giu 2026)
+## Preferenze utente (giu-ago 2026)
 - `week_start_day` (0=Lun..6=Dom, default 5=Sab): il Planner ordina i 7 giorni partendo da qui
 - `planner_span` (`weekly` | `biweekly`, default `weekly`): scelta tra 7 giorni o 14 giorni di pianificazione
-- `courses` (lista `{id, label}`): categorie personalizzabili per i piatti; default Primo/Secondo/Contorno/Dolce; possibilità di aggiungerne di custom (es. Antipasto, Colazione)
+- `language` (`it` | `en`, default `it`): lingua interfaccia dell'app
+- `courses` (lista `{id, label}`): categorie personalizzabili per i piatti; default Primo/Secondo/Contorno/Dolce
+- `ingredient_categories` (lista `{id, label, icon, color}`): categorie ingredienti/spesa; default 9 (Verdura, Frutta, Carne/Pesce, Latticini, Pane, Surgelati, Bevande, Dispensa, Altro). Personalizzabili con emoji/colore.
 - Il campo `course` sui piatti è ora una stringa libera; l'id viene generato dalla label
+
+## i18n (ago 2026, revisionato ago 2026)
+- Sistema minimalista in-house: `useTranslation()` hook con dizionari statici `it` / `en` in `/app/frontend/src/i18n.ts`
+- Language cambiabile da Settings → Preferenze
+- **Copertura completa**: tutte le schermate (Auth, Onboarding tutorial, tutti e 3 i tab, Dish/Shopping editor, Planner slot picker, tutte le sub-pagine Settings, Recovery codes, Backup) usano `t()` senza stringhe hardcoded
+- Helper `tCourse()` / `tCat()`: traducono i label delle categorie/portate di default (`primo`, `verdura`, ecc.) in base all'ID canonico; le categorie custom create dall'utente mantengono il nome originale
+- Giorni della settimana localizzati (labels short/full) via `weekStartOptions(lang)` / `orderedDayLabels(startDay, full, lang)`
+- Locale date dinamico (`it-IT` vs `en-GB`) per `weekRangeLabel` e visualizzazioni Intl
+- Fallback automatico all'italiano per chiavi mancanti
+
+## Spesa raggruppata per categoria (ago 2026)
+- Header di sezione con emoji + label per ogni categoria, in ordine deciso dall'utente in Preferenze
+- Elementi manuali → categoria selezionata dall'utente al momento dell'aggiunta (default "altro")
+- Elementi da Planner → ereditano la `category_id` dell'ingrediente del piatto
+- Elementi già presenti in Spesa mantengono la loro categoria (never-overwrite)
+- Header separato "Presi" per gli elementi spuntati in fondo
+- **Categoria sull'ingrediente del piatto** (ago 2026): quando crei/modifichi un piatto, ogni ingrediente ha un selettore di categoria (modale a lista con emoji). La `category_id` scelta viene salvata sull'ingrediente e propagata automaticamente allo Spesa quando il piatto entra nel Planner.
 
 ## Entitlements Pro (giu 2026)
 - Campo `entitlements.pro = {active, source, reason, granted_at, revoked_at}` sull'user doc

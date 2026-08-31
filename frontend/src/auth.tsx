@@ -2,11 +2,15 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { api, clearToken, setToken, getToken } from './api';
 
 export type Course = { id: string; label: string };
+export type IngredientCategory = { id: string; label: string; icon?: string | null; color?: string | null };
 export type PlannerSpan = 'weekly' | 'biweekly';
+export type Lang = 'it' | 'en';
 export type UserPreferences = {
   week_start_day: number; // 0=Mon..6=Sun
   planner_span: PlannerSpan;
+  language: Lang;
   courses: Course[];
+  ingredient_categories: IngredientCategory[];
 };
 export type User = {
   user_id: string;
@@ -19,11 +23,23 @@ export type User = {
 const DEFAULT_PREFS: UserPreferences = {
   week_start_day: 5,
   planner_span: 'weekly',
+  language: 'it',
   courses: [
     { id: 'primo', label: 'Primo' },
     { id: 'secondo', label: 'Secondo' },
     { id: 'contorno', label: 'Contorno' },
     { id: 'dolce', label: 'Dolce' },
+  ],
+  ingredient_categories: [
+    { id: 'verdura', label: 'Verdura', icon: '🥬', color: '#7A9A65' },
+    { id: 'frutta', label: 'Frutta', icon: '🍎', color: '#D66852' },
+    { id: 'carne_pesce', label: 'Carne / Pesce', icon: '🥩', color: '#B14A3C' },
+    { id: 'latticini', label: 'Latticini', icon: '🥛', color: '#E8D4A3' },
+    { id: 'pane_farinacei', label: 'Pane / Farinacei', icon: '🍞', color: '#C9975C' },
+    { id: 'surgelati', label: 'Surgelati', icon: '❄️', color: '#7BB0C8' },
+    { id: 'bevande', label: 'Bevande', icon: '🥤', color: '#8E7CC3' },
+    { id: 'dispensa', label: 'Dispensa', icon: '🫙', color: '#A38963' },
+    { id: 'altro', label: 'Altro', icon: '📦', color: '#8C8478' },
   ],
 };
 

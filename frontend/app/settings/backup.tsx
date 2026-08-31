@@ -10,19 +10,21 @@ import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
+import { useTranslation } from '@/src/i18n';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
 export default function BackupSettings() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [confirmImport, setConfirmImport] = useState<{ payload: any; mode: 'merge' | 'replace' } | null>(null);
 
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 4000);
-    return () => clearTimeout(t);
+    const to = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(to);
   }, [msg]);
 
   const doExport = useCallback(async () => {
@@ -41,7 +43,7 @@ export default function BackupSettings() {
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        setMsg({ kind: 'ok', text: 'Backup scaricato con successo.' });
+        setMsg({ kind: 'ok', text: t('backup.downloaded') });
       } else {
         const path = `${FileSystem.documentDirectory}${filename}`;
         await FileSystem.writeAsStringAsync(path, json);
@@ -49,20 +51,20 @@ export default function BackupSettings() {
         if (canShare) {
           await Sharing.shareAsync(path, {
             mimeType: 'application/json',
-            dialogTitle: 'Salva il backup PlanEat',
+            dialogTitle: t('backup.dialog'),
             UTI: 'public.json',
           });
-          setMsg({ kind: 'ok', text: 'Backup esportato con successo.' });
+          setMsg({ kind: 'ok', text: t('backup.exported') });
         } else {
-          setMsg({ kind: 'ok', text: `Backup salvato in: ${path}` });
+          setMsg({ kind: 'ok', text: t('backup.savedTo', { path }) });
         }
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      setMsg({ kind: 'err', text: e.message || 'Errore esportazione' });
+      setMsg({ kind: 'err', text: e.message || t('backup.errExport') });
     }
     setBusy(false);
-  }, []);
+  }, [t]);
 
   const pickAndPreview = useCallback(async (mode: 'merge' | 'replace') => {
     setMsg(null);
@@ -75,10 +77,10 @@ export default function BackupSettings() {
           input.accept = 'application/json,.json';
           input.onchange = () => {
             const f = input.files?.[0];
-            if (!f) { reject(new Error('Nessun file selezionato')); return; }
+            if (!f) { reject(new Error(t('backup.errNoFile'))); return; }
             const reader = new FileReader();
             reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error || new Error('Lettura fallita'));
+            reader.onerror = () => reject(reader.error || new Error(t('backup.errReadFail')));
             reader.readAsText(f);
           };
           input.click();
@@ -92,14 +94,14 @@ export default function BackupSettings() {
       }
       const parsed = JSON.parse(raw);
       if (!parsed || (parsed.app && parsed.app !== 'PlanEat')) {
-        setMsg({ kind: 'err', text: 'Il file non sembra un backup PlanEat valido.' });
+        setMsg({ kind: 'err', text: t('backup.errInvalid') });
         return;
       }
       setConfirmImport({ payload: parsed, mode });
     } catch (e: any) {
-      setMsg({ kind: 'err', text: e.message || 'Impossibile leggere il file' });
+      setMsg({ kind: 'err', text: e.message || t('backup.errRead') });
     }
-  }, []);
+  }, [t]);
 
   const doImport = useCallback(async () => {
     if (!confirmImport) return;
@@ -115,15 +117,15 @@ export default function BackupSettings() {
       const im = result.imported || {};
       setMsg({
         kind: 'ok',
-        text: `Ripristino completato: ${im.dishes || 0} piatti, ${im.weekly_plans || 0} settimane, ${im.shopping_items || 0} elementi spesa.`,
+        text: t('backup.doneMsg', { d: im.dishes || 0, w: im.weekly_plans || 0, s: im.shopping_items || 0 }),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setConfirmImport(null);
     } catch (e: any) {
-      setMsg({ kind: 'err', text: e.message || 'Errore ripristino' });
+      setMsg({ kind: 'err', text: e.message || t('backup.errRestore') });
     }
     setBusy(false);
-  }, [confirmImport]);
+  }, [confirmImport, t]);
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="settings-backup">
@@ -131,22 +133,20 @@ export default function BackupSettings() {
         <Pressable onPress={() => router.back()} style={s.back} testID="backup-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={s.h1}>Backup dati</Text>
+        <Text style={s.h1}>{t('backup.header')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <View style={{ padding: theme.spacing.lg }}>
-        <Text style={s.sectionSub}>
-          Scarica un file di backup con tutti i tuoi piatti, settimane pianificate e lista spesa. Potrai ripristinarlo in qualsiasi momento.
-        </Text>
+        <Text style={s.sectionSub}>{t('backup.intro')}</Text>
 
         <Pressable onPress={doExport} disabled={busy} style={s.actionRow} testID="btn-export">
           <View style={[s.actionIcon, { backgroundColor: theme.color.brandTertiary }]}>
             <Feather name="download" size={18} color={theme.color.brandPrimary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Esporta i miei dati</Text>
-            <Text style={s.actionSub}>Salva un file JSON sul telefono</Text>
+            <Text style={s.actionTitle}>{t('backup.export')}</Text>
+            <Text style={s.actionSub}>{t('backup.exportSub')}</Text>
           </View>
           {busy ? <ActivityIndicator color={theme.color.brandPrimary} /> :
             <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />}
@@ -157,8 +157,8 @@ export default function BackupSettings() {
             <Feather name="upload" size={18} color={theme.color.brandSecondary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Ripristina (unisci)</Text>
-            <Text style={s.actionSub}>Aggiungi i dati del backup senza sovrascrivere</Text>
+            <Text style={s.actionTitle}>{t('backup.merge')}</Text>
+            <Text style={s.actionSub}>{t('backup.mergeSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -168,8 +168,8 @@ export default function BackupSettings() {
             <Feather name="refresh-cw" size={18} color={theme.color.error} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Ripristina (sostituisci)</Text>
-            <Text style={s.actionSub}>Cancella tutto e sostituisci con il backup</Text>
+            <Text style={s.actionTitle}>{t('backup.replace')}</Text>
+            <Text style={s.actionSub}>{t('backup.replaceSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -190,25 +190,23 @@ export default function BackupSettings() {
               <Feather name="upload-cloud" size={24} color={theme.color.brandPrimary} />
             </View>
             <Text style={s.modalH}>
-              Ripristinare i dati {confirmImport?.mode === 'replace' ? '(sostituisci)' : '(unisci)'}?
+              {confirmImport?.mode === 'replace' ? t('backup.confirmTitleReplace') : t('backup.confirmTitleMerge')}
             </Text>
             <Text style={s.modalP}>
-              {confirmImport?.mode === 'replace'
-                ? 'Tutti i tuoi dati attuali verranno cancellati e sostituiti con quelli del backup. Questa operazione non è reversibile.'
-                : 'I dati del backup verranno aggiunti ai tuoi. Gli elementi duplicati non verranno sovrascritti.'}
+              {confirmImport?.mode === 'replace' ? t('backup.confirmReplace') : t('backup.confirmMerge')}
             </Text>
             <Text style={{ fontSize: 12, color: theme.color.onSurfaceTertiary, marginTop: theme.spacing.sm, fontStyle: 'italic' }}>
-              {confirmImport?.payload?.dishes?.length || 0} piatti · {confirmImport?.payload?.weekly_plans?.length || 0} settimane · {confirmImport?.payload?.shopping_items?.length || 0} elementi spesa
+              {t('backup.summary', { d: confirmImport?.payload?.dishes?.length || 0, w: confirmImport?.payload?.weekly_plans?.length || 0, s: confirmImport?.payload?.shopping_items?.length || 0 })}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => setConfirmImport(null)} style={s.btnGhost} disabled={busy} testID="import-cancel">
-                <Text style={s.btnGhostTxt}>Annulla</Text>
+                <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable onPress={doImport}
                 style={confirmImport?.mode === 'replace' ? s.btnDanger : s.btnPrim}
                 disabled={busy} testID="import-confirm">
                 {busy ? <ActivityIndicator color="#fff" /> : (
-                  <Text style={s.btnDangerTxt}>{confirmImport?.mode === 'replace' ? 'Sostituisci' : 'Ripristina'}</Text>
+                  <Text style={s.btnDangerTxt}>{confirmImport?.mode === 'replace' ? t('common.replace') : t('common.restore')}</Text>
                 )}
               </Pressable>
             </View>

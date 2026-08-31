@@ -10,11 +10,13 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[]; preparation: string; servings: number };
 
 export default function Piatti() {
   const { prefs } = useAuth();
+  const { t, tCourse } = useTranslation();
   const courses = prefs.courses;
   const [tab, setTab] = useState<string>(courses[0]?.id || 'primo');
   const [q, setQ] = useState('');
@@ -50,8 +52,8 @@ export default function Piatti() {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.h1}>Piatti</Text>
-            <Text style={styles.sub}>Il tuo ricettario personale</Text>
+            <Text style={styles.h1}>{t('piatti.title')}</Text>
+            <Text style={styles.sub}>{t('piatti.subtitle')}</Text>
           </View>
           <Pressable onPress={() => router.push('/settings')} style={styles.logoutBtn} testID="open-settings">
             <Feather name="settings" size={18} color={theme.color.onSurfaceSecondary} />
@@ -62,7 +64,7 @@ export default function Piatti() {
           <Feather name="search" size={16} color={theme.color.onSurfaceTertiary} />
           <TextInput
             testID="piatti-search"
-            placeholder="Cerca un piatto..."
+            placeholder={t('common.searchDish')}
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={q}
             onChangeText={setQ}
@@ -88,7 +90,7 @@ export default function Piatti() {
                 onPress={() => setTab(c.id)}
                 style={[styles.segBtn, tab === c.id && styles.segBtnActive]}
               >
-                <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{c.label}</Text>
+                <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{tCourse(c)}</Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -99,8 +101,8 @@ export default function Piatti() {
         <TipBanner
           storageKey={TutorialKeys.tipPiatti}
           icon="book-open"
-          title="I tuoi piatti in un tocco"
-          body="Tocca “Nuovo piatto” per creare una ricetta con ingredienti, quantità e passaggi. Verrà usata poi nel Planner."
+          title={t('piatti.tip.title')}
+          body={t('piatti.tip.body')}
           testID="tip-piatti"
         />
       </View>
@@ -110,8 +112,8 @@ export default function Piatti() {
       ) : dishes.length === 0 ? (
         <View style={styles.center}>
           <Feather name="book-open" size={44} color={theme.color.borderStrong} />
-          <Text style={styles.emptyH}>Nessun piatto</Text>
-          <Text style={styles.emptyP}>Aggiungi la tua prima ricetta con il pulsante in basso.</Text>
+          <Text style={styles.emptyH}>{t('piatti.empty.title')}</Text>
+          <Text style={styles.emptyP}>{t('piatti.empty.sub')}</Text>
         </View>
       ) : (
         <FlatList
@@ -129,7 +131,7 @@ export default function Piatti() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.cardMeta}>
-                  {item.ingredients?.length || 0} ingredienti · {item.servings} porz.
+                  {t('piatti.meta', { n: item.ingredients?.length || 0, s: item.servings })}
                 </Text>
               </View>
               <Feather name="chevron-right" size={22} color={theme.color.onSurfaceTertiary} />
@@ -145,7 +147,7 @@ export default function Piatti() {
         style={({ pressed }) => [styles.fab, pressed && { opacity: 0.9 }]}
       >
         <Feather name="plus" size={22} color="#fff" />
-        <Text style={styles.fabTxt}>Nuovo piatto</Text>
+        <Text style={styles.fabTxt}>{t('piatti.newDish')}</Text>
       </Pressable>
     </SafeAreaView>
   );

@@ -10,6 +10,7 @@ import { useRouter, Link } from 'expo-router';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { PasswordInput } from '@/src/PasswordInput';
+import { useTranslation } from '@/src/i18n';
 
 const HERO_URL = 'https://images.unsplash.com/photo-1528712306091-ed0763094c98?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxjb3p5JTIwaG9tZSUyMGNvb2tpbmclMjBraXRjaGVufGVufDB8fHx8MTc4NzMxNTg1NHww&ixlib=rb-4.1.0&q=85';
 
@@ -19,18 +20,19 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { loginUsername } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
 
   const onSubmit = async () => {
     Keyboard.dismiss();
     setErr('');
-    if (!username.trim() || !pw) { setErr('Inserisci username e password'); return; }
+    if (!username.trim() || !pw) { setErr(t('auth.errors.missing')); return; }
     setBusy(true);
     try {
       await loginUsername(username.trim(), pw);
       router.replace('/(tabs)/planner');
     } catch (e: any) {
-      setErr(e.message || 'Errore di accesso');
+      setErr(e.message || t('auth.errors.login'));
     } finally {
       setBusy(false);
     }
@@ -50,17 +52,17 @@ export default function Login() {
       >
           <View style={styles.top}>
             <Text style={styles.brand}>PlanEat</Text>
-            <Text style={styles.tagline}>Pianifica i pasti, semplifica la spesa.</Text>
+            <Text style={styles.tagline}>{t('auth.login.tagline')}</Text>
           </View>
           <View style={styles.card}>
-            <Text style={styles.title}>Bentornato</Text>
-            <Text style={styles.subtitle}>Accedi per sincronizzare i tuoi piatti su ogni dispositivo.</Text>
+            <Text style={styles.title}>{t('auth.login.welcome')}</Text>
+            <Text style={styles.subtitle}>{t('auth.login.sub')}</Text>
 
             <View style={{ height: theme.spacing.lg }} />
 
             <TextInput
               testID="login-username-input"
-              placeholder="Username"
+              placeholder={t('auth.username')}
               placeholderTextColor={theme.color.onSurfaceTertiary}
               value={username}
               onChangeText={setUsername}
@@ -70,7 +72,7 @@ export default function Login() {
             />
             <PasswordInput
               testID="login-password-input"
-              placeholder="Password"
+              placeholder={t('auth.password')}
               value={pw}
               onChangeText={setPw}
               style={styles.input}
@@ -84,18 +86,18 @@ export default function Login() {
               disabled={busy}
               style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
             >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Accedi</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>{t('auth.login')}</Text>}
             </Pressable>
 
             <Link href="/(auth)/forgot" asChild>
               <Pressable testID="go-to-forgot" style={styles.linkBtn}>
-                <Text style={[styles.linkTxt, { color: theme.color.brandPrimary }]}>Password dimenticata?</Text>
+                <Text style={[styles.linkTxt, { color: theme.color.brandPrimary }]}>{t('auth.forgot')}</Text>
               </Pressable>
             </Link>
 
             <Link href="/(auth)/register" asChild>
               <Pressable testID="go-to-register" style={styles.linkBtn}>
-                <Text style={styles.linkTxt}>Non hai un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Registrati</Text></Text>
+                <Text style={styles.linkTxt}>{t('auth.noAccount')} <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>{t('auth.register')}</Text></Text>
               </Pressable>
             </Link>
           </View>

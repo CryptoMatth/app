@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
+import { useTranslation } from '@/src/i18n';
 
 type Row = {
   key: string;
@@ -23,6 +24,7 @@ type Row = {
 export default function SettingsHome() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +36,7 @@ export default function SettingsHome() {
 
   const sections: { title: string; rows: Row[] }[] = [
     {
-      title: 'Account',
+      title: t('settings.section.account'),
       rows: [
         {
           key: 'account',
@@ -42,14 +44,14 @@ export default function SettingsHome() {
           icon: 'user',
           bg: theme.color.brandTertiary,
           color: theme.color.brandPrimary,
-          title: 'Il tuo account',
-          sub: `${user?.username || '—'} · username, password, sicurezza`,
+          title: t('settings.account.title'),
+          sub: t('settings.account.sub', { username: user?.username || '—' }),
           testID: 'nav-account',
         },
       ],
     },
     {
-      title: 'Personalizzazione',
+      title: t('settings.section.customization'),
       rows: [
         {
           key: 'prefs',
@@ -57,14 +59,14 @@ export default function SettingsHome() {
           icon: 'sliders',
           bg: '#E5EDDF',
           color: theme.color.brandSecondary,
-          title: 'Preferenze',
-          sub: 'Inizio settimana e categorie dei piatti',
+          title: t('settings.prefs.title'),
+          sub: t('settings.prefs.sub'),
           testID: 'nav-preferences',
         },
       ],
     },
     {
-      title: 'Guida',
+      title: t('settings.section.guide'),
       rows: [
         {
           key: 'tutorial',
@@ -72,8 +74,8 @@ export default function SettingsHome() {
           icon: 'play-circle',
           bg: '#E5EDDF',
           color: theme.color.brandSecondary,
-          title: 'Guida & Tutorial',
-          sub: 'Rivedi l\'introduzione e mostra di nuovo i suggerimenti',
+          title: t('settings.tutorial.title'),
+          sub: t('settings.tutorial.sub'),
           testID: 'nav-tutorial',
         },
         {
@@ -82,14 +84,14 @@ export default function SettingsHome() {
           icon: 'mail',
           bg: theme.color.brandTertiary,
           color: theme.color.brandPrimary,
-          title: 'Contatti',
-          sub: 'Scrivimi per feedback, bug o richieste feature',
+          title: t('settings.contact.title'),
+          sub: t('settings.contact.sub'),
           testID: 'nav-contact',
         },
       ],
     },
     {
-      title: 'Dati',
+      title: t('settings.section.data'),
       rows: [
         {
           key: 'backup',
@@ -97,14 +99,14 @@ export default function SettingsHome() {
           icon: 'archive',
           bg: theme.color.brandTertiary,
           color: theme.color.brandPrimary,
-          title: 'Backup & Ripristino',
-          sub: 'Esporta o importa un file JSON con tutti i tuoi dati',
+          title: t('settings.backup.title'),
+          sub: t('settings.backup.sub'),
           testID: 'nav-backup',
         },
       ],
     },
     {
-      title: 'Zona pericolo',
+      title: t('settings.section.danger'),
       rows: [
         {
           key: 'logout',
@@ -112,8 +114,8 @@ export default function SettingsHome() {
           icon: 'log-out',
           bg: '#F5E0DC',
           color: theme.color.error,
-          title: 'Esci',
-          sub: 'Termina la sessione su questo dispositivo',
+          title: t('settings.logout.title'),
+          sub: t('settings.logout.sub'),
           danger: true,
           testID: 'btn-logout',
         },
@@ -127,7 +129,7 @@ export default function SettingsHome() {
         <Pressable onPress={() => router.back()} style={s.back} testID="settings-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={s.h1}>Impostazioni</Text>
+        <Text style={s.h1}>{t('settings.header')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -164,16 +166,16 @@ export default function SettingsHome() {
             <View style={s.modalIcon}>
               <Feather name="log-out" size={24} color={theme.color.error} />
             </View>
-            <Text style={s.modalH}>Uscire da PlanEat?</Text>
+            <Text style={s.modalH}>{t('settings.logout.confirmTitle')}</Text>
             <Text style={s.modalP}>
-              I tuoi dati restano al sicuro sul cloud. Puoi rientrare in ogni momento con lo stesso account.
+              {t('settings.logout.confirmBody')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => setConfirmLogout(false)} style={s.btnGhost} disabled={busy} testID="logout-cancel">
-                <Text style={s.btnGhostTxt}>Annulla</Text>
+                <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable onPress={doLogout} style={s.btnDanger} disabled={busy} testID="logout-confirm">
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>Esci</Text>}
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>{t('settings.logout.title')}</Text>}
               </Pressable>
             </View>
           </View>

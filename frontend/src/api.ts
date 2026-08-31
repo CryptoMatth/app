@@ -66,7 +66,13 @@ export const api = {
   updatePassword: (old_password: string, new_password: string) =>
     req('/auth/password', { method: 'PUT', body: JSON.stringify({ old_password, new_password }) }),
   getPreferences: () => req('/auth/preferences'),
-  updatePreferences: (data: { week_start_day?: number; planner_span?: 'weekly' | 'biweekly'; courses?: { id?: string; label: string }[] }) =>
+  updatePreferences: (data: {
+    week_start_day?: number;
+    planner_span?: 'weekly' | 'biweekly';
+    language?: 'it' | 'en';
+    courses?: { id?: string; label: string }[];
+    ingredient_categories?: { id?: string; label: string; icon?: string | null; color?: string | null }[];
+  }) =>
     req('/auth/preferences', { method: 'PUT', body: JSON.stringify(data) }),
   recoveryVerify: (username: string, code: string, new_password: string) =>
     req('/auth/recovery/verify', { method: 'POST', body: JSON.stringify({ username, code, new_password }) }),
@@ -99,9 +105,9 @@ export const api = {
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   listShopping: () => req('/shopping'),
-  addManual: (name: string, quantity: number, unit: string, notes = '') =>
-    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes }) }),
-  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string }>) =>
+  addManual: (name: string, quantity: number, unit: string, notes = '', category_id?: string) =>
+    req('/shopping', { method: 'POST', body: JSON.stringify({ name, quantity, unit, notes, category_id }) }),
+  editShopping: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string }>) =>
     req(`/shopping/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleShopping: (id: string, checked: boolean) =>
     req(`/shopping/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ checked }) }),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
@@ -9,6 +9,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/auth';
+import { useTranslation } from '@/src/i18n';
 
 const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'q.b.'];
 
@@ -19,11 +21,15 @@ export default function ShoppingEditor({ id }: Props) {
   const params = useLocalSearchParams<{ id?: string }>();
   const itemId = id || (params.id as string | undefined);
   const isNew = !itemId || itemId === 'new';
+  const { prefs } = useAuth();
+  const { t, tCat } = useTranslation();
+  const cats = prefs.ingredient_categories;
 
   const [name, setName] = useState('');
   const [qty, setQty] = useState('');
   const [unit, setUnit] = useState('g');
   const [notes, setNotes] = useState('');
+  const [categoryId, setCategoryId] = useState<string>('altro');
   const [plannerQty, setPlannerQty] = useState(0);
   const [loading, setLoading] = useState(!isNew);
   const [busy, setBusy] = useState(false);
@@ -33,7 +39,6 @@ export default function ShoppingEditor({ id }: Props) {
     if (isNew) return;
     (async () => {
       try {
-        // No dedicated GET; fetch list and find
         const list = await api.listShopping();
         const it = list.find((x: any) => x.id === itemId);
         if (it) {
@@ -41,6 +46,7 @@ export default function ShoppingEditor({ id }: Props) {
           setQty(String(it.manual_qty || 0));
           setUnit(it.unit || 'g');
           setNotes(it.notes || '');
+          setCategoryId(it.category_id || 'altro');
           setPlannerQty(it.planner_qty || 0);
         }
       } catch {}
@@ -51,30 +57,31 @@ export default function ShoppingEditor({ id }: Props) {
   const save = async () => {
     Keyboard.dismiss();
     setErr('');
-    if (!name.trim()) { setErr('Inserisci un nome'); return; }
+    if (!name.trim()) { setErr(t('spesa.errors.name')); return; }
     const q = parseFloat((qty || '0').replace(',', '.'));
     if (!isNew && qty === '') {
       // OK - keep existing manual_qty as-is via undefined
     } else if (isNaN(q) || q < 0) {
-      setErr('Quantità non valida'); return;
+      setErr(t('spesa.errors.qty')); return;
     }
     setBusy(true);
     try {
       if (isNew) {
-        if (q <= 0) { setErr('La quantità deve essere maggiore di zero'); setBusy(false); return; }
-        await api.addManual(name.trim(), q, unit, notes);
+        if (q <= 0) { setErr(t('spesa.errors.qtyZero')); setBusy(false); return; }
+        await api.addManual(name.trim(), q, unit, notes, categoryId);
       } else {
         await api.editShopping(itemId!, {
           name: name.trim(),
           quantity: q,
           unit,
           notes,
+          category_id: categoryId,
         });
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
     } catch (e: any) {
-      setErr(e.message || 'Errore salvataggio');
+      setErr(e.message || t('spesa.errors.save'));
     } finally {
       setBusy(false);
     }
@@ -90,7 +97,7 @@ export default function ShoppingEditor({ id }: Props) {
         <Pressable onPress={() => router.back()} style={styles.hBtn} testID="shopping-back">
           <Feather name="x" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.hTitle}>{isNew ? 'Nuovo ingrediente' : 'Modifica ingrediente'}</Text>
+        <Text style={styles.hTitle}>{isNew ? t('spesa.newIngredient') : t('spesa.editIngredient')}</Text>
         <View style={styles.hBtn} />
       </View>
 
@@ -99,10 +106,10 @@ export default function ShoppingEditor({ id }: Props) {
         keyboardShouldPersistTaps="handled"
         bottomOffset={80}
       >
-        <Text style={styles.label}>Nome</Text>
+        <Text style={styles.label}>{t('common.name')}</Text>
         <TextInput
           testID="shop-name-input"
-          placeholder="Nome ingrediente (es. pomodoro)"
+          placeholder={t('spesa.namePh')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={name} onChangeText={setName}
           style={styles.input}
@@ -110,12 +117,12 @@ export default function ShoppingEditor({ id }: Props) {
         />
 
         <Text style={styles.label}>
-          Quantità {plannerQty > 0 ? `manuale (+${plannerQty}${unit} dal planner)` : ''}
+          {t('spesa.qtyLabel', { suffix: plannerQty > 0 ? t('spesa.qtyPlanner', { n: plannerQty, unit }) : '' })}
         </Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TextInput
             testID="shop-qty-input"
-            placeholder="Quantità"
+            placeholder={t('spesa.qty')}
             placeholderTextColor={theme.color.onSurfaceTertiary}
             value={qty} onChangeText={setQty}
             keyboardType="numeric"
@@ -135,15 +142,33 @@ export default function ShoppingEditor({ id }: Props) {
           </View>
         </View>
 
-        <Text style={styles.label}>Note</Text>
+        <Text style={styles.label}>{t('common.notes')}</Text>
         <TextInput
           testID="shop-notes-input"
-          placeholder="Es. marca preferita, biologico, sotto sale..."
+          placeholder={t('spesa.notesPh')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={notes} onChangeText={setNotes}
           multiline
           style={[styles.input, styles.textarea]}
         />
+
+        <Text style={styles.label}>{t('spesa.category')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
+          {cats.map(c => {
+            const active = categoryId === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                testID={`shop-cat-${c.id}`}
+                onPress={() => { Haptics.selectionAsync(); setCategoryId(c.id); }}
+                style={[styles.catChip, active && styles.catChipActive]}
+              >
+                <Text style={{ fontSize: 16 }}>{c.icon || '📦'}</Text>
+                <Text style={[styles.catChipTxt, active && { color: theme.color.brandPrimary, fontWeight: '600' }]}>{tCat(c)}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
         {err ? <Text style={styles.err} testID="shop-error">{err}</Text> : null}
       </KeyboardAwareScrollView>
@@ -151,7 +176,7 @@ export default function ShoppingEditor({ id }: Props) {
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View style={styles.saveWrap}>
           <Pressable onPress={save} disabled={busy} style={styles.saveBtn} testID="shop-save">
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>{isNew ? 'Aggiungi' : 'Salva modifiche'}</Text>}
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>{isNew ? t('spesa.add') : t('spesa.saveChanges')}</Text>}
           </Pressable>
         </View>
       </KeyboardStickyView>
@@ -177,6 +202,16 @@ const styles = StyleSheet.create({
   unitBtnOn: { backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
   unitTxt: { fontSize: 12, color: theme.color.onSurfaceSecondary },
   unitTxtOn: { color: theme.color.brandPrimary, fontWeight: '600' },
+  catRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  catChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  catChipActive: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
+  catChipTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary },
   err: { color: theme.color.error, fontSize: 13, marginTop: theme.spacing.md },
   saveWrap: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.color.divider, backgroundColor: theme.color.surface },
   saveBtn: { height: 52, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },

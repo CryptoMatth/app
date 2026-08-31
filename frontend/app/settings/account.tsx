@@ -8,20 +8,22 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { PasswordInput } from '@/src/PasswordInput';
+import { useTranslation } from '@/src/i18n';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
 export default function AccountSettings() {
   const router = useRouter();
   const { user, updateUsername, updatePassword } = useAuth();
+  const { t } = useTranslation();
   const [editUsernameOpen, setEditUsernameOpen] = useState(false);
   const [editPasswordOpen, setEditPasswordOpen] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
 
   useEffect(() => {
     if (!msg) return;
-    const t = setTimeout(() => setMsg(null), 4000);
-    return () => clearTimeout(t);
+    const to = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(to);
   }, [msg]);
 
   return (
@@ -30,7 +32,7 @@ export default function AccountSettings() {
         <Pressable onPress={() => router.back()} style={s.back} testID="account-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={s.h1}>Account</Text>
+        <Text style={s.h1}>{t('account.header')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -44,7 +46,7 @@ export default function AccountSettings() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface }}>{user?.username}</Text>
-            <Text style={{ fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 }}>Utente PlanEat</Text>
+            <Text style={{ fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 }}>{t('account.badge')}</Text>
           </View>
         </View>
 
@@ -53,8 +55,8 @@ export default function AccountSettings() {
             <Feather name="edit-3" size={18} color={theme.color.brandPrimary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Modifica username</Text>
-            <Text style={s.actionSub}>Cambia il tuo nome utente</Text>
+            <Text style={s.actionTitle}>{t('account.editUsername')}</Text>
+            <Text style={s.actionSub}>{t('account.editUsernameSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -64,8 +66,8 @@ export default function AccountSettings() {
             <Feather name="lock" size={18} color={theme.color.brandPrimary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Cambia password</Text>
-            <Text style={s.actionSub}>Aggiorna la tua password</Text>
+            <Text style={s.actionTitle}>{t('account.editPassword')}</Text>
+            <Text style={s.actionSub}>{t('account.editPasswordSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -75,8 +77,8 @@ export default function AccountSettings() {
             <Feather name="shield" size={18} color={theme.color.brandPrimary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Codici di recupero</Text>
-            <Text style={s.actionSub}>Rigenera nuovi codici (i vecchi non funzioneranno più)</Text>
+            <Text style={s.actionTitle}>{t('account.recoveryCodes')}</Text>
+            <Text style={s.actionSub}>{t('account.recoveryCodesSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -97,7 +99,7 @@ export default function AccountSettings() {
         onSave={async (u, pw) => {
           await updateUsername(u, pw);
           setEditUsernameOpen(false);
-          setMsg({ kind: 'ok', text: 'Username aggiornato.' });
+          setMsg({ kind: 'ok', text: t('account.usernameUpdated') });
         }}
       />
       <ChangePasswordModal
@@ -106,7 +108,7 @@ export default function AccountSettings() {
         onSave={async (oldPw, newPw) => {
           await updatePassword(oldPw, newPw);
           setEditPasswordOpen(false);
-          setMsg({ kind: 'ok', text: 'Password aggiornata.' });
+          setMsg({ kind: 'ok', text: t('account.passwordUpdated') });
         }}
       />
     </SafeAreaView>
@@ -118,6 +120,7 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
   onClose: () => void;
   onSave: (username: string, current_password: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
@@ -128,7 +131,7 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
   const submit = async () => {
     Keyboard.dismiss(); setErr('');
     setBusy(true);
-    try { await onSave(username.trim(), pw); } catch (e: any) { setErr(e.message || 'Errore'); }
+    try { await onSave(username.trim(), pw); } catch (e: any) { setErr(e.message || t('common.error')); }
     setBusy(false);
   };
 
@@ -136,19 +139,19 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
     <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.modalCard} testID="edit-username-modal">
-          <Text style={s.modalH}>Modifica username</Text>
-          <Text style={s.modalP}>Inserisci il nuovo username e conferma con la tua password attuale.</Text>
+          <Text style={s.modalH}>{t('account.editUsername')}</Text>
+          <Text style={s.modalP}>{t('account.editUsername.body')}</Text>
           <View style={{ height: theme.spacing.md }} />
           <TextInput
             testID="edit-username-input"
-            placeholder="Nuovo username" placeholderTextColor={theme.color.onSurfaceTertiary}
+            placeholder={t('account.editUsername.ph')} placeholderTextColor={theme.color.onSurfaceTertiary}
             value={username} onChangeText={setUsername}
             autoCapitalize="none" autoCorrect={false}
             style={s.input}
           />
           <PasswordInput
             testID="edit-username-password"
-            placeholder="Password attuale"
+            placeholder={t('account.editUsername.pwPh')}
             value={pw} onChangeText={setPw}
             style={s.input}
             toggleTestID="edit-username-password-toggle"
@@ -156,10 +159,10 @@ function EditUsernameModal({ open, currentUsername, onClose, onSave }: {
           {err ? <Text style={s.err} testID="edit-username-error">{err}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
             <Pressable onPress={onClose} style={s.btnGhost} disabled={busy} testID="edit-username-cancel">
-              <Text style={s.btnGhostTxt}>Annulla</Text>
+              <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable onPress={submit} style={s.btnPrim} disabled={busy} testID="edit-username-save">
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>Salva</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>{t('common.save')}</Text>}
             </Pressable>
           </View>
         </View>
@@ -173,6 +176,7 @@ function ChangePasswordModal({ open, onClose, onSave }: {
   onClose: () => void;
   onSave: (oldPw: string, newPw: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [newPw2, setNewPw2] = useState('');
@@ -183,10 +187,10 @@ function ChangePasswordModal({ open, onClose, onSave }: {
 
   const submit = async () => {
     Keyboard.dismiss(); setErr('');
-    if (newPw.length < 6) { setErr('La nuova password deve avere almeno 6 caratteri'); return; }
-    if (newPw !== newPw2) { setErr('Le due password non coincidono'); return; }
+    if (newPw.length < 6) { setErr(t('account.errors.pwShort')); return; }
+    if (newPw !== newPw2) { setErr(t('account.errors.pwMismatch')); return; }
     setBusy(true);
-    try { await onSave(oldPw, newPw); } catch (e: any) { setErr(e.message || 'Errore'); }
+    try { await onSave(oldPw, newPw); } catch (e: any) { setErr(e.message || t('common.error')); }
     setBusy(false);
   };
 
@@ -194,30 +198,31 @@ function ChangePasswordModal({ open, onClose, onSave }: {
     <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
       <View style={s.overlay}>
         <View style={s.modalCard} testID="edit-password-modal">
-          <Text style={s.modalH}>Cambia password</Text>
-          <Text style={s.modalP}>Serve la password attuale per confermare la modifica.</Text>
+          <Text style={s.modalH}>{t('account.editPassword')}</Text>
+          <Text style={s.modalP}>{t('account.editPassword.body')}</Text>
           <View style={{ height: theme.spacing.md }} />
           <PasswordInput testID="edit-password-old"
-            placeholder="Password attuale"
+            placeholder={t('account.editPassword.oldPh')}
             value={oldPw} onChangeText={setOldPw}
             style={s.input}
             toggleTestID="edit-password-old-toggle" />
           <PasswordInput testID="edit-password-new"
-            placeholder="Nuova password (min 6)"
+            placeholder={t('account.editPassword.newPh')}
             value={newPw} onChangeText={setNewPw}
             style={s.input}
             toggleTestID="edit-password-new-toggle" />
           <PasswordInput testID="edit-password-new2"
-            placeholder="Ripeti nuova password"
+            placeholder={t('account.editPassword.new2Ph')}
             value={newPw2} onChangeText={setNewPw2}
             style={s.input}
-            toggleTestID="edit-password-new2-toggle" />          {err ? <Text style={s.err} testID="edit-password-error">{err}</Text> : null}
+            toggleTestID="edit-password-new2-toggle" />
+          {err ? <Text style={s.err} testID="edit-password-error">{err}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
             <Pressable onPress={onClose} style={s.btnGhost} disabled={busy} testID="edit-password-cancel">
-              <Text style={s.btnGhostTxt}>Annulla</Text>
+              <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable onPress={submit} style={s.btnPrim} disabled={busy} testID="edit-password-save">
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>Salva</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnDangerTxt}>{t('common.save')}</Text>}
             </Pressable>
           </View>
         </View>

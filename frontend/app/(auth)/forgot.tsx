@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { PasswordInput } from '@/src/PasswordInput';
+import { useTranslation } from '@/src/i18n';
 
 export default function Forgot() {
   const [username, setUsername] = useState('');
@@ -18,20 +19,21 @@ export default function Forgot() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { recoveryVerify } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
 
   const submit = async () => {
     Keyboard.dismiss();
     setErr('');
-    if (!username.trim() || !code.trim() || !pw) { setErr('Compila tutti i campi'); return; }
-    if (pw.length < 6) { setErr('La password deve avere almeno 6 caratteri'); return; }
-    if (pw !== pw2) { setErr('Le due password non coincidono'); return; }
+    if (!username.trim() || !code.trim() || !pw) { setErr(t('auth.forgot.errFill')); return; }
+    if (pw.length < 6) { setErr(t('auth.register.pwShort')); return; }
+    if (pw !== pw2) { setErr(t('auth.register.pwMismatch')); return; }
     setBusy(true);
     try {
       await recoveryVerify(username.trim(), code.trim(), pw);
       router.replace('/(tabs)/planner');
     } catch (e: any) {
-      setErr(e.message || 'Codice non valido');
+      setErr(e.message || t('auth.forgot.errCode'));
     }
     setBusy(false);
   };
@@ -42,15 +44,15 @@ export default function Forgot() {
         <Pressable onPress={() => router.back()} style={styles.back} testID="forgot-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.h1}>Recupero password</Text>
+        <Text style={styles.h1}>{t('auth.forgot.title')}</Text>
         <Text style={styles.sub}>
-          Inserisci il tuo username e uno dei codici di recupero salvati durante la registrazione. Ogni codice può essere usato una sola volta.
+          {t('auth.forgot.sub')}
         </Text>
 
         <View style={{ height: theme.spacing.xl }} />
         <TextInput
           testID="forgot-username-input"
-          placeholder="Username"
+          placeholder={t('auth.username')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={username} onChangeText={setUsername}
           autoCapitalize="none" autoCorrect={false}
@@ -58,7 +60,7 @@ export default function Forgot() {
         />
         <TextInput
           testID="forgot-code-input"
-          placeholder="Codice (es. AB3F-K9XM)"
+          placeholder={t('auth.forgot.codePh')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={code} onChangeText={setCode}
           autoCapitalize="characters" autoCorrect={false}
@@ -66,14 +68,14 @@ export default function Forgot() {
         />
         <PasswordInput
           testID="forgot-newpw-input"
-          placeholder="Nuova password (min 6)"
+          placeholder={t('auth.forgot.newPh')}
           value={pw} onChangeText={setPw}
           style={styles.input}
           toggleTestID="forgot-newpw-toggle"
         />
         <PasswordInput
           testID="forgot-newpw2-input"
-          placeholder="Ripeti nuova password"
+          placeholder={t('auth.forgot.new2Ph')}
           value={pw2} onChangeText={setPw2}
           style={styles.input}
           toggleTestID="forgot-newpw2-toggle"
@@ -86,11 +88,11 @@ export default function Forgot() {
           disabled={busy}
           style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
         >
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Reimposta password</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>{t('auth.forgot.submit')}</Text>}
         </Pressable>
 
         <Text style={styles.hint}>
-          Non hai più i codici? Puoi comunque creare un nuovo account con un nome utente diverso e ripristinare i tuoi dati da un file di backup precedentemente esportato.
+          {t('auth.forgot.hint')}
         </Text>
       </KeyboardAwareScrollView>
     </View>

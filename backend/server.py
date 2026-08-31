@@ -41,6 +41,7 @@ class Ingredient(BaseModel):
     name: str
     quantity: float
     unit: str  # e.g. "g", "kg", "ml", "pz"
+    category_id: Optional[str] = None  # matches user's preferences.ingredient_categories
 
 
 class DishCreate(BaseModel):
@@ -57,6 +58,7 @@ class ShoppingItemManual(BaseModel):
     quantity: float
     unit: str
     notes: str = ""
+    category_id: Optional[str] = None
 
 
 class ShoppingItemUpdate(BaseModel):
@@ -64,6 +66,7 @@ class ShoppingItemUpdate(BaseModel):
     quantity: Optional[float] = None  # sets manual_qty
     unit: Optional[str] = None
     notes: Optional[str] = None
+    category_id: Optional[str] = None
 
 
 class ShoppingItemToggle(BaseModel):
@@ -88,6 +91,29 @@ DEFAULT_COURSES: List[Dict[str, Any]] = [
 # Historically PlanEat starts weeks on Saturday (=5).
 DEFAULT_WEEK_START_DAY = 5
 DEFAULT_PLANNER_SPAN = "weekly"  # "weekly" (7d) or "biweekly" (14d)
+DEFAULT_LANGUAGE = "it"  # "it" | "en"
+
+# Default course catalog: users can rename/reorder/delete/add.
+# `id` is the stable slug used in dish documents; label is user-facing.
+DEFAULT_COURSES: List[Dict[str, Any]] = [
+    {"id": "primo", "label": "Primo"},
+    {"id": "secondo", "label": "Secondo"},
+    {"id": "contorno", "label": "Contorno"},
+    {"id": "dolce", "label": "Dolce"},
+]
+
+# Default ingredient categories: users can rename/reorder/delete/add.
+DEFAULT_INGREDIENT_CATEGORIES: List[Dict[str, Any]] = [
+    {"id": "verdura", "label": "Verdura", "icon": "🥬", "color": "#7A9A65"},
+    {"id": "frutta", "label": "Frutta", "icon": "🍎", "color": "#D66852"},
+    {"id": "carne_pesce", "label": "Carne / Pesce", "icon": "🥩", "color": "#B14A3C"},
+    {"id": "latticini", "label": "Latticini", "icon": "🥛", "color": "#E8D4A3"},
+    {"id": "pane_farinacei", "label": "Pane / Farinacei", "icon": "🍞", "color": "#C9975C"},
+    {"id": "surgelati", "label": "Surgelati", "icon": "❄️", "color": "#7BB0C8"},
+    {"id": "bevande", "label": "Bevande", "icon": "🥤", "color": "#8E7CC3"},
+    {"id": "dispensa", "label": "Dispensa", "icon": "🫙", "color": "#A38963"},
+    {"id": "altro", "label": "Altro", "icon": "📦", "color": "#8C8478"},
+]
 
 # Usernames that automatically get all Pro entitlements without paying (founder).
 FOUNDER_USERNAMES = {"halley"}
@@ -102,7 +128,9 @@ def _default_prefs() -> Dict[str, Any]:
     return {
         "week_start_day": DEFAULT_WEEK_START_DAY,
         "planner_span": DEFAULT_PLANNER_SPAN,
+        "language": DEFAULT_LANGUAGE,
         "courses": [dict(c) for c in DEFAULT_COURSES],
+        "ingredient_categories": [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES],
     }
 
 
@@ -177,10 +205,19 @@ class CourseItem(BaseModel):
     label: str
 
 
+class IngredientCategoryItem(BaseModel):
+    id: Optional[str] = None
+    label: str
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
 class PreferencesBody(BaseModel):
     week_start_day: Optional[int] = None  # 0=Mon..6=Sun
     planner_span: Optional[Literal["weekly", "biweekly"]] = None
+    language: Optional[Literal["it", "en"]] = None
     courses: Optional[List[CourseItem]] = None
+    ingredient_categories: Optional[List[IngredientCategoryItem]] = None
 
 
 # -------------------- Helpers --------------------
@@ -334,8 +371,12 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         prefs["week_start_day"] = DEFAULT_WEEK_START_DAY
     if "planner_span" not in prefs:
         prefs["planner_span"] = DEFAULT_PLANNER_SPAN
+    if "language" not in prefs:
+        prefs["language"] = DEFAULT_LANGUAGE
     if not prefs.get("courses"):
         prefs["courses"] = [dict(c) for c in DEFAULT_COURSES]
+    if not prefs.get("ingredient_categories"):
+        prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
 
     # Compute pro entitlement (founder whitelist OR explicit DB flag)
     ents = user_doc.get("entitlements") or {}
@@ -557,6 +598,8 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         prefs["week_start_day"] = int(body.week_start_day)
     if body.planner_span is not None:
         prefs["planner_span"] = body.planner_span
+    if body.language is not None:
+        prefs["language"] = body.language
     if body.courses is not None:
         # Enforce at least one course and unique ids
         if len(body.courses) == 0:
@@ -588,6 +631,40 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         if not cleaned:
             raise HTTPException(422, "Nessuna categoria valida fornita")
         prefs["courses"] = cleaned
+    if body.ingredient_categories is not None:
+        if len(body.ingredient_categories) == 0:
+            raise HTTPException(422, "Serve almeno una categoria ingrediente")
+        if len(body.ingredient_categories) > 30:
+            raise HTTPException(422, "Massimo 30 categorie ingrediente")
+        seen_ids_ic: set = set()
+        seen_labels_ic: set = set()
+        cleaned_ic: List[Dict[str, Any]] = []
+        for c in body.ingredient_categories:
+            label = (c.label or "").strip()
+            if not label:
+                continue
+            if len(label) > 40:
+                label = label[:40]
+            cid = (c.id or "").strip() or _course_id(label)
+            base_cid = cid
+            n = 1
+            while cid in seen_ids_ic:
+                n += 1
+                cid = f"{base_cid}_{n}"
+            low = label.lower()
+            if low in seen_labels_ic:
+                continue
+            seen_ids_ic.add(cid)
+            seen_labels_ic.add(low)
+            cleaned_ic.append({
+                "id": cid,
+                "label": label,
+                "icon": (c.icon or "").strip()[:8] or None,
+                "color": (c.color or "").strip()[:16] or None,
+            })
+        if not cleaned_ic:
+            raise HTTPException(422, "Nessuna categoria ingrediente valida fornita")
+        prefs["ingredient_categories"] = cleaned_ic
     await db.users.update_one(
         {"user_id": current_user["user_id"]},
         {"$set": {"preferences": prefs, "updated_at": _now()}},
@@ -788,9 +865,13 @@ async def _add_dish_to_shopping(user_id: str, week_start: str, day_index: int, m
         if existing:
             new_sources = existing.get("sources", []) + [source_entry]
             new_planner_qty = existing.get("planner_qty", 0.0) + added_qty
+            set_fields: Dict[str, Any] = {"sources": new_sources, "planner_qty": new_planner_qty}
+            # If existing item has no category yet, inherit from ingredient
+            if not existing.get("category_id") and ing.get("category_id"):
+                set_fields["category_id"] = ing["category_id"]
             await db.shopping_items.update_one(
                 {"user_id": user_id, "key": key},
-                {"$set": {"sources": new_sources, "planner_qty": new_planner_qty}},
+                {"$set": set_fields},
             )
         else:
             # find max order
@@ -805,6 +886,7 @@ async def _add_dish_to_shopping(user_id: str, week_start: str, day_index: int, m
                 "manual_qty": 0.0,
                 "planner_qty": added_qty,
                 "sources": [source_entry],
+                "category_id": ing.get("category_id") or "altro",
                 "checked": False,
                 "order": next_order,
                 "created_at": _now(),
@@ -1043,11 +1125,16 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
     existing = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
     if existing:
         update: Dict[str, Any] = {"$inc": {"manual_qty": float(body.quantity)}}
+        set_fields: Dict[str, Any] = {}
         if body.notes:
             existing_notes = existing.get("notes", "").strip()
             new_notes = body.notes.strip()
             merged = "\n".join([n for n in [existing_notes, new_notes] if n])
-            update["$set"] = {"notes": merged}
+            set_fields["notes"] = merged
+        if body.category_id and not existing.get("category_id"):
+            set_fields["category_id"] = body.category_id
+        if set_fields:
+            update["$set"] = set_fields
         await db.shopping_items.update_one({"user_id": user_id, "key": key}, update)
         item = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
         return item
@@ -1063,6 +1150,7 @@ async def add_manual(body: ShoppingItemManual, current_user=Depends(get_current_
         "planner_qty": 0.0,
         "sources": [],
         "notes": body.notes,
+        "category_id": body.category_id or "altro",
         "checked": False,
         "order": next_order,
         "created_at": _now(),
@@ -1081,6 +1169,8 @@ async def edit_item(item_id: str, body: ShoppingItemUpdate, current_user=Depends
     update_set: Dict[str, Any] = {}
     if body.notes is not None:
         update_set["notes"] = body.notes
+    if body.category_id is not None:
+        update_set["category_id"] = body.category_id
     # Manual qty adjustment
     if body.quantity is not None:
         new_manual = max(0.0, float(body.quantity))

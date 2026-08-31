@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { PasswordInput } from '@/src/PasswordInput';
+import { useTranslation } from '@/src/i18n';
 
 export default function Register() {
   const [username, setUsername] = useState('');
@@ -17,20 +18,21 @@ export default function Register() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { register } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
 
   const onSubmit = async () => {
     Keyboard.dismiss();
     setErr('');
-    if (!username.trim() || !pw) { setErr('Inserisci username e password'); return; }
-    if (pw.length < 6) { setErr('La password deve avere almeno 6 caratteri'); return; }
-    if (pw !== pw2) { setErr('Le due password non coincidono'); return; }
+    if (!username.trim() || !pw) { setErr(t('auth.errors.missing')); return; }
+    if (pw.length < 6) { setErr(t('auth.register.pwShort')); return; }
+    if (pw !== pw2) { setErr(t('auth.register.pwMismatch')); return; }
     setBusy(true);
     try {
       const codes = await register(username.trim(), pw, pw2);
       router.replace({ pathname: '/(auth)/recovery-codes', params: { codes: codes.join(',') } });
     } catch (e: any) {
-      setErr(e.message || 'Errore registrazione');
+      setErr(e.message || t('auth.register.error'));
     } finally {
       setBusy(false);
     }
@@ -46,13 +48,13 @@ export default function Register() {
         <Pressable onPress={() => router.back()} style={styles.back} testID="register-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.h1}>Crea il tuo account</Text>
-        <Text style={styles.sub}>Scegli uno username e una password. Nessuna email necessaria.</Text>
+        <Text style={styles.h1}>{t('auth.register.title')}</Text>
+        <Text style={styles.sub}>{t('auth.register.sub')}</Text>
 
         <View style={{ height: theme.spacing.xl }} />
         <TextInput
           testID="register-username-input"
-          placeholder="Username (es. marco, chiara.rossi)"
+          placeholder={t('auth.register.usernamePh')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={username} onChangeText={setUsername}
           autoCapitalize="none" autoCorrect={false}
@@ -60,20 +62,20 @@ export default function Register() {
         />
         <PasswordInput
           testID="register-password-input"
-          placeholder="Password (min 6 caratteri)"
+          placeholder={t('auth.register.pwPh')}
           value={pw} onChangeText={setPw}
           style={styles.input}
           toggleTestID="register-password-toggle"
         />
         <PasswordInput
           testID="register-password2-input"
-          placeholder="Ripeti password"
+          placeholder={t('auth.register.pw2Ph')}
           value={pw2} onChangeText={setPw2}
           style={styles.input}
           toggleTestID="register-password2-toggle"
         />
         {err ? <Text style={styles.err} testID="register-error">{err}</Text> : null}
-        <Text style={styles.helper}>Username: 3-30 caratteri. Solo lettere, numeri, punto (.) e underscore (_).</Text>
+        <Text style={styles.helper}>{t('auth.register.helper')}</Text>
 
         <Pressable
           testID="register-submit-button"
@@ -81,12 +83,12 @@ export default function Register() {
           disabled={busy}
           style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
         >
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>Registrati</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryTxt}>{t('auth.register')}</Text>}
         </Pressable>
 
         <Link href="/(auth)/login" asChild>
           <Pressable style={styles.link} testID="go-to-login">
-            <Text style={styles.linkTxt}>Hai già un account? <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>Accedi</Text></Text>
+            <Text style={styles.linkTxt}>{t('auth.haveAccount')} <Text style={{ fontWeight: '600', color: theme.color.brandPrimary }}>{t('auth.login')}</Text></Text>
           </Pressable>
         </Link>
       </KeyboardAwareScrollView>

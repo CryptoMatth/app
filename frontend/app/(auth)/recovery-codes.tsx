@@ -10,9 +10,11 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { theme } from '@/src/theme';
+import { useTranslation } from '@/src/i18n';
 
 export default function RecoveryCodes() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { codes } = useLocalSearchParams<{ codes: string }>();
   const list = (codes as string | undefined)?.split(',') || [];
   const [ack, setAck] = useState(false);
@@ -27,19 +29,19 @@ export default function RecoveryCodes() {
   };
 
   const download = async () => {
-    const text = `PlanEat — Codici di recupero\n\n${list.join('\n')}\n\nConservali in un luogo sicuro. Servono per reimpostare la password se la dimentichi.\nOgni codice può essere usato UNA SOLA volta.`;
+    const text = t('rec.fileTxt', { list: list.join('\n') });
     if (Platform.OS === 'web') {
       const blob = new Blob([text], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'planeat-codici-recupero.txt';
+      a.href = url; a.download = 'planeat-recovery-codes.txt';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else {
-      const path = `${FileSystem.documentDirectory}planeat-codici-recupero.txt`;
+      const path = `${FileSystem.documentDirectory}planeat-recovery-codes.txt`;
       await FileSystem.writeAsStringAsync(path, text);
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: 'Salva i codici' });
+        await Sharing.shareAsync(path, { mimeType: 'text/plain', dialogTitle: t('rec.fileDialog') });
       }
     }
     setDownloaded(true);
@@ -53,10 +55,9 @@ export default function RecoveryCodes() {
         <View style={styles.iconBox}>
           <Feather name="shield" size={32} color={theme.color.brandPrimary} />
         </View>
-        <Text style={styles.h1}>Salva i tuoi codici di recupero</Text>
+        <Text style={styles.h1}>{t('rec.saveTitle')}</Text>
         <Text style={styles.sub}>
-          Se dimentichi la password, questi codici sono l{'\''}UNICO modo per rientrare nel tuo account.
-          Non li rivedrai più dopo aver chiuso questa pagina.
+          {t('rec.saveSub')}
         </Text>
 
         <View style={styles.codesBox}>
@@ -68,11 +69,11 @@ export default function RecoveryCodes() {
         <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
           <Pressable onPress={copy} style={styles.secBtn} testID="copy-codes">
             <Feather name={copied ? 'check' : 'copy'} size={16} color={theme.color.onSurface} />
-            <Text style={styles.secTxt}>{copied ? 'Copiati' : 'Copia'}</Text>
+            <Text style={styles.secTxt}>{copied ? t('common.copied') : t('common.copy')}</Text>
           </Pressable>
           <Pressable onPress={download} style={styles.secBtn} testID="download-codes">
             <Feather name={downloaded ? 'check' : 'download'} size={16} color={theme.color.onSurface} />
-            <Text style={styles.secTxt}>{downloaded ? 'Salvato' : 'Salva file'}</Text>
+            <Text style={styles.secTxt}>{downloaded ? t('common.saved') : t('common.saveFile')}</Text>
           </Pressable>
         </View>
 
@@ -80,7 +81,7 @@ export default function RecoveryCodes() {
           <View style={[styles.checkbox, ack && styles.checkboxOn]}>
             {ack && <Feather name="check" size={14} color="#fff" />}
           </View>
-          <Text style={styles.ackTxt}>Ho salvato i codici in un luogo sicuro. Capisco che se li perdo non potrò più recuperare la password.</Text>
+          <Text style={styles.ackTxt}>{t('rec.ack')}</Text>
         </Pressable>
 
         <Pressable
@@ -89,7 +90,7 @@ export default function RecoveryCodes() {
           style={[styles.primary, !ack && { opacity: 0.4 }]}
           testID="codes-continue"
         >
-          <Text style={styles.primaryTxt}>Continua</Text>
+          <Text style={styles.primaryTxt}>{t('common.continue')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

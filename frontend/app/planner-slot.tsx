@@ -10,6 +10,7 @@ import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { orderedDayLabels } from '@/src/week';
+import { useTranslation } from '@/src/i18n';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[] };
 type Item = { dish_id: string; dish_name: string; course: string; persons: number };
@@ -17,6 +18,7 @@ type Item = { dish_id: string; dish_name: string; course: string; persons: numbe
 export default function PlannerSlot() {
   const router = useRouter();
   const { prefs } = useAuth();
+  const { t, lang, tCourse } = useTranslation();
   const courses = prefs.courses;
   const {
     weekStart, dayIndex, meal, initialItems,
@@ -49,7 +51,7 @@ export default function PlannerSlot() {
     })();
   }, [tab, q]);
 
-  const dayLabel = orderedDayLabels(prefs.week_start_day, true)[parseInt(dayIndex as string)] || '';
+  const dayLabel = orderedDayLabels(prefs.week_start_day, true, lang)[parseInt(dayIndex as string)] || '';
 
   const addDish = (d: Dish) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -113,7 +115,7 @@ export default function PlannerSlot() {
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.hTitle}>{dayLabel}</Text>
-          <Text style={styles.hSub}>{meal === 'pranzo' ? 'Pranzo' : 'Cena'} · {items.length} piatti</Text>
+          <Text style={styles.hSub}>{t('planner.slot.mealCount', { meal: meal === 'pranzo' ? t('planner.pranzo') : t('planner.cena'), n: items.length })}</Text>
         </View>
         <View style={styles.hBtn} />
       </View>
@@ -121,15 +123,15 @@ export default function PlannerSlot() {
       {/* Composition tray */}
       <View style={styles.tray}>
         <View style={styles.trayHeader}>
-          <Text style={styles.trayTitle}>Composizione del pasto</Text>
-          <Text style={styles.trayHint}>Aggiungi più piatti scorrendo sotto</Text>
+          <Text style={styles.trayTitle}>{t('planner.slot.title')}</Text>
+          <Text style={styles.trayHint}>{t('planner.slot.hint')}</Text>
         </View>
 
         {items.length === 0 ? (
           <View style={styles.trayEmpty}>
             <Feather name="inbox" size={22} color={theme.color.borderStrong} />
-            <Text style={styles.trayEmptyTxt}>Nessun piatto aggiunto</Text>
-            <Text style={styles.trayEmptySub}>Scegli dai tuoi piatti qui sotto</Text>
+            <Text style={styles.trayEmptyTxt}>{t('planner.slot.empty')}</Text>
+            <Text style={styles.trayEmptySub}>{t('planner.slot.emptySub')}</Text>
           </View>
         ) : (
           <ScrollView
@@ -138,7 +140,7 @@ export default function PlannerSlot() {
             contentContainerStyle={styles.trayScroll}
           >
             {items.map((it, idx) => {
-              const courseLabel = courses.find(c => c.id === it.course)?.label || it.course;
+              const courseLabel = tCourse(courses.find(c => c.id === it.course)) || it.course;
               return (
                 <View key={`${it.dish_id}_${idx}`} style={styles.itemCard} testID={`tray-item-${idx}`}>
                   <View style={styles.itemHead}>
@@ -176,7 +178,7 @@ export default function PlannerSlot() {
         <TextInput
           testID="slot-search"
           value={q} onChangeText={setQ}
-          placeholder="Cerca piatto..."
+          placeholder={t('common.searchDish')}
           placeholderTextColor={theme.color.onSurfaceTertiary}
           style={styles.search}
         />
@@ -196,7 +198,7 @@ export default function PlannerSlot() {
               style={[styles.segBtn, tab === c.id && styles.segBtnActive]}
               testID={`slot-seg-${c.id}`}
             >
-              <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{c.label}</Text>
+              <Text style={[styles.segTxt, tab === c.id && styles.segTxtActive]}>{tCourse(c)}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -206,8 +208,8 @@ export default function PlannerSlot() {
         <View style={styles.center}><ActivityIndicator color={theme.color.brandPrimary} /></View>
       ) : dishes.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyTxt}>Nessun piatto in questa categoria.</Text>
-          <Text style={styles.emptySub}>Aggiungilo prima nel tab Piatti.</Text>
+          <Text style={styles.emptyTxt}>{t('planner.slot.emptyCategory')}</Text>
+          <Text style={styles.emptySub}>{t('planner.slot.emptyCategorySub')}</Text>
         </View>
       ) : (
         <FlatList
@@ -226,8 +228,9 @@ export default function PlannerSlot() {
                 >
                   <Text style={styles.dishName}>{d.name}</Text>
                   <Text style={styles.dishMeta}>
-                    {d.ingredients?.length || 0} ingredienti
-                    {already ? ` · ${currentItem?.persons}p in composizione` : ''}
+                    {already
+                      ? t('planner.slot.dishesMetaWith', { n: d.ingredients?.length || 0, p: currentItem?.persons || 1 })
+                      : t('planner.slot.dishesMeta', { n: d.ingredients?.length || 0 })}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -249,7 +252,7 @@ export default function PlannerSlot() {
         {hasItems ? (
           <Pressable onPress={() => setItems([])} style={styles.clearBtn} testID="slot-clear">
             <Feather name="trash-2" size={16} color={theme.color.error} />
-            <Text style={styles.clearTxt}>Svuota</Text>
+            <Text style={styles.clearTxt}>{t('planner.slot.clear')}</Text>
           </Pressable>
         ) : null}
         <Pressable
@@ -260,7 +263,7 @@ export default function PlannerSlot() {
         >
           {saving ? <ActivityIndicator color="#fff" /> : (
             <Text style={styles.saveTxt}>
-              {hasItems ? `Salva (${items.length} piatti)` : 'Salva (svuota slot)'}
+              {hasItems ? t('planner.slot.save', { n: items.length }) : t('planner.slot.saveEmpty')}
             </Text>
           )}
         </Pressable>

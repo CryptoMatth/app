@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { hasSeenOnboarding } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
 
@@ -47,7 +49,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="piatti"
         options={{
-          title: 'Piatti',
+          title: t('nav.piatti'),
           tabBarIcon: ({ color, size }) => <Feather name="book-open" size={size} color={color} />,
           tabBarButtonTestID: 'tab-piatti',
         }}
@@ -55,7 +57,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="planner"
         options={{
-          title: 'Planner',
+          title: t('nav.planner'),
           tabBarIcon: ({ color, size }) => <Feather name="calendar" size={size} color={color} />,
           tabBarButtonTestID: 'tab-planner',
         }}
@@ -63,7 +65,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="spesa"
         options={{
-          title: 'Spesa',
+          title: t('nav.spesa'),
           tabBarIcon: ({ color, size }) => <Feather name="shopping-cart" size={size} color={color} />,
           tabBarButtonTestID: 'tab-spesa',
         }}

@@ -5,9 +5,11 @@ import { useRouter } from 'expo-router';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { resetAllTutorial } from '@/src/tutorial';
+import { useTranslation } from '@/src/i18n';
 
 export default function TutorialSettings() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="settings-tutorial">
@@ -15,14 +17,12 @@ export default function TutorialSettings() {
         <Pressable onPress={() => router.back()} style={s.back} testID="tutorial-settings-back">
           <Feather name="arrow-left" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={s.h1}>Guida & Tutorial</Text>
+        <Text style={s.h1}>{t('tutSet.header')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
-        <Text style={s.sectionSub}>
-          Puoi rivedere l'introduzione iniziale e riattivare i suggerimenti contestuali che appaiono nelle schede Piatti, Planner e Spesa.
-        </Text>
+        <Text style={s.sectionSub}>{t('tutSet.intro')}</Text>
 
         <Pressable
           onPress={async () => { await resetAllTutorial(); router.push('/tutorial'); }}
@@ -33,8 +33,8 @@ export default function TutorialSettings() {
             <Feather name="play-circle" size={18} color={theme.color.brandSecondary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Rivedi l'introduzione</Text>
-            <Text style={s.actionSub}>Riparti dalle slide iniziali passo-passo</Text>
+            <Text style={s.actionTitle}>{t('tutSet.review')}</Text>
+            <Text style={s.actionSub}>{t('tutSet.reviewSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
@@ -48,8 +48,8 @@ export default function TutorialSettings() {
             <Feather name="refresh-ccw" size={18} color={theme.color.brandPrimary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.actionTitle}>Mostra di nuovo i suggerimenti</Text>
-            <Text style={s.actionSub}>Ripristina i box di aiuto sopra le schede</Text>
+            <Text style={s.actionTitle}>{t('tutSet.reset')}</Text>
+            <Text style={s.actionSub}>{t('tutSet.resetSub')}</Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
