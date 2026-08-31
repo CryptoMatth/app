@@ -12,6 +12,8 @@ export type User = {
   user_id: string;
   username: string;
   preferences?: UserPreferences;
+  is_pro?: boolean;
+  pro_source?: string | null;
 };
 
 const DEFAULT_PREFS: UserPreferences = {

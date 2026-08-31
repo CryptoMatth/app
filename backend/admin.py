@@ -36,6 +36,11 @@ class AdminResetPasswordBody(BaseModel):
     new_password: str
 
 
+class AdminEntitlementBody(BaseModel):
+    active: bool
+    reason: Optional[str] = None
+
+
 def _hash_password(pw: str) -> str:
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -122,6 +127,23 @@ def create_admin_router(db) -> APIRouter:
         }
         await db.users.delete_one({"user_id": user_id})
         return {"ok": True, "user_id": user_id, "removed": removed}
+
+    @router.post("/users/{user_id}/entitlements/pro")
+    async def set_pro_entitlement(
+        user_id: str, body: AdminEntitlementBody, _: None = Depends(require_admin)
+    ) -> Dict[str, Any]:
+        u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not u:
+            raise HTTPException(404, "Utente non trovato")
+        if body.active:
+            entry = {"active": True, "source": "admin_grant", "reason": body.reason or "", "granted_at": _now()}
+        else:
+            entry = {"active": False, "source": "admin_grant", "reason": body.reason or "", "revoked_at": _now()}
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"entitlements.pro": entry, "updated_at": _now()}},
+        )
+        return {"ok": True, "user_id": user_id, "entitlements": {"pro": entry}}
 
     @router.get("/stats")
     async def stats(_: None = Depends(require_admin)) -> Dict[str, Any]:

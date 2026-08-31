@@ -34,6 +34,21 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - `courses` (lista `{id, label}`): categorie personalizzabili per i piatti; default Primo/Secondo/Contorno/Dolce; possibilità di aggiungerne di custom (es. Antipasto, Colazione)
 - Il campo `course` sui piatti è ora una stringa libera; l'id viene generato dalla label
 
+## Entitlements Pro (giu 2026)
+- Campo `entitlements.pro = {active, source, reason, granted_at, revoked_at}` sull'user doc
+- Endpoint admin `POST /api/admin/users/{id}/entitlements/pro` (X-Admin-Password required)
+- **Founder whitelist**: username in `{halley, matteo, admin}` → auto-Pro (source: "founder"). Non modificabile da admin (vince sull'admin revoke).
+- `/api/auth/me` restituisce `is_pro` + `pro_source` calcolati
+
+## Bug fix & UX (giu 2026)
+- **Planner slot picker**: tap sul nome del piatto apre i dettagli piatto; solo il pulsante `+` aggiunge alla composizione
+- Se un piatto è già nella composizione, tap successivi su `+` **incrementano il numero di persone** invece di duplicarlo
+- **Spesa**: dedupe dei nomi piatto ripetuti nella riga (`Pasta, Pasta` → `Pasta`)
+- **Rinomina piatto**: propagazione automatica a `weekly_plans.slots.items[]` e `shopping_items.sources[]`
+- **Spesa**: pull-to-refresh aggiunto; drag & drop con `activationDistance: 12` per meno lag; conferma prima di "Rimuovi presi"
+- **Contatti**: nuova pagina `/settings/contact` con mail crypto.matth719@gmail.com (mailto con oggetto precompilato)
+- **Splash screen**: ora usa l'icona PlanEat con testo brand sotto
+
 ## Multi-piatto per pasto (giu 2026)
 - Ogni slot Pranzo/Cena può contenere N piatti, ciascuno con proprio numero di persone
 - Schema DB: `slots[key] = {items: [{dish_id, dish_name, course, persons}, …]}`

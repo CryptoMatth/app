@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 13 backend-only testing: Pro entitlements + dish rename propagation. 20/21 new tests pass (test_iteration13_pro_and_rename.py) and 48/48 iteration-11+12 regression tests pass (one transient ConnectTimeout on public URL that passed on retry — same known flake noted in iteration 12). Verified: (a) /auth/me, register, login all expose new fields `is_pro` and `pro_source`; (b) FOUNDER_USERNAMES whitelist (halley/matteo/admin) marks users is_pro:true, pro_source:'founder' with case-insensitive registration (Halley/HALLEY/halley all normalize); (c) admin POST /api/admin/users/{id}/entitlements/pro with {active:true, reason} grants pro (pro_source:'admin_grant', granted_at set) and PUT /auth/preferences afterward does NOT wipe entitlements; (d) POST with {active:false} correctly sets is_pro:false; (e) missing X-Admin-Password → 401, wrong password → 401, unknown user_id → 404; (f) founder whitelist wins over admin revoke (still is_pro:true after admin sets active:false); (g) PUT /dishes/{id} with a new name propagates dish_name across weekly_plans.slots.items[] (including across multiple weeks and multi-item slots) and shopping_items.sources[] (both ingredient rows updated); (h) renaming an orphan dish (not in any slot/shopping) succeeds; (i) PUT with unchanged name is idempotent; (j) non-name changes (course/preparation/notes/servings/ingredients) leave planner items[] dish_name and shopping_items.sources[] untouched, and planner_qty is unchanged (slot is not re-applied); (k) cross-user isolation preserved — user A's rename does not touch user B's planner even when both users have a dish also called Alpha. Found ONE minor inconsistency in `_user_public` (server.py:351): after admin revoke, `is_pro` is False (correct) but `pro_source` still returns 'admin_grant' because the fallback `pro_ent.get('source')` is truthy regardless of active. Fresh non-founder users correctly return pro_source:null. Recommend the code read pro_source only when is_pro is true.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/auth/me (and login/register user payload)",
+        "issue": "After POST /api/admin/users/{id}/entitlements/pro with active:false, response has is_pro:false (correct) but pro_source:'admin_grant' instead of null. server.py:351 uses `pro_ent.get('source') or (...)` which returns the stored source even when active is False. Fix suggestion: gate pro_source on is_pro (e.g., `'admin_grant' if pro_ent.get('active') else None`). Fresh non-founder users are unaffected because they have no entitlements dict."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_pro_and_rename.py",
+    "/app/test_reports/pytest/pytest_iteration13.xml"
+  ],
+  "action_items": [
+    "Fix pro_source computation in server.py:_user_public so it is null when is_pro is False (see minor issue). Concretely: `'founder' if is_founder else ('admin_grant' if pro_ent.get('active') else None)` — or gate on `is_pro` as a whole.",
+    "(Carried over from iter-12, still valid) admin.require_admin should use secrets.compare_digest for constant-time comparison of X-Admin-Password.",
+    "(Optional) Consider updating slot items[].course in planner when the dish's course changes (currently only name is propagated; course is cached from slot-put time). Not part of iteration-13 spec but likely surprising to users."
+  ],
+  "critical_code_review_comments": [
+    "server.py:670-696 (update_dish rename propagation): iterates all user weekly_plans and rewrites full `slots` dict per plan when any item matches. Fine at current scale but O(P*S*I) per rename. If a user ever accumulates dozens of weeks with dense slots, consider a targeted query like `slots.<key>.items.dish_id == id` combined with an $[] array-filter update analogous to the shopping_items update on line 692. That would be one atomic update rather than N read-modify-writes.",
+    "server.py:692-696 uses `sources.$[s].dish_name` with array_filters — this is the right pattern; consider applying the same idea to weekly_plans (dot-path per slot key is harder because slot keys are dynamic, so current per-plan loop is acceptable).",
+    "server.py:351 pro_source fallback logic — see the minor issue.",
+    "admin.py:131-146 entitlement writes: {reason: ''} is stored even when caller omits reason. Consider only storing reason when non-empty to keep DB tidy.",
+    "admin.py:139/141 sets `granted_at` vs `revoked_at` but the previous state's timestamp is silently overwritten (a granted-then-revoked entry loses the granted_at). If audit trail matters, keep both timestamps and add a history array.",
+    "server.py is now 1316 lines — approaches the 2000-line soft cap; recommend splitting routers (auth, dishes, planner, shopping, admin-adjacent) into separate modules soon."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_pro_and_rename.py"
+  ],
+  "success_rate": {"backend": "95% (20/21 new tests; the 1 failure is a real minor bug in pro_source after revoke). Regression: 48/48.", "frontend": "not tested (backend only requested)"},
+  "seed_data_creation": "Each test registers ephemeral users with timestamp/uuid-suffixed usernames (prefixes nfp/lpf/reg/adg/adx/adw/rn0-rn6/crA/crB, etc.). TestFounderWhitelist and TestAdminEntitlementEndpoint.test_founder_admin_grant_is_still_pro_after_revoke first DELETE any existing halley/matteo/admin user via /api/admin/users to make the tests idempotent, and clean up afterward. No production data mutated.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Focused suite: /app/backend/tests/test_iteration13_pro_and_rename.py (21 tests, ~50s). Combined with iter-11 (26) and iter-12 (22) = 69 tests, ~2.5min under pytest-xdist. Public URL (meal-prep-master-2.preview.emergentagent.com) still shows occasional ConnectTimeouts under parallel load — retry a single failing test once before treating as a real failure. Admin password: env ADMIN_PASSWORD (or 'planeat-admin-CH4ngeMe-2026'). New wire fields to expect in /auth/me and login/register.user: `is_pro` (bool), `pro_source` ('founder'|'admin_grant'|null). FOUNDER_USERNAMES = {halley, matteo, admin} (case-insensitive). Admin entitlement endpoint: POST /api/admin/users/{user_id}/entitlements/pro body {active:bool, reason?:str}. Known minor bug: pro_source returns 'admin_grant' after revoke even though is_pro is false — will need retest after main agent's fix.",
+  "rca_of_issue": "Bug in server.py:351 `pro_source` computation. Current: `pro_source = 'founder' if is_founder else (pro_ent.get('source') or ('admin_grant' if pro_ent.get('active') else None))`. Once admin sets active=false, the stored doc becomes {active: False, source: 'admin_grant', ...}. `pro_ent.get('source')` returns 'admin_grant' (truthy) so the `or` short-circuits and pro_source stays 'admin_grant'. Reproduction: register user; POST /api/admin/users/{id}/entitlements/pro {active:true}; POST same {active:false}; GET /auth/me → is_pro:false but pro_source:'admin_grant'. Fix: `pro_source = 'founder' if is_founder else ('admin_grant' if pro_ent.get('active') else None)` (drop the `or` fallback to stored source, since the only non-founder source is admin_grant today anyway)."
+}

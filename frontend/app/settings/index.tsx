@@ -76,6 +76,16 @@ export default function SettingsHome() {
           sub: 'Rivedi l\'introduzione e mostra di nuovo i suggerimenti',
           testID: 'nav-tutorial',
         },
+        {
+          key: 'contact',
+          href: '/settings/contact',
+          icon: 'mail',
+          bg: theme.color.brandTertiary,
+          color: theme.color.brandPrimary,
+          title: 'Contatti',
+          sub: 'Scrivimi per feedback, bug o richieste feature',
+          testID: 'nav-contact',
+        },
       ],
     },
     {

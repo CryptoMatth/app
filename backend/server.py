@@ -89,6 +89,9 @@ DEFAULT_COURSES: List[Dict[str, Any]] = [
 DEFAULT_WEEK_START_DAY = 5
 DEFAULT_PLANNER_SPAN = "weekly"  # "weekly" (7d) or "biweekly" (14d)
 
+# Usernames that automatically get all Pro entitlements without paying (admins/founder).
+FOUNDER_USERNAMES = {"halley", "matteo", "admin"}
+
 
 def _course_id(label: str) -> str:
     base = re.sub(r"[^a-z0-9]+", "_", (label or "").strip().lower()).strip("_")
@@ -333,10 +336,19 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         prefs["planner_span"] = DEFAULT_PLANNER_SPAN
     if not prefs.get("courses"):
         prefs["courses"] = [dict(c) for c in DEFAULT_COURSES]
+
+    # Compute pro entitlement (founder whitelist OR explicit DB flag)
+    ents = user_doc.get("entitlements") or {}
+    pro_ent = ents.get("pro") or {}
+    is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
+    is_pro = bool(is_founder or pro_ent.get("active"))
+
     return {
         "user_id": user_doc["user_id"],
         "username": user_doc.get("username") or (user_doc.get("email") or "").split("@")[0],
         "preferences": prefs,
+        "is_pro": is_pro,
+        "pro_source": "founder" if is_founder else ("admin_grant" if pro_ent.get("active") else None),
     }
 
 
@@ -634,10 +646,16 @@ async def get_dish(dish_id: str, current_user=Depends(get_current_user)):
 
 @api_router.put("/dishes/{dish_id}")
 async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    old = await db.dishes.find_one({"id": dish_id, "user_id": user_id}, {"_id": 0})
+    if not old:
+        raise HTTPException(404, "Piatto non trovato")
+
+    new_name = body.name.strip()
     res = await db.dishes.update_one(
-        {"id": dish_id, "user_id": current_user["user_id"]},
+        {"id": dish_id, "user_id": user_id},
         {"$set": {
-            "name": body.name.strip(),
+            "name": new_name,
             "course": body.course,
             "ingredients": [ing.dict() for ing in body.ingredients],
             "preparation": body.preparation,
@@ -647,6 +665,36 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Piatto non trovato")
+
+    # Propagate rename to any planner slot that references this dish
+    if new_name != old.get("name"):
+        # Find plans that reference this dish in any slot's items[]
+        plans_cursor = db.weekly_plans.find(
+            {"user_id": user_id, "slots": {"$exists": True}},
+            {"_id": 1, "slots": 1},
+        )
+        async for plan in plans_cursor:
+            slots = plan.get("slots") or {}
+            changed = False
+            for k, slot in slots.items():
+                if isinstance(slot.get("items"), list):
+                    for it in slot["items"]:
+                        if it.get("dish_id") == dish_id and it.get("dish_name") != new_name:
+                            it["dish_name"] = new_name
+                            changed = True
+                    # Legacy flat form (safety net)
+                elif slot.get("dish_id") == dish_id and slot.get("dish_name") != new_name:
+                    slot["dish_name"] = new_name
+                    changed = True
+            if changed:
+                await db.weekly_plans.update_one({"_id": plan["_id"]}, {"$set": {"slots": slots}})
+        # Propagate rename inside shopping_items.sources[]
+        await db.shopping_items.update_many(
+            {"user_id": user_id, "sources.dish_id": dish_id},
+            {"$set": {"sources.$[s].dish_name": new_name}},
+            array_filters=[{"s.dish_id": dish_id}],
+        )
+
     d = await db.dishes.find_one({"id": dish_id}, {"_id": 0})
     return d
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -25,21 +25,43 @@ function formatQty(n: number) {
   if (n % 1 === 0) return String(n);
   return n.toFixed(1);
 }
+/** Return the list of unique dish names in this item's sources, first 2. */
+function uniqueDishNames(item: Item): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of item.sources || []) {
+    const n = (s.dish_name || '').trim();
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+    if (out.length >= 2) break;
+  }
+  return out;
+}
 
 export default function Spesa() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Item | null>(null);
+  const [confirmClearBought, setConfirmClearBought] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
     try { const list = await api.listShopping(); setItems(list); } catch {}
     setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load();
+  }, [load]);
 
   const toggle = async (id: string, checked: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -83,8 +105,11 @@ export default function Spesa() {
   };
 
   const clearBought = async () => {
+    setClearing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try { await api.clearChecked(); await load(); } catch {}
+    setClearing(false);
+    setConfirmClearBought(false);
   };
 
   const boughtCount = items.filter(i => i.checked).length;
@@ -141,7 +166,11 @@ export default function Spesa() {
           keyExtractor={(item) => item.id}
           onDragEnd={({ data }) => onReorder(data)}
           onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)}
+          activationDistance={12}
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 160 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />
+          }
           renderItem={({ item, drag, isActive }: RenderItemParams<Item>) => (
             <ScaleDecorator>
               <View style={[styles.row, item.checked && { opacity: 0.55 }, isActive && styles.rowActive]} testID={`shop-item-${item.id}`}>
@@ -161,7 +190,7 @@ export default function Spesa() {
                     {item.planner_qty > 0 && item.manual_qty > 0
                       ? `  ·  ${formatQty(item.planner_qty)}${item.unit} planner + ${formatQty(item.manual_qty)}${item.unit} manuale`
                       : item.planner_qty > 0
-                        ? `  ·  ${item.sources.map(s => s.dish_name).slice(0, 2).join(', ')}`
+                        ? `  ·  ${uniqueDishNames(item).join(', ')}`
                         : ''}
                   </Text>
                   {item.notes ? (
@@ -189,7 +218,7 @@ export default function Spesa() {
 
       <View style={styles.actions}>
         {boughtCount > 0 && (
-          <Pressable onPress={clearBought} style={styles.secondary} testID="clear-checked">
+          <Pressable onPress={() => { Haptics.selectionAsync(); setConfirmClearBought(true); }} style={styles.secondary} testID="clear-checked">
             <Feather name="trash-2" size={16} color={theme.color.onSurface} />
             <Text style={styles.secondaryTxt}>Rimuovi presi</Text>
           </Pressable>
@@ -199,6 +228,43 @@ export default function Spesa() {
           <Text style={styles.primaryTxt}>Aggiungi</Text>
         </Pressable>
       </View>
+
+      <Modal
+        transparent
+        visible={confirmClearBought}
+        animationType="fade"
+        onRequestClose={() => setConfirmClearBought(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="confirm-clear-bought-modal">
+            <View style={styles.modalIcon}>
+              <Feather name="trash-2" size={24} color={theme.color.warning} />
+            </View>
+            <Text style={styles.modalH}>Rimuovere {boughtCount} elementi presi?</Text>
+            <Text style={styles.modalP}>
+              Gli elementi spuntati verranno eliminati dalla lista della spesa. Se erano dal Planner, i piatti restano pianificati.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+              <Pressable
+                onPress={() => setConfirmClearBought(false)}
+                style={styles.btnGhost}
+                testID="confirm-clear-cancel"
+                disabled={clearing}
+              >
+                <Text style={styles.btnGhostTxt}>Annulla</Text>
+              </Pressable>
+              <Pressable
+                onPress={clearBought}
+                style={styles.btnDanger}
+                testID="confirm-clear-confirm"
+                disabled={clearing}
+              >
+                {clearing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>Rimuovi</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         transparent

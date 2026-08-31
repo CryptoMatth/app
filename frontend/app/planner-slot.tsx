@@ -53,12 +53,26 @@ export default function PlannerSlot() {
 
   const addDish = (d: Dish) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setItems(prev => [...prev, {
-      dish_id: d.id,
-      dish_name: d.name,
-      course: d.course,
-      persons: 1,
-    }]);
+    setItems(prev => {
+      // If dish already in tray, increment its persons instead of duplicating
+      const existingIdx = prev.findIndex(it => it.dish_id === d.id);
+      if (existingIdx !== -1) {
+        return prev.map((it, i) =>
+          i === existingIdx ? { ...it, persons: it.persons + 1 } : it
+        );
+      }
+      return [...prev, {
+        dish_id: d.id,
+        dish_name: d.name,
+        course: d.course,
+        persons: 1,
+      }];
+    });
+  };
+
+  const openDishDetails = (d: Dish) => {
+    Haptics.selectionAsync();
+    router.push(`/dish/${d.id}`);
   };
 
   const removeItem = (idx: number) => {
@@ -202,23 +216,29 @@ export default function PlannerSlot() {
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}
           renderItem={({ item: d }) => {
             const already = usedIds.has(d.id);
+            const currentItem = items.find(it => it.dish_id === d.id);
             return (
-              <Pressable
-                testID={`select-dish-${d.id}`}
-                onPress={() => addDish(d)}
-                style={[styles.dishRow, already && styles.dishRowActive]}
-              >
-                <View style={{ flex: 1 }}>
+              <View style={[styles.dishRow, already && styles.dishRowActive]}>
+                <Pressable
+                  testID={`open-dish-${d.id}`}
+                  onPress={() => openDishDetails(d)}
+                  style={{ flex: 1 }}
+                >
                   <Text style={styles.dishName}>{d.name}</Text>
                   <Text style={styles.dishMeta}>
                     {d.ingredients?.length || 0} ingredienti
-                    {already ? ' · già in composizione' : ''}
+                    {already ? ` · ${currentItem?.persons}p in composizione` : ''}
                   </Text>
-                </View>
-                <View style={styles.addChip}>
+                </Pressable>
+                <Pressable
+                  testID={`add-dish-${d.id}`}
+                  onPress={() => addDish(d)}
+                  style={styles.addChip}
+                  hitSlop={6}
+                >
                   <Feather name="plus" size={16} color={theme.color.brandPrimary} />
-                </View>
-              </Pressable>
+                </Pressable>
+              </View>
             );
           }}
           ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
