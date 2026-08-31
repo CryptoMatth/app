@@ -185,6 +185,19 @@ export default function Spesa() {
                 <Text style={styles.legendTxt}>{t('spesa.legend.manual')}</Text>
               </View>
             </View>
+            <Pressable
+              onPress={onRefresh}
+              style={styles.settingsBtn}
+              testID="spesa-refresh"
+              disabled={refreshing}
+              accessibilityLabel={t('common.refresh')}
+            >
+              {refreshing ? (
+                <ActivityIndicator size="small" color={theme.color.onSurface} />
+              ) : (
+                <Feather name="refresh-cw" size={17} color={theme.color.onSurface} />
+              )}
+            </Pressable>
             <Pressable onPress={() => router.push('/settings')} style={styles.settingsBtn} testID="open-settings">
               <Feather name="settings" size={18} color={theme.color.onSurface} />
             </Pressable>

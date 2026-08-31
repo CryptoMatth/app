@@ -56,6 +56,7 @@ const IT: Dict = {
   'common.replace': 'Sostituisci',
   'common.restore': 'Ripristina',
   'common.merge': 'Unisci',
+  'common.refresh': 'Aggiorna',
 
   // ---- Piatti tab ----
   'piatti.title': 'Piatti',
@@ -424,6 +425,7 @@ const EN: Dict = {
   'common.replace': 'Replace',
   'common.restore': 'Restore',
   'common.merge': 'Merge',
+  'common.refresh': 'Refresh',
 
   'piatti.title': 'Dishes',
   'piatti.subtitle': 'Your personal recipe book',
