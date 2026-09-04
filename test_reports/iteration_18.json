@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 18 backend regression on the photo pipeline: 13/13 pytest cases PASS against the public backend URL. Verified (a) full upload → sign → retrieve loop as test3 returns byte-identical JPEG with Content-Type: image/jpeg and Content-Length == uploaded size; (b) signed-URL security: no auth → 401, invalid token → 401, malformed exp+garbage MAC → 401, token bound to path (token issued for path_A rejected on path_B → 401), cross-user access blocked (halley cannot sign or bearer-fetch test3's path — 404 on sign, 401 on GET); (c) forged past-exp token rejected (401) and fresh token has TTL between +5m and +24h (currently ~1h from sign_token(ttl_seconds=3600)); (d) bearer fallback still works and returns identical bytes with positive Content-Length; (e) 3 concurrent uploads return 3 distinct paths (no overwrite) and each is independently retrievable via its own signed token with byte-identical content. Backend code is unchanged in this iteration and the pipeline is confirmed healthy — the user's 'photo doesn't appear' is not a server-side regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/files-token/{path}",
+        "issue": "Response body is only {\"token\": \"<exp>.<mac>\"} — no explicit `expires_at` field. The review request expected an `expires_at` field. The exp is embedded (parseable from token prefix before '.') so clients can extract it, and our test accepts either representation, but for a cleaner client contract consider returning `{\"token\": \"...\", \"expires_at\": <unix_seconds>}`. Reference: /app/backend/server.py:1688."
+      },
+      {
+        "endpoint": "GET /api/files-token/{path}",
+        "issue": "Review request text said 'POST /api/files-token/{path}' but the implementation is a GET. Non-blocking but worth aligning the doc/spec with the code (or vice-versa)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration18_photo_pipeline.py",
+    "/app/test_reports/pytest/iteration18.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: return an explicit `expires_at` (unix seconds) alongside `token` from GET /api/files-token/{path} to match the client-side expectation implied in this iteration's review.",
+    "The backend photo pipeline is byte-perfect and secure — user-reported 'photo doesn't appear after upload' must be re-verified on-device. Confirm client (a) posts as multipart/form-data with a real file body (expo-file-system uploadAsync uploadType=BINARY_CONTENT vs MULTIPART matters — must be MULTIPART with fieldName='file'), and (b) that usePhotoUrl actually calls GET /files-token/{path} and appends ?token=... before setting <Image source>. Log the resolved URL on device to confirm no stale cache."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1887 lines — still above the 700-line guideline. Consider splitting uploads/files-token/files into a dedicated media router.",
+    "sign_token uses a fixed 3600s TTL constant; consider making it configurable via env for easier tuning without a code deploy.",
+    "get_photo re-invokes get_current_user manually inside the endpoint by passing the raw Authorization header; this works but silently swallows all HTTPException. If get_current_user were to raise a non-auth 5xx, users would see a misleading 401. Consider narrowing the except to auth-only status codes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration18_photo_pipeline.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "test3 uploaded 6 tiny 1x1 JPEGs (~1KB total) during the loop, cross-path, bearer and concurrent tests. All belong to test3 and remain in storage; the uploads are non-destructive and safely ignorable. No test users were created or deleted this iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend upload/sign/retrieve pipeline is fully verified as of iteration 18: /api/upload/photo (multipart 'file', requires Pro/Pro+/Ultra), GET /api/files-token/{path} (bearer, owner-only, returns {token:'<exp>.<mac>'} with ~1h TTL), GET /api/files/{path}?token=... OR Authorization: Bearer <session>. Tokens are HMAC-bound to path and reject when exp < now. Cross-user access denied. If 'photo doesn't appear' persists, the bug is client-side (Expo Image cache, fetch->blob returning empty on Android, or the RN Image component not requesting the signed URL). test_iteration17 and test_iteration18 together give full regression coverage of the photo pipeline.",
+  "rca_of_issue": "N/A — no backend regressions. Client-side hypothesis (from the review request): on Android, fetch(uri).then(r => r.blob()) can yield a 0-byte Blob for file:// URIs, which uploads a valid multipart part but with empty body → server returns 400 (which our test_upload_empty_body_returns_400 already covers). Migrating to expo-file-system/legacy uploadAsync with uploadType=FileSystemUploadType.MULTIPART and fieldName='file' fixes this. For display, RN <Image source={{uri, headers:{Authorization}}}> is known-buggy on Android with cache — using a query-token URL is the correct fix. This iteration's backend re-verification confirms both endpoints are ready to accept those client fixes."
+}

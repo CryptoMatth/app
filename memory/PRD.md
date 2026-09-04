@@ -25,7 +25,7 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - `/settings/account` — modifica username (con password), cambia password, codici recupero
 - `/settings/preferences` — inizio settimana (Lun–Dom) + gestione categorie piatti (aggiungi/rinomina/riordina/elimina)
 - `/settings/tutorial` — rivedi introduzione e riattiva tip banner
-- `/settings/backup` — export/import JSON con modalità merge o replace
+- `/settings/backup` — Backup cloud automatici (Ultra) + export/import JSON manuale con modalità merge o replace
 - Logout con conferma direttamente dall'hub
 
 ## Preferenze utente (giu-ago 2026)
@@ -128,6 +128,17 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Plugin `@react-native-vector-icons/feather` auto-aggiunto nel plugins array
 - `expo-doctor` 20/20 checks passed
 - Verificato con screenshot: tutte le icone Feather rendono correttamente (Piatti, Frigo, Settings, tab bar)
+
+## Ultra Cloud Backups (giu 2026)
+- **Feature Ultra**: backup cloud automatici periodici in aggiunta all'export/import JSON già esistente
+- Backend: nuova collezione `backups` in MongoDB; endpoint `GET /backups`, `POST /backups`, `POST /backups/auto-check`, `GET /backups/{id}`, `POST /backups/{id}/restore`, `DELETE /backups/{id}`, tutti gated `require_ultra`
+- Payload backup: dishes + weekly_plans + shopping_items + fridge_items (v2 schema, JSON-safe datetimes)
+- Frequenza configurabile via `preferences.backups.frequency`: `off` | `daily` | `weekly` | `monthly`
+- Retention rolling: max 10 backup automatici + 20 manuali per utente
+- Trigger automatico: `AuthProvider` chiama `/backups/auto-check` una volta per sessione se utente Ultra + freq != off
+- UI in `/settings/backup`: sezione Ultra in alto (chip frequenza + status + "Fai backup adesso" + lista backup con actions modal per Restore Merge / Replace / Delete). Sotto rimane la sezione "Backup manuali su file" (funziona per tutti i tier)
+- Utenti non-Ultra vedono card "Locked" con CTA "Scopri Ultra" che apre ProUpsellModal
+
 
 ## Bugfix Batch (giu 2026)
 - **B1 Unit picker**: unità di misura ora in bottom sheet modal invece che chip orizzontali (troppi valori). Quantità mostrata in font 18pt bold. Aggiunta `cucchiaino` e `tazza` all'elenco unità.

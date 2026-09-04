@@ -77,7 +77,6 @@ export default function PlansScreen() {
           features={[
             { icon: 'book', label: t('plans.free.f1') },
             { icon: 'calendar', label: t('plans.free.f2') },
-            { icon: 'shopping-cart', label: t('plans.free.f3') },
           ]}
         />
 

@@ -167,6 +167,10 @@ def _default_prefs() -> Dict[str, Any]:
             "notify_hour": 9,
             "freezer_enabled": True,
         },
+        "backups": {
+            "frequency": "off",  # off | daily | weekly | monthly
+            "last_auto_at": None,
+        },
     }
 
 
@@ -260,6 +264,11 @@ class NotificationPrefs(BaseModel):
     freezer_enabled: Optional[bool] = None
 
 
+class BackupPrefs(BaseModel):
+    # 'off' | 'daily' | 'weekly' | 'monthly'
+    frequency: Optional[Literal["off", "daily", "weekly", "monthly"]] = None
+
+
 class PreferencesBody(BaseModel):
     week_start_day: Optional[int] = None  # 0=Mon..6=Sun
     planner_span: Optional[Literal["weekly", "biweekly"]] = None
@@ -267,6 +276,16 @@ class PreferencesBody(BaseModel):
     courses: Optional[List[CourseItem]] = None
     ingredient_categories: Optional[List[IngredientCategoryItem]] = None
     notifications: Optional[NotificationPrefs] = None
+    backups: Optional[BackupPrefs] = None
+
+
+class BackupCreateBody(BaseModel):
+    # 'manual' created explicitly by user; 'auto' created by the scheduled hook.
+    kind: Literal["manual", "auto"] = "manual"
+
+
+class BackupRestoreBody(BaseModel):
+    mode: Literal["merge", "replace"] = "merge"
 
 
 # -------------------- Helpers --------------------
@@ -428,6 +447,11 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
     if not prefs.get("notifications"):
         prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "notify_hour": 9, "freezer_enabled": True}
+    if not prefs.get("backups"):
+        prefs["backups"] = {"frequency": "off", "last_auto_at": None}
+    else:
+        prefs["backups"].setdefault("frequency", "off")
+        prefs["backups"].setdefault("last_auto_at", None)
 
     # Compute pro entitlement (founder whitelist OR explicit DB flag)
     ents = user_doc.get("entitlements") or {}
@@ -777,6 +801,11 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
             cur["notify_hour"] = max(0, min(23, int(n.notify_hour)))
         if n.freezer_enabled is not None: cur["freezer_enabled"] = bool(n.freezer_enabled)
         prefs["notifications"] = cur
+    if body.backups is not None:
+        cur_b = prefs.get("backups") or {"frequency": "off", "last_auto_at": None}
+        if body.backups.frequency is not None:
+            cur_b["frequency"] = body.backups.frequency
+        prefs["backups"] = cur_b
     await db.users.update_one(
         {"user_id": current_user["user_id"]},
         {"$set": {"preferences": prefs, "updated_at": _now()}},
@@ -1689,40 +1718,56 @@ async def sign_photo(path: str, current_user=Depends(get_current_user)):
 
 
 # -------------------- Export / Import --------------------
-@api_router.get("/export")
-async def export_data(current_user=Depends(get_current_user)):
-    """Export all of the current user's data as a JSON snapshot."""
-    user_id = current_user["user_id"]
-    dishes = await db.dishes.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
-    plans = await db.weekly_plans.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
-    shopping = await db.shopping_items.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+async def _gather_user_snapshot(user_id: str, username: Optional[str] = None) -> Dict[str, Any]:
+    """Build a serializable snapshot of ALL user data used for both export and
+    cloud backups. Includes dishes, weekly plans, shopping and fridge items.
+    Datetimes are converted to ISO strings so the payload is JSON-safe.
+    """
+    dishes = await db.dishes.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+    plans = await db.weekly_plans.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+    shopping = await db.shopping_items.find({"user_id": user_id}, {"_id": 0}).to_list(4000)
+    fridge = await db.fridge_items.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+
+    def _cast(doc: Dict[str, Any]) -> Dict[str, Any]:
+        out = {}
+        for k, v in doc.items():
+            if isinstance(v, datetime):
+                out[k] = v.isoformat()
+            else:
+                out[k] = v
+        return out
+
     return {
         "app": "PlanEat",
-        "version": 1,
+        "version": 2,
         "exported_at": _now().isoformat(),
-        "user": {"username": current_user.get("username")},
-        "dishes": dishes,
-        "weekly_plans": plans,
-        "shopping_items": shopping,
+        "user": {"username": username},
+        "dishes": [_cast(d) for d in dishes],
+        "weekly_plans": [_cast(p) for p in plans],
+        "shopping_items": [_cast(s) for s in shopping],
+        "fridge_items": [_cast(f) for f in fridge],
     }
 
 
-@api_router.post("/import")
-async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
-    """Import a backup. mode=merge preserves existing data; mode=replace wipes user's
-    data first (dishes/plans/shopping) then imports."""
-    user_id = current_user["user_id"]
+async def _apply_snapshot(user_id: str, payload: Dict[str, Any], mode: str) -> Dict[str, int]:
+    """Restore a snapshot to the current user's collections. mode='replace'
+    wipes existing data first; mode='merge' only appends missing items.
+    Returns counts of imported records per collection.
+    """
+    dishes = payload.get("dishes") or []
+    plans = payload.get("weekly_plans") or []
+    shopping = payload.get("shopping_items") or []
+    fridge = payload.get("fridge_items") or []
 
-    if body.mode == "replace":
+    if mode == "replace":
         await db.dishes.delete_many({"user_id": user_id})
         await db.weekly_plans.delete_many({"user_id": user_id})
         await db.shopping_items.delete_many({"user_id": user_id})
+        await db.fridge_items.delete_many({"user_id": user_id})
 
-    imported_dishes = 0
-    imported_plans = 0
-    imported_shopping = 0
+    imported = {"dishes": 0, "weekly_plans": 0, "shopping_items": 0, "fridge_items": 0}
 
-    for d in body.dishes:
+    for d in dishes:
         try:
             doc = {
                 "id": d.get("id") or _uid(),
@@ -1731,25 +1776,27 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
                 "course": str(d.get("course") or "primo").strip() or "primo",
                 "ingredients": d.get("ingredients", []),
                 "preparation": d.get("preparation", ""),
+                "notes": d.get("notes", ""),
                 "servings": max(1, int(d.get("servings", 1) or 1)),
+                "photo_path": d.get("photo_path"),
                 "created_at": _now(),
             }
-            if body.mode == "merge":
+            if mode == "merge":
                 exists = await db.dishes.find_one({"user_id": user_id, "id": doc["id"]}, {"_id": 0})
                 if exists:
                     continue
             await db.dishes.insert_one(doc)
-            imported_dishes += 1
+            imported["dishes"] += 1
         except Exception:
             continue
 
-    for p in body.weekly_plans:
+    for p in plans:
         try:
             week = str(p.get("week_start", ""))
             if not week:
                 continue
             slots = p.get("slots", {}) or {}
-            if body.mode == "merge":
+            if mode == "merge":
                 exists = await db.weekly_plans.find_one({"user_id": user_id, "week_start": week}, {"_id": 0})
                 if exists:
                     continue
@@ -1758,11 +1805,11 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
                 {"$set": {"user_id": user_id, "week_start": week, "slots": slots}},
                 upsert=True,
             )
-            imported_plans += 1
+            imported["weekly_plans"] += 1
         except Exception:
             continue
 
-    for it in body.shopping_items:
+    for it in shopping:
         try:
             key = _norm_name(it.get("name", ""), it.get("unit", ""))
             doc = {
@@ -1776,11 +1823,14 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
                 "sources": it.get("sources", []),
                 "checked": bool(it.get("checked", False)),
                 "order": int(it.get("order", 0) or 0),
+                "notes": it.get("notes", ""),
+                "category_id": it.get("category_id"),
+                "photo_path": it.get("photo_path"),
                 "created_at": _now(),
             }
             if not doc["name"]:
                 continue
-            if body.mode == "merge":
+            if mode == "merge":
                 exists = await db.shopping_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
                 if exists:
                     continue
@@ -1789,18 +1839,257 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
                 {"$set": doc},
                 upsert=True,
             )
-            imported_shopping += 1
+            imported["shopping_items"] += 1
         except Exception:
             continue
 
+    for it in fridge:
+        try:
+            key = _norm_name(it.get("name", ""), it.get("unit", ""))
+            doc = {
+                "id": it.get("id") or _uid(),
+                "user_id": user_id,
+                "key": key,
+                "name": str(it.get("name", "")).strip(),
+                "unit": str(it.get("unit", "")).strip(),
+                "quantity": float(it.get("quantity", 0) or 0),
+                "notes": it.get("notes", ""),
+                "category_id": it.get("category_id"),
+                "photo_path": it.get("photo_path"),
+                "expiries": it.get("expiries") or [],
+                "created_at": _now(),
+            }
+            if not doc["name"]:
+                continue
+            if mode == "merge":
+                exists = await db.fridge_items.find_one({"user_id": user_id, "key": key}, {"_id": 0})
+                if exists:
+                    continue
+            await db.fridge_items.update_one(
+                {"user_id": user_id, "key": key},
+                {"$set": doc},
+                upsert=True,
+            )
+            imported["fridge_items"] += 1
+        except Exception:
+            continue
+
+    return imported
+
+
+@api_router.get("/export")
+async def export_data(current_user=Depends(get_current_user)):
+    """Export all of the current user's data as a JSON snapshot."""
+    return await _gather_user_snapshot(current_user["user_id"], current_user.get("username"))
+
+
+@api_router.post("/import")
+async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
+    """Import a backup. mode=merge preserves existing data; mode=replace wipes user's
+    data first (dishes/plans/shopping/fridge) then imports."""
+    user_id = current_user["user_id"]
+    payload = {
+        "dishes": body.dishes,
+        "weekly_plans": body.weekly_plans,
+        "shopping_items": body.shopping_items,
+        # Legacy /import doesn't ship fridge; new /backups snapshots do.
+        "fridge_items": [],
+    }
+    imported = await _apply_snapshot(user_id, payload, body.mode)
     return {
         "ok": True,
         "imported": {
-            "dishes": imported_dishes,
-            "weekly_plans": imported_plans,
-            "shopping_items": imported_shopping,
+            "dishes": imported["dishes"],
+            "weekly_plans": imported["weekly_plans"],
+            "shopping_items": imported["shopping_items"],
         },
     }
+
+
+# -------------------- Cloud backups (Ultra) --------------------
+MAX_AUTO_BACKUPS = 10  # rolling retention for auto backups
+MAX_MANUAL_BACKUPS = 20  # rolling retention for manual backups
+
+
+def _freq_to_days(freq: str) -> Optional[int]:
+    return {"daily": 1, "weekly": 7, "monthly": 30}.get((freq or "").lower())
+
+
+def _backup_meta(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape a backup document for list responses (no heavy payload)."""
+    p = doc.get("payload") or {}
+    counts = {
+        "dishes": len(p.get("dishes") or []),
+        "weekly_plans": len(p.get("weekly_plans") or []),
+        "shopping_items": len(p.get("shopping_items") or []),
+        "fridge_items": len(p.get("fridge_items") or []),
+    }
+    created = doc.get("created_at")
+    if isinstance(created, datetime):
+        created_iso = created.isoformat()
+    else:
+        created_iso = str(created) if created else None
+    return {
+        "id": doc.get("id"),
+        "kind": doc.get("kind") or "manual",
+        "created_at": created_iso,
+        "size_bytes": int(doc.get("size_bytes") or 0),
+        "counts": counts,
+    }
+
+
+async def _prune_backups(user_id: str, kind: str, keep: int) -> int:
+    """Delete the oldest backups of a given kind so that at most `keep` remain."""
+    total = await db.backups.count_documents({"user_id": user_id, "kind": kind})
+    if total <= keep:
+        return 0
+    to_delete = total - keep
+    old = await db.backups.find(
+        {"user_id": user_id, "kind": kind}, {"_id": 0, "id": 1, "created_at": 1}
+    ).sort("created_at", 1).to_list(to_delete)
+    ids = [d.get("id") for d in old if d.get("id")]
+    if not ids:
+        return 0
+    res = await db.backups.delete_many({"user_id": user_id, "id": {"$in": ids}})
+    return res.deleted_count or 0
+
+
+async def _create_backup(user: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    user_id = user["user_id"]
+    payload = await _gather_user_snapshot(user_id, user.get("username"))
+    # Estimate size for user-friendly display (rough JSON byte-length).
+    try:
+        import json as _json
+        size = len(_json.dumps(payload).encode("utf-8"))
+    except Exception:
+        size = 0
+    doc = {
+        "id": _uid(),
+        "user_id": user_id,
+        "kind": kind,
+        "created_at": _now(),
+        "size_bytes": size,
+        "payload": payload,
+    }
+    await db.backups.insert_one(doc)
+
+    # If this is an auto backup, record timestamp on user prefs.
+    if kind == "auto":
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"preferences.backups.last_auto_at": doc["created_at"], "updated_at": _now()}},
+        )
+
+    # Rolling retention.
+    keep = MAX_AUTO_BACKUPS if kind == "auto" else MAX_MANUAL_BACKUPS
+    await _prune_backups(user_id, kind, keep)
+
+    return _backup_meta(doc)
+
+
+@api_router.get("/backups")
+async def list_backups(current_user=Depends(require_ultra)):
+    """List the current user's cloud backups (metadata only)."""
+    user_id = current_user["user_id"]
+    cur = db.backups.find({"user_id": user_id}, {"_id": 0, "payload": 0}).sort("created_at", -1)
+    docs = await cur.to_list(200)
+    prefs = current_user.get("preferences") or {}
+    backup_prefs = prefs.get("backups") or {}
+    freq = backup_prefs.get("frequency") or "off"
+    last_auto = backup_prefs.get("last_auto_at")
+    if isinstance(last_auto, datetime):
+        last_auto = last_auto.isoformat()
+    # Next due for auto (if enabled).
+    next_due = None
+    days = _freq_to_days(freq)
+    if days and last_auto:
+        try:
+            base = datetime.fromisoformat(last_auto)
+            if base.tzinfo is None:
+                base = base.replace(tzinfo=timezone.utc)
+            next_due = (base + timedelta(days=days)).isoformat()
+        except Exception:
+            pass
+    return {
+        "backups": [_backup_meta(d) for d in docs],
+        "frequency": freq,
+        "last_auto_at": last_auto,
+        "next_due_at": next_due,
+        "count": len(docs),
+        "retention": {"auto": MAX_AUTO_BACKUPS, "manual": MAX_MANUAL_BACKUPS},
+    }
+
+
+@api_router.post("/backups")
+async def create_backup(body: BackupCreateBody, current_user=Depends(require_ultra)):
+    """Create a new cloud backup (manual by default)."""
+    meta = await _create_backup(current_user, body.kind)
+    return {"ok": True, "backup": meta}
+
+
+@api_router.post("/backups/auto-check")
+async def auto_check(current_user=Depends(require_ultra)):
+    """Client-triggered scheduler. Creates a new 'auto' backup if the
+    configured frequency has elapsed since the last one. Returns whether
+    a backup was created plus the current status.
+    """
+    prefs = current_user.get("preferences") or {}
+    b = prefs.get("backups") or {}
+    freq = (b.get("frequency") or "off").lower()
+    days = _freq_to_days(freq)
+    if not days:
+        return {"created": False, "reason": "disabled", "frequency": freq}
+    last_auto = b.get("last_auto_at")
+    now = _now()
+    due = True
+    if last_auto:
+        try:
+            base = last_auto if isinstance(last_auto, datetime) else datetime.fromisoformat(last_auto)
+            if base.tzinfo is None:
+                base = base.replace(tzinfo=timezone.utc)
+            due = (now - base) >= timedelta(days=days)
+        except Exception:
+            due = True
+    if not due:
+        return {"created": False, "reason": "not_due", "frequency": freq,
+                "last_auto_at": last_auto if isinstance(last_auto, str) else (last_auto.isoformat() if last_auto else None)}
+    meta = await _create_backup(current_user, "auto")
+    return {"created": True, "backup": meta, "frequency": freq}
+
+
+@api_router.get("/backups/{backup_id}")
+async def get_backup(backup_id: str, current_user=Depends(require_ultra)):
+    """Return the full backup payload (for download)."""
+    user_id = current_user["user_id"]
+    doc = await db.backups.find_one({"user_id": user_id, "id": backup_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Backup non trovato")
+    # Cast created_at
+    if isinstance(doc.get("created_at"), datetime):
+        doc["created_at"] = doc["created_at"].isoformat()
+    return doc
+
+
+@api_router.post("/backups/{backup_id}/restore")
+async def restore_backup(backup_id: str, body: BackupRestoreBody, current_user=Depends(require_ultra)):
+    """Restore a saved backup into the user's data (merge or replace)."""
+    user_id = current_user["user_id"]
+    doc = await db.backups.find_one({"user_id": user_id, "id": backup_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Backup non trovato")
+    payload = doc.get("payload") or {}
+    imported = await _apply_snapshot(user_id, payload, body.mode)
+    return {"ok": True, "imported": imported}
+
+
+@api_router.delete("/backups/{backup_id}")
+async def delete_backup(backup_id: str, current_user=Depends(require_ultra)):
+    """Delete a stored backup."""
+    user_id = current_user["user_id"]
+    res = await db.backups.delete_one({"user_id": user_id, "id": backup_id})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Backup non trovato")
+    return {"ok": True}
 
 
 

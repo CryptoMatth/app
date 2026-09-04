@@ -10,13 +10,12 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, Image, Pressable, ActivityIndicator, StyleSheet, Alert, Platform, Linking, Modal, Dimensions,
+  View, Text, Image, Pressable, ActivityIndicator, StyleSheet, Alert, Linking, Modal, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Feather from '@react-native-vector-icons/feather';
 import { theme } from './theme';
 import { api } from './api';
-import { useAuth } from './auth';
 import { useTranslation } from './i18n';
 import { useIsPro, ProUpsellModal } from './ProGate';
 
@@ -29,35 +28,31 @@ type Props = {
 };
 
 /** Resolve a storage `path` (as returned by /api/upload/photo) to a URL suitable for <Image>.
- *  Native: uses backend URL + Authorization header (returned separately).
- *  Web:    uses signed short-lived query token.
+ *  Uses a short-lived signed query token on BOTH web and native — Image on
+ *  React Native has known issues with `headers` on Android (cache poisoning,
+ *  redirects) so we sidestep them entirely by baking auth into the URL.
  */
 export function usePhotoUrl(path?: string | null): { uri?: string; headers?: Record<string, string> } {
-  const { token } = useAuth();
   const [signed, setSigned] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!path || Platform.OS !== 'web') return;
+    if (!path) { setSigned(null); return; }
     let cancelled = false;
     (async () => {
       try {
         const t = await api.signPhotoToken(path);
         if (!cancelled) setSigned(t);
-      } catch {}
+      } catch {
+        if (!cancelled) setSigned(null);
+      }
     })();
     return () => { cancelled = true; };
   }, [path]);
 
   if (!path) return {};
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-  if (Platform.OS === 'web') {
-    if (!signed) return {};
-    return { uri: `${base}/api/files/${encodeURI(path)}?token=${encodeURIComponent(signed)}` };
-  }
-  return {
-    uri: `${base}/api/files/${encodeURI(path)}`,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  };
+  if (!signed) return {};
+  return { uri: `${base}/api/files/${encodeURI(path)}?token=${encodeURIComponent(signed)}` };
 }
 
 /** Small square photo preview + camera/remove buttons. */
