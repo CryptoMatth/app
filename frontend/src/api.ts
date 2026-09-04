@@ -110,26 +110,57 @@ export const api = {
   uploadPhoto: async (uri: string, contentType: string): Promise<string> => {
     const token = await getToken();
     const filename = uri.split('/').pop() || `photo.${(contentType.split('/')[1] || 'jpg')}`;
-    const form = new FormData();
-    // RN 0.86+ deprecated the `{ uri, name, type }` FormData object literal
-    // ("Unsupported FormDataPart implementation"). Fetch the file URI into a
-    // Blob first — this works on both web and native.
-    const blob = await (await fetch(uri)).blob();
-    // Ensure the blob has a sane content-type before uploading
-    const typed = blob.type ? blob : new Blob([blob], { type: contentType || 'image/jpeg' });
-    form.append('file', typed, filename);
-    const res = await fetch(`${API_URL}/api/upload/photo`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
-    if (!res.ok) {
-      const msg = (data && (data.detail || data.message)) || res.statusText;
-      throw new Error(typeof msg === 'string' ? msg : `HTTP ${res.status}`);
+
+    if (Platform.OS === 'web') {
+      // On web the blob() flow works reliably and is required for CORS-safe
+      // uploads from a Metro dev server.
+      const form = new FormData();
+      const blob = await (await fetch(uri)).blob();
+      const typed = blob.type ? blob : new Blob([blob], { type: contentType || 'image/jpeg' });
+      form.append('file', typed, filename);
+      const res = await fetch(`${API_URL}/api/upload/photo`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form,
+      });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!res.ok) {
+        const msg = (data && (data.detail || data.message)) || res.statusText;
+        throw new Error(typeof msg === 'string' ? msg : `HTTP ${res.status}`);
+      }
+      return data.path as string;
     }
-    return data.path as string;
+
+    // Native (iOS/Android) — React Native 0.86+ throws
+    // "Unsupported FormDataPart implementation" for the legacy `{uri, name,
+    // type}` FormData object, and `fetch(file://…).blob()` returns an empty
+    // blob on Android. `FileSystem.uploadAsync` reads the file directly and
+    // streams a proper multipart body.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const FileSystem = require('expo-file-system/legacy');
+    const result = await FileSystem.uploadAsync(`${API_URL}/api/upload/photo`, uri, {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: 'file',
+      mimeType: contentType || 'image/jpeg',
+      parameters: {},
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (result.status < 200 || result.status >= 300) {
+      let detail = result.body || `HTTP ${result.status}`;
+      try {
+        const parsed = JSON.parse(result.body || '{}');
+        detail = parsed.detail || parsed.message || detail;
+      } catch {}
+      throw new Error(typeof detail === 'string' ? detail : `HTTP ${result.status}`);
+    }
+    try {
+      const parsed = JSON.parse(result.body || '{}');
+      return parsed.path as string;
+    } catch {
+      throw new Error('Malformed upload response');
+    }
   },
   signPhotoToken: async (path: string): Promise<string> => {
     const r = await req<{ token: string }>(`/files-token/${encodeURI(path)}`);

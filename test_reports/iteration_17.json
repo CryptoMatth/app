@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 17 backend regression: 10/10 pytest cases PASS against public backend URL. Verified (a) halley user founder auto-tier = ultra on both /auth/login and /auth/me with pro_source=founder and is_pro=true (registered halley/halley1234 since it did not exist); (b) tier field correctly propagates on login for test3 (pro) and testlang01 (free); (c) admin POST /api/admin/users/{id}/entitlements/pro_plus grants pro_plus and next login/me reflect tier=pro_plus; (d) upload/photo -> files-token -> files/{path}?token=... loop returns identical bytes with image/* content-type and Content-Length > 0; bearer-auth retrieval also works; (e) empty body -> 400, non-Pro (testlang01) -> 402, unknown files-token path -> 404. No backend fixes were required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_tiers_upload_loop.py",
+    "/app/test_reports/pytest/iteration17.xml"
+  ],
+  "action_items": [
+    "None from backend. Main agent can proceed to verify the frontend Settings screen shows Pro / Pro+ / Ultra label mapped from user.tier (backend already exposes it) and that RN photo upload path (expo-file-system uploadAsync) works on native devices."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1887 lines; consider splitting auth, uploads, fridge, and dishes into separate routers for maintainability (>700-line threshold exceeded).",
+    "upload_photo relies on client-declared content_type; consider sniffing magic bytes server-side to prevent spoofed content types (low priority, size cap and ownership check already limit blast radius)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_tiers_upload_loop.py (new)",
+    "/app/memory/test_credentials.md (added halley/halley1234 as founder/ultra)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Registered halley/halley1234 (was missing). Throwaway pro_plus test user was auto-deleted via admin DELETE in fixture teardown. Two tiny 1x1 JPEG photos were uploaded by test3 as part of the upload/sign/retrieve loop (bytes remain in the user's photo storage, non-destructive).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "halley user is now provisioned with password halley1234. FOUNDER_USERNAMES currently only contains 'halley'. To grant/revoke pro_plus/ultra use POST /api/admin/users/{id}/entitlements/{tier} with body {active: bool, reason: str}. Photo upload public loop: POST /api/upload/photo (multipart, requires Pro+), GET /api/files-token/{path} for signed token, GET /api/files/{path}?token=... to fetch bytes (Cache-Control: public, max-age=3600).",
+  "rca_of_issue": "N/A - all requested checks passed on first run."
+}

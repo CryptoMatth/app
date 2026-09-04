@@ -7,7 +7,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
-import { useIsPro, ProUpsellModal } from '@/src/ProGate';
+import { useIsPro, ProUpsellModal, useTier } from '@/src/ProGate';
 
 type Row = {
   key: string;
@@ -27,6 +27,17 @@ export default function SettingsHome() {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
   const isPro = useIsPro();
+  const tier = useTier();
+  const tierLabelKey = tier === 'ultra'
+    ? 'settings.pro.tierUltra'
+    : tier === 'pro_plus'
+      ? 'settings.pro.tierProPlus'
+      : 'settings.pro.tierPro';
+  const tierSubKey = tier === 'ultra'
+    ? 'settings.pro.tierUltra.sub'
+    : tier === 'pro_plus'
+      ? 'settings.pro.tierProPlus.sub'
+      : 'settings.pro.tierPro.sub';
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busy, setBusy] = useState(false);
   const [upsell, setUpsell] = useState(false);
@@ -164,10 +175,10 @@ export default function SettingsHome() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[proCardStyles.title, { color: isPro ? '#fff' : theme.color.onSurface }]}>
-              {isPro ? t('settings.pro.activeTitle') : t('settings.pro.freeTitle')}
+              {isPro ? t(tierLabelKey) : t('settings.pro.freeTitle')}
             </Text>
             <Text style={[proCardStyles.sub, { color: isPro ? 'rgba(255,255,255,0.85)' : theme.color.onSurfaceSecondary }]}>
-              {isPro ? t('settings.pro.activeSub') : t('settings.pro.freeSub')}
+              {isPro ? t(tierSubKey) : t('settings.pro.freeSub')}
             </Text>
           </View>
           {!isPro && <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />}
