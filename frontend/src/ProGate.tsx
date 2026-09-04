@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useState, PropsWithChildren } from 'react';
 import { theme } from './theme';
 import { useAuth } from './auth';

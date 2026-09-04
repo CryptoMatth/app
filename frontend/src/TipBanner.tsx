@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
 import { theme } from '@/src/theme';
 import { hasSeenTip, markTipSeen } from '@/src/tutorial';

@@ -13,7 +13,7 @@ import {
   View, Text, Image, Pressable, ActivityIndicator, StyleSheet, Alert, Platform, Linking, Modal, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { theme } from './theme';
 import { api } from './api';
 import { useAuth } from './auth';

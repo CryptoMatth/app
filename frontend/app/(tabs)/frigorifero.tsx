@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';

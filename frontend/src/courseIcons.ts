@@ -6,7 +6,7 @@
  * fallback keywords (Italian + English) so custom labels like "Antipasto",
  * "Dessert", "Breakfast" still get a themed icon.
  */
-import type { Feather } from '@expo/vector-icons';
+import type Feather from '@react-native-vector-icons/feather';
 
 type FeatherIcon = keyof typeof Feather.glyphMap;
 

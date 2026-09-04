@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { PasswordInput } from '@/src/PasswordInput';

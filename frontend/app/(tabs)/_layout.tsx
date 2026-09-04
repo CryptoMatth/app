@@ -1,5 +1,5 @@
 import { Tabs, useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';

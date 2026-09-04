@@ -13,7 +13,7 @@ import { AuthProvider } from "@/src/auth";
 LogBox.ignoreAllLogs(true)
 
 // Keep the native splash visible from cold start until icon fonts register.
-// Required because @expo/vector-icons' componentDidMount fallback fires
+// Required because @react-native-vector-icons fallback fires
 // Font.loadAsync against a broken vendor path if any <Icon> mounts before
 // the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();

@@ -4,7 +4,7 @@ import {
   useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { theme } from '@/src/theme';

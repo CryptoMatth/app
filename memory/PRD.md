@@ -105,6 +105,16 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - ~~Endpoint AI rimosso su richiesta utente~~ (consumava credit balance Emergent Universal Key)
 - Feature completamente rimossa: nessun endpoint backend, nessuna schermata, nessuna stringa i18n `ai.*`
 
+## Expo SDK Upgrade (giu 2026)
+- **SDK 54.0.36 → 57.0.19** (skip SDK 55 & 56 in un colpo solo)
+- React 19.1 → 19.2.3, RN 0.81.5 → 0.86.3, TypeScript 5.9 → 6.0.3
+- **@expo/vector-icons rimosso** → sostituito con `@react-native-vector-icons/feather@13.1.3` (unica famiglia usata)
+- `use-icon-fonts.ts` aggiornato al nuovo CDN pattern di react-native-vector-icons
+- `app.json` pulito: rimossi `newArchEnabled` e `edgeToEdgeEnabled` (default in SDK 55+)
+- Plugin `@react-native-vector-icons/feather` auto-aggiunto nel plugins array
+- `expo-doctor` 20/20 checks passed
+- Verificato con screenshot: tutte le icone Feather rendono correttamente (Piatti, Frigo, Settings, tab bar)
+
 ## Bugfix Batch (giu 2026)
 - **B1 Unit picker**: unità di misura ora in bottom sheet modal invece che chip orizzontali (troppi valori). Quantità mostrata in font 18pt bold. Aggiunta `cucchiaino` e `tazza` all'elenco unità.
 - **B2 Rename categoria**: `translateDefaultLabel` ora rispetta il label custom dell'utente — se differisce dal default IT, mostra quello. Prima veniva sovrascritto dalla traduzione.

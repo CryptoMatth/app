@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, Pressable, FlatList, ActivityIndicator, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import Feather from '@react-native-vector-icons/feather';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
