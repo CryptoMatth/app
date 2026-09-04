@@ -105,6 +105,20 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - ~~Endpoint AI rimosso su richiesta utente~~ (consumava credit balance Emergent Universal Key)
 - Feature completamente rimossa: nessun endpoint backend, nessuna schermata, nessuna stringa i18n `ai.*`
 
+## Tier system + Delete account (giu 2026)
+- **3 tier**: Free (base) / Pro (3€) / Pro+ (5€) / Ultra (2€/mese o 20€/anno)
+- Backend: `_tier_rank`, `_get_tier`, `_has_tier`, `require_pro_plus`, `require_ultra`. `entitlements.{pro,pro_plus,ultra}` con hierarchy Ultra > Pro+ > Pro > Free. Founder→Ultra auto
+- Frontend: `useTier()`, `useHasTier(min)`. `ProUpsellModal` mostra le 3 card con prezzo, feature e badge "IN ARRIVO" per Ultra
+- Frigo + Notifiche ora richiedono Pro+; Photos + symbol picker + custom categorie restano Pro
+- Rimossa slide "PlanEat Pro" dal tutorial → nuova pagina Settings **"Piani PlanEat"** (`/settings/plans`) accessibile via card dedicata
+- **Delete account self-service**: `POST /api/auth/delete-account` (password + digitare ELIMINA). Wipe totale dishes/plans/shopping/fridge/photos/sessions. UI in Danger zone di `settings/account`
+
+## Bugfix B1/B2 + A1/A2 (giu 2026)
+- **B1** FormData `Unsupported FormDataPart implementation` fix: `uploadPhoto` ora usa `fetch(uri).blob()` universale invece dell'object literal deprecato in RN 0.86
+- **B2** Editor ingrediente: aggiunto SafeAreaView per header X/trash (non più sotto notch), quantità con width fissa 110px e `maxLength=5` (max ~4 cifre + decimale)
+- **A1** Icone corso ora **emoji reali**: 🍝 primo, 🥩 secondo, 🍟 contorno, 🍰 dolce (+ 25 altri emoji nel catalog per portate custom)
+- **A2** Emoji picker esteso alle Portate (course): scroll orizzontale con `COURSE_EMOJI_CATALOG` di 30 emoji. Backend `CourseItem` accetta `icon`
+
 ## Expo SDK Upgrade (giu 2026)
 - **SDK 54.0.36 → 57.0.19** (skip SDK 55 & 56 in un colpo solo)
 - React 19.1 → 19.2.3, RN 0.81.5 → 0.86.3, TypeScript 5.9 → 6.0.3

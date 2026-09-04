@@ -10,6 +10,7 @@ import { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, ScrollView, Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
 import { theme } from './theme';
@@ -77,17 +78,18 @@ export function IngredientEditorForm({
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
         <TextInput
           testID={`${testIDPrefix}-qty`}
-          placeholder={t('spesa.qty')}
+          placeholder="0"
           placeholderTextColor={theme.color.onSurfaceTertiary}
           value={value.quantity}
           onChangeText={(text) => patch({ quantity: text })}
           keyboardType="numeric"
+          maxLength={5}
           style={[styles.input, styles.qtyInput]}
         />
         <Pressable
           testID={`${testIDPrefix}-unit-picker`}
           onPress={() => { Haptics.selectionAsync(); setUnitPickerOpen(true); }}
-          style={styles.unitPickBtn}
+          style={[styles.unitPickBtn, { flex: 1 }]}
         >
           <Text style={styles.unitPickTxt}>{value.unit}</Text>
           <Feather name="chevron-down" size={16} color={theme.color.onSurfaceSecondary} />
@@ -201,7 +203,7 @@ export function IngredientEditorModal({
       onRequestClose={onCancel}
       presentationStyle="pageSheet"
     >
-      <View style={mStyles.root} testID="ing-editor-modal">
+      <SafeAreaView style={mStyles.root} edges={['top', 'bottom']} testID="ing-editor-modal">
         <View style={mStyles.header}>
           <Pressable onPress={onCancel} style={mStyles.hBtn} testID="ing-editor-cancel">
             <Feather name="x" size={22} color={theme.color.onSurface} />
@@ -252,7 +254,7 @@ export function IngredientEditorModal({
             </View>
           </View>
         </Modal>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -265,7 +267,8 @@ const styles = StyleSheet.create({
     color: theme.color.onSurface, fontSize: 15,
   },
   textarea: { minHeight: 90, textAlignVertical: 'top' },
-  qtyInput: { flex: 1, textAlign: 'left', fontSize: 18, fontWeight: '600', letterSpacing: 0.3 },
+  // Comfortable width for at most 4 digits with generous internal padding.
+  qtyInput: { width: 110, textAlign: 'center', fontSize: 18, fontWeight: '600', letterSpacing: 0.3 },
   unitPickBtn: {
     minWidth: 92, paddingHorizontal: 12, paddingVertical: 10,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6,

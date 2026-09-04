@@ -12,7 +12,7 @@ import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
-import { iconForCourse } from '@/src/courseIcons';
+import { courseEmoji } from '@/src/courseIcons';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[]; preparation: string; servings: number };
 
@@ -126,14 +126,14 @@ export default function Piatti() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
           renderItem={({ item }) => {
             const courseObj = courses.find(c => c.id === item.course);
-            const fallbackIcon = iconForCourse(item.course, courseObj?.label);
+            const emoji = courseEmoji({ id: item.course, label: courseObj?.label, icon: (courseObj as any)?.icon });
             return (
             <Pressable
               testID={`dish-card-${item.id}`}
               onPress={() => router.push(`/dish/${item.id}`)}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}
             >
-              <PhotoThumb path={(item as any).photo_path} size={48} rounded fallbackIcon={fallbackIcon} />
+              <PhotoThumb path={(item as any).photo_path} size={48} rounded fallbackEmoji={emoji} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.cardMeta}>

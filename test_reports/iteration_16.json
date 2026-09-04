@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 16 backend regression tests executed via pytest against http://localhost:8001. Covers photo upload (happy + 2 negative), delete-account (3 cases), admin tier entitlements (grant pro_plus, ultra, revoke fallback, revoke to free, unknown-tier 400), fridge Pro+ gating (test3 → 402, fresh Pro+ user → 200), and courses[].icon persistence on preferences. All 14 tests PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_upload_tiers_delete.py",
+    "/app/test_reports/pytest/iteration16_results.xml"
+  ],
+  "action_items": [
+    "Note (non-blocking): the courses-icon test PUTs {courses:[{id:'primo', ...}]} for test3, which by design fully replaces test3's course list. If a future test needs test3 to have the default multi-course preferences, re-seed or amend the test to include all defaults. test3's tier remained 'pro' (untouched)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1886 lines — consider splitting into routers (auth, dishes, planner, fridge, upload, admin) to keep files <700 lines.",
+    "PUT /api/auth/preferences replaces the entire `courses` array whenever the field is provided (no merge). This is expected given the mode='merge'|'replace' pattern used elsewhere, but the frontend must always send the full list when editing a single course icon to avoid clobbering others."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration16_upload_tiers_delete.py (new pytest file)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Each destructive test registers a fresh `t16_<ms_timestamp>_<n>` user via /api/auth/register and cleans up via DELETE /api/admin/users/{user_id} in a fixture teardown. test3 and testlang01 were not modified (test3 tier verified as 'pro' post-run).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iteration16_upload_tiers_delete.py as regression. It exercises upload, delete-account, admin tier grants (pro/pro_plus/ultra + revoke fallback + unknown-tier rejection), fridge Pro+ gating, and preferences courses[].icon. Uses BACKEND_BASE_URL env or http://localhost:8001. Cleans up throwaway users via admin DELETE.",
+  "rca_of_issue": "N/A — all target flows behave as specified. Client-side FormData bug (B1) was purely frontend and out of scope per request; server-side /api/upload/photo verified to correctly accept standard multipart/form-data and return {path,size,content_type}, and to return 400 for unsupported content-type and for empty files."
+}

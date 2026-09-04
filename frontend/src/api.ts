@@ -78,6 +78,8 @@ export const api = {
     req('/auth/recovery/verify', { method: 'POST', body: JSON.stringify({ username, code, new_password }) }),
   recoveryRegenerate: () => req('/auth/recovery/regenerate', { method: 'POST' }),
   recoveryStatus: () => req('/auth/recovery/status'),
+  deleteAccount: (password: string, confirm: string) =>
+    req('/auth/delete-account', { method: 'POST', body: JSON.stringify({ password, confirm }) }),
 
   listDishes: (params?: { course?: string; q?: string }) => {
     const qs = new URLSearchParams();
@@ -109,12 +111,13 @@ export const api = {
     const token = await getToken();
     const filename = uri.split('/').pop() || `photo.${(contentType.split('/')[1] || 'jpg')}`;
     const form = new FormData();
-    if (Platform.OS === 'web') {
-      const blob = await (await fetch(uri)).blob();
-      form.append('file', blob, filename);
-    } else {
-      form.append('file', { uri, name: filename, type: contentType } as any);
-    }
+    // RN 0.86+ deprecated the `{ uri, name, type }` FormData object literal
+    // ("Unsupported FormDataPart implementation"). Fetch the file URI into a
+    // Blob first — this works on both web and native.
+    const blob = await (await fetch(uri)).blob();
+    // Ensure the blob has a sane content-type before uploading
+    const typed = blob.type ? blob : new Blob([blob], { type: contentType || 'image/jpeg' });
+    form.append('file', typed, filename);
     const res = await fetch(`${API_URL}/api/upload/photo`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,

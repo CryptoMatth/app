@@ -13,6 +13,7 @@ import { settingsStyles as s } from '@/src/settingsStyles';
 import { weekStartOptions } from '@/src/week';
 import { useTranslation } from '@/src/i18n';
 import { useIsPro, ProUpsellModal } from '@/src/ProGate';
+import { COURSE_EMOJI_CATALOG } from '@/src/courseIcons';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -22,6 +23,7 @@ type EditingCat =
       kind: 'course';
       index: number | null;
       label: string;
+      icon: string;
     }
   | {
       kind: 'ing';
@@ -144,8 +146,9 @@ export default function PreferencesSettings() {
         c.label.trim().toLowerCase() === label.toLowerCase() && idx !== editing.index
       );
       if (dup !== -1) { Alert.alert('!', t('prefs.errors.duplicate')); return; }
-      if (editing.index === null) setCourses(prev => [...prev, { id: '', label }]);
-      else setCourses(prev => prev.map((c, i) => i === editing.index ? { ...c, label } : c));
+      const icon = (editing.icon || '').trim().slice(0, 4) || null;
+      if (editing.index === null) setCourses(prev => [...prev, { id: '', label, icon } as any]);
+      else setCourses(prev => prev.map((c, i) => i === editing.index ? ({ ...c, label, icon } as any) : c));
     } else {
       const dup = ingCats.findIndex((c, idx) =>
         c.label.trim().toLowerCase() === label.toLowerCase() && idx !== editing.index
@@ -269,7 +272,7 @@ export default function PreferencesSettings() {
                   style={[styles.iconBtn, i === courses.length - 1 && { opacity: 0.3 }]} testID={`course-down-${i}`}>
                   <Feather name="arrow-down" size={16} color={theme.color.onSurface} />
                 </Pressable>
-                <Pressable onPress={() => setEditing({ kind: 'course', index: i, label: tCourse(c) })}
+                <Pressable onPress={() => setEditing({ kind: 'course', index: i, label: tCourse(c), icon: (c as any).icon || '' })}
                   style={styles.iconBtn} testID={`course-edit-${i}`}>
                   <Feather name="edit-2" size={16} color={theme.color.onSurface} />
                 </Pressable>
@@ -279,7 +282,7 @@ export default function PreferencesSettings() {
               </View>
             </View>
           ))}
-          <Pressable onPress={() => setEditing({ kind: 'course', index: null, label: '' })} style={styles.addBtn} testID="course-add">
+          <Pressable onPress={() => setEditing({ kind: 'course', index: null, label: '', icon: '' })} style={styles.addBtn} testID="course-add">
             <Feather name="plus" size={16} color={theme.color.brandPrimary} />
             <Text style={styles.addBtnTxt}>{t('prefs.addCategory')}</Text>
           </Pressable>
@@ -434,14 +437,14 @@ export default function PreferencesSettings() {
               autoFocus maxLength={40} style={s.input}
               onSubmitEditing={commitEdit} returnKeyType="done"
             />
-            {editing?.kind === 'ing' && (
+            {editing && (editing.kind === 'ing' || editing.kind === 'course') && (
               <>
                 <Text style={{ fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 8, marginBottom: 4 }}>{t('prefs.icon.h')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                  {EMOJI_SUGGESTIONS.map(e => (
+                  {(editing.kind === 'course' ? COURSE_EMOJI_CATALOG : EMOJI_SUGGESTIONS).map(e => (
                     <Pressable
                       key={e}
-                      onPress={() => setEditing(prev => (prev && prev.kind === 'ing' ? { ...prev, icon: e } : prev))}
+                      onPress={() => setEditing(prev => (prev ? { ...prev, icon: e } : prev))}
                       style={[
                         styles.emojiBtn,
                         editing.icon === e && { borderColor: theme.color.brandPrimary, backgroundColor: theme.color.brandTertiary },

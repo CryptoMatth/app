@@ -145,6 +145,32 @@ def create_admin_router(db) -> APIRouter:
         )
         return {"ok": True, "user_id": user_id, "entitlements": {"pro": entry}}
 
+    @router.post("/users/{user_id}/entitlements/{tier}")
+    async def set_tier_entitlement(
+        user_id: str, tier: str, body: AdminEntitlementBody, _: None = Depends(require_admin)
+    ) -> Dict[str, Any]:
+        """Grant or revoke a specific tier (`pro`, `pro_plus`, `ultra`).
+
+        Higher tiers do NOT auto-activate lower ones — the frontend checks a
+        hierarchy at read time (Ultra > Pro+ > Pro > Free). Setting `active`
+        to False on a higher tier will fall the user back to the next lowest
+        tier they still hold entitlement for.
+        """
+        if tier not in ("pro", "pro_plus", "ultra"):
+            raise HTTPException(400, "Unknown tier")
+        u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not u:
+            raise HTTPException(404, "Utente non trovato")
+        if body.active:
+            entry = {"active": True, "source": "admin_grant", "reason": body.reason or "", "granted_at": _now()}
+        else:
+            entry = {"active": False, "source": "admin_grant", "reason": body.reason or "", "revoked_at": _now()}
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {f"entitlements.{tier}": entry, "updated_at": _now()}},
+        )
+        return {"ok": True, "user_id": user_id, "tier": tier, "entitlements": {tier: entry}}
+
     @router.get("/stats")
     async def stats(_: None = Depends(require_admin)) -> Dict[str, Any]:
         users = await db.users.count_documents({})

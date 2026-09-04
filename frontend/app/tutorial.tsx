@@ -69,14 +69,6 @@ const SLIDES: Slide[] = [
     bodyKey: 'tut.s5.body',
     bulletKeys: ['tut.s5.b1', 'tut.s5.b2', 'tut.s5.b3'],
   },
-  {
-    icon: 'star',
-    color: theme.color.brand,
-    bg: '#F5E8D8',
-    titleKey: 'tut.s7.title',
-    bodyKey: 'tut.s7.body',
-    bulletKeys: ['tut.s7.b1', 'tut.s7.b2', 'tut.s7.b3', 'tut.s7.b4'],
-  },
 ];
 
 export default function Tutorial() {

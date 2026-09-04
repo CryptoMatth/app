@@ -5,10 +5,26 @@ import { theme } from './theme';
 import { useAuth } from './auth';
 import { useTranslation } from './i18n';
 
-/** Whether the currently-signed-in user has the Pro entitlement. */
+/** Whether the currently-signed-in user has any paid tier entitlement. */
 export function useIsPro(): boolean {
   const { user } = useAuth();
   return !!(user && (user as any).is_pro);
+}
+
+export type Tier = 'free' | 'pro' | 'pro_plus' | 'ultra';
+const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, pro_plus: 2, ultra: 3 };
+
+/** Return the highest tier active for the current user. */
+export function useTier(): Tier {
+  const { user } = useAuth();
+  const t = ((user as any)?.tier || 'free') as Tier;
+  return TIER_RANK[t] === undefined ? 'free' : t;
+}
+
+/** Check whether the user has at least a given tier. */
+export function useHasTier(min: Tier): boolean {
+  const t = useTier();
+  return TIER_RANK[t] >= TIER_RANK[min];
 }
 
 /** Wrapper that shows an overlay lock on top of its children when the user is not Pro.
@@ -71,20 +87,38 @@ export function ProUpsellModal({ open, onClose, feature }: {
             <View style={styles.mIcon}>
               <Feather name="star" size={26} color={theme.color.brand} />
             </View>
-            <View style={styles.priceBadge}>
-              <Text style={styles.priceBadgeTxt}>{t('pro.price')}</Text>
-            </View>
             <Text style={styles.mTitle}>{t('pro.upsell.title')}</Text>
             <Text style={styles.mSub}>{t('pro.upsell.sub')}</Text>
-            <ProFeatureRow icon="camera" title={t('pro.feat.photos.t')} body={t('pro.feat.photos.b')} />
-            <ProFeatureRow icon="package" title={t('pro.feat.fridge.t')} body={t('pro.feat.fridge.b')} />
-            <ProFeatureRow icon="clock" title={t('pro.feat.expiry.t')} body={t('pro.feat.expiry.b')} />
-            <ProFeatureRow icon="cloud" title={t('pro.feat.freezer.t')} body={t('pro.feat.freezer.b')} />
-            <ProFeatureRow icon="upload-cloud" title={t('pro.feat.backup.t')} body={t('pro.feat.backup.b')} />
-            <Pressable onPress={onClose} style={styles.mCta} testID="pro-upsell-cta">
-              <Feather name="star" size={16} color="#fff" />
-              <Text style={styles.mCtaTxt}>{t('pro.cta')}</Text>
-            </Pressable>
+
+            <TierCard
+              name={t('pro.tier.pro.name')} price={t('pro.tier.pro.price')} accent={theme.color.brand}
+              features={[
+                { icon: 'camera', label: t('pro.feat.photos.t') },
+                { icon: 'image', label: t('pro.feat.photos_ing.t') },
+                { icon: 'shopping-cart', label: t('pro.feat.photos_shop.t') },
+                { icon: 'award', label: t('pro.feat.symbols.t') },
+                { icon: 'tag', label: t('pro.feat.categories.t') },
+              ]}
+            />
+            <TierCard
+              name={t('pro.tier.proplus.name')} price={t('pro.tier.proplus.price')} accent={theme.color.brandSecondary}
+              features={[
+                { icon: 'clock', label: t('pro.feat.expiry.t') },
+                { icon: 'cloud-snow', label: t('pro.feat.freezer.t') },
+                { icon: 'package', label: t('pro.feat.fridge.t') },
+              ]}
+              note={t('pro.tier.includes', { plan: t('pro.tier.pro.name') })}
+            />
+            <TierCard
+              name={t('pro.tier.ultra.name')} price={t('pro.tier.ultra.price')} accent="#8B6F47"
+              features={[
+                { icon: 'cloud', label: t('pro.feat.cloud_login.t') },
+                { icon: 'upload-cloud', label: t('pro.feat.backup.t') },
+              ]}
+              note={t('pro.tier.includes', { plan: t('pro.tier.proplus.name') })}
+              badgeLabel={t('pro.tier.comingSoon')}
+            />
+
             <Pressable onPress={onClose} style={styles.mLater} testID="pro-upsell-later">
               <Text style={styles.mLaterTxt}>{t('pro.later')}</Text>
             </Pressable>
@@ -95,16 +129,32 @@ export function ProUpsellModal({ open, onClose, feature }: {
   );
 }
 
-function ProFeatureRow({ icon, title, body }: { icon: any; title: string; body: string }) {
+function TierCard({
+  name, price, accent, features, note, badgeLabel,
+}: {
+  name: string; price: string; accent: string; features: { icon: any; label: string }[];
+  note?: string; badgeLabel?: string;
+}) {
   return (
-    <View style={styles.featRow}>
-      <View style={styles.featIcon}>
-        <Feather name={icon} size={16} color={theme.color.brandPrimary} />
+    <View style={[styles.tierCard, { borderColor: accent }]}>
+      <View style={styles.tierHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.tierName, { color: accent }]}>{name}</Text>
+          <Text style={styles.tierPrice}>{price}</Text>
+        </View>
+        {badgeLabel ? (
+          <View style={[styles.tierBadge, { backgroundColor: accent }]}>
+            <Text style={styles.tierBadgeTxt}>{badgeLabel}</Text>
+          </View>
+        ) : null}
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.featT}>{title}</Text>
-        <Text style={styles.featB}>{body}</Text>
-      </View>
+      {features.map((f, i) => (
+        <View key={i} style={styles.tierFeatRow}>
+          <Feather name={f.icon} size={13} color={accent} />
+          <Text style={styles.tierFeatTxt}>{f.label}</Text>
+        </View>
+      ))}
+      {note ? <Text style={styles.tierNote}>{note}</Text> : null}
     </View>
   );
 }
@@ -164,4 +214,21 @@ const styles = StyleSheet.create({
   mCtaTxt: { color: '#fff', fontWeight: '600', fontSize: 15 },
   mLater: { alignItems: 'center', paddingVertical: 10, marginTop: 4 },
   mLaterTxt: { color: theme.color.onSurfaceTertiary, fontSize: 13 },
+  // Tier cards
+  tierCard: {
+    borderWidth: 1.5, borderRadius: theme.radius.md,
+    padding: 14, marginTop: theme.spacing.md,
+    backgroundColor: theme.color.surface,
+  },
+  tierHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  tierName: { fontFamily: theme.font.display, fontSize: 16, fontWeight: '700' },
+  tierPrice: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2, fontWeight: '600' },
+  tierBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  tierBadgeTxt: { color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  tierFeatRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 3 },
+  tierFeatTxt: { fontSize: 13, color: theme.color.onSurface, flex: 1 },
+  tierNote: {
+    fontSize: 11, color: theme.color.onSurfaceTertiary, fontStyle: 'italic',
+    marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.color.divider,
+  },
 });

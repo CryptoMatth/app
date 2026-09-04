@@ -243,6 +243,7 @@ class ImportBody(BaseModel):
 class CourseItem(BaseModel):
     id: Optional[str] = None
     label: str
+    icon: Optional[str] = None
 
 
 class IngredientCategoryItem(BaseModel):
@@ -432,13 +433,15 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     ents = user_doc.get("entitlements") or {}
     pro_ent = ents.get("pro") or {}
     is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
-    is_pro = bool(is_founder or pro_ent.get("active"))
+    tier = _get_tier(user_doc)
+    is_pro = _tier_rank(tier) >= _tier_rank("pro")
 
     return {
         "user_id": user_doc["user_id"],
         "username": user_doc.get("username") or (user_doc.get("email") or "").split("@")[0],
         "preferences": prefs,
         "is_pro": is_pro,
+        "tier": tier,
         "pro_source": "founder" if is_founder else ("admin_grant" if pro_ent.get("active") else None),
     }
 
@@ -463,16 +466,52 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     return user
 
 
-def _is_pro(user_doc: Dict[str, Any]) -> bool:
+def _tier_rank(tier: str) -> int:
+    return {"free": 0, "pro": 1, "pro_plus": 2, "ultra": 3}.get((tier or "").lower(), 0)
+
+
+def _get_tier(user_doc: Dict[str, Any]) -> str:
+    """Return the highest tier the user currently has entitlement for.
+
+    Ultra > Pro+ > Pro > Free. Founder usernames map to Ultra automatically.
+    """
     ents = user_doc.get("entitlements") or {}
-    pro_ent = ents.get("pro") or {}
     is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
-    return bool(is_founder or pro_ent.get("active"))
+    if is_founder:
+        return "ultra"
+    if (ents.get("ultra") or {}).get("active"):
+        return "ultra"
+    if (ents.get("pro_plus") or {}).get("active"):
+        return "pro_plus"
+    if (ents.get("pro") or {}).get("active"):
+        return "pro"
+    return "free"
+
+
+def _has_tier(user_doc: Dict[str, Any], min_tier: str) -> bool:
+    return _tier_rank(_get_tier(user_doc)) >= _tier_rank(min_tier)
+
+
+def _is_pro(user_doc: Dict[str, Any]) -> bool:
+    # Any paid tier counts as "pro" for legacy checks.
+    return _tier_rank(_get_tier(user_doc)) >= _tier_rank("pro")
 
 
 async def require_pro(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     if not _is_pro(user):
         raise HTTPException(status_code=402, detail="Pro subscription required")
+    return user
+
+
+async def require_pro_plus(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if not _has_tier(user, "pro_plus"):
+        raise HTTPException(status_code=402, detail="Pro+ subscription required")
+    return user
+
+
+async def require_ultra(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if not _has_tier(user, "ultra"):
+        raise HTTPException(status_code=402, detail="Ultra subscription required")
     return user
 
 
@@ -690,7 +729,7 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
                 continue
             seen_ids.add(cid)
             seen_labels.add(low)
-            cleaned.append({"id": cid, "label": label})
+            cleaned.append({"id": cid, "label": label, "icon": (c.icon or "").strip() or None})
         if not cleaned:
             raise HTTPException(422, "Nessuna categoria valida fornita")
         prefs["courses"] = cleaned
@@ -754,6 +793,48 @@ async def logout(authorization: Optional[str] = Header(None)):
         if token:
             await db.user_sessions.delete_one({"session_token": token})
     return {"ok": True}
+
+
+class DeleteAccountBody(BaseModel):
+    password: str
+    # Force-word the user must type verbatim (localized). Any non-empty value
+    # is accepted; the frontend enforces the exact wording.
+    confirm: str
+
+
+@api_router.post("/auth/delete-account")
+async def delete_account(body: DeleteAccountBody, current_user=Depends(get_current_user)):
+    """Permanent self-service account deletion.
+
+    Requires the current password (defense-in-depth against stolen sessions)
+    and a confirmation string. Wipes ALL user data across every collection.
+    """
+    user_id = current_user["user_id"]
+    if not body.confirm or len(body.confirm.strip()) < 3:
+        raise HTTPException(status_code=400, detail="confirmation_required")
+    # Re-verify password
+    user_doc = await db.users.find_one({"user_id": user_id})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    ph = user_doc.get("password_hash") or ""
+    try:
+        ok = bcrypt.checkpw(body.password.encode("utf-8"), ph.encode("utf-8"))
+    except Exception:
+        ok = False
+    if not ok:
+        raise HTTPException(status_code=401, detail="invalid_password")
+
+    # Hard-delete everything belonging to the user (mirrors admin flow).
+    removed = {
+        "dishes": (await db.dishes.delete_many({"user_id": user_id})).deleted_count,
+        "weekly_plans": (await db.weekly_plans.delete_many({"user_id": user_id})).deleted_count,
+        "shopping_items": (await db.shopping_items.delete_many({"user_id": user_id})).deleted_count,
+        "fridge_items": (await db.fridge_items.delete_many({"user_id": user_id})).deleted_count,
+        "photos": (await db.photos.delete_many({"user_id": user_id})).deleted_count if hasattr(db, "photos") else 0,
+        "user_sessions": (await db.user_sessions.delete_many({"user_id": user_id})).deleted_count,
+    }
+    await db.users.delete_one({"user_id": user_id})
+    return {"ok": True, "removed": removed}
 
 
 # -------------------- Dishes --------------------
@@ -1442,7 +1523,7 @@ async def clear_checked(
 
 # -------------------- Frigorifero (Pro feature) --------------------
 @api_router.get("/fridge")
-async def list_fridge(current_user=Depends(require_pro)):
+async def list_fridge(current_user=Depends(require_pro_plus)):
     user_id = current_user["user_id"]
     await _cleanup_expired_fridge(user_id)
     cursor = db.fridge_items.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
@@ -1451,7 +1532,7 @@ async def list_fridge(current_user=Depends(require_pro)):
 
 
 @api_router.post("/fridge")
-async def add_fridge(body: FridgeItemCreate, current_user=Depends(require_pro)):
+async def add_fridge(body: FridgeItemCreate, current_user=Depends(require_pro_plus)):
     user_id = current_user["user_id"]
     key = _fridge_key(body.name, body.unit)
     doc = {
@@ -1473,7 +1554,7 @@ async def add_fridge(body: FridgeItemCreate, current_user=Depends(require_pro)):
 
 
 @api_router.patch("/fridge/{item_id}")
-async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depends(require_pro)):
+async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depends(require_pro_plus)):
     user_id = current_user["user_id"]
     update_set: Dict[str, Any] = {}
     if body.name is not None: update_set["name"] = body.name.strip()
@@ -1505,7 +1586,7 @@ async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depen
 
 
 @api_router.delete("/fridge/{item_id}")
-async def delete_fridge(item_id: str, current_user=Depends(require_pro)):
+async def delete_fridge(item_id: str, current_user=Depends(require_pro_plus)):
     user_id = current_user["user_id"]
     result = await db.fridge_items.delete_one({"user_id": user_id, "id": item_id})
     if result.deleted_count == 0:

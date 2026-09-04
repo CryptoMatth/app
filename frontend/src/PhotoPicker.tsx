@@ -266,13 +266,18 @@ export function PhotoThumb({
   size = 44,
   rounded = false,
   fallbackIcon = 'image',
-}: { path?: string | null; size?: number; rounded?: boolean; fallbackIcon?: any }) {
+  fallbackEmoji,
+}: { path?: string | null; size?: number; rounded?: boolean; fallbackIcon?: any; fallbackEmoji?: string }) {
   const { uri, headers } = usePhotoUrl(path);
   const borderRadius = rounded ? size / 2 : theme.radius.sm;
   if (!path) {
     return (
       <View style={[styles.thumbFallback, { width: size, height: size, borderRadius }]}>
-        <Feather name={fallbackIcon} size={size / 2.4} color={theme.color.onSurfaceTertiary} />
+        {fallbackEmoji ? (
+          <Text style={{ fontSize: size * 0.55 }}>{fallbackEmoji}</Text>
+        ) : (
+          <Feather name={fallbackIcon} size={size / 2.4} color={theme.color.onSurfaceTertiary} />
+        )}
       </View>
     );
   }

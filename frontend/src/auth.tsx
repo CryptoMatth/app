@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, clearToken, setToken, getToken } from './api';
 
-export type Course = { id: string; label: string };
+export type Course = { id: string; label: string; icon?: string | null };
 export type IngredientCategory = { id: string; label: string; icon?: string | null; color?: string | null };
 export type PlannerSpan = 'weekly' | 'biweekly';
 export type Lang = 'it' | 'en';

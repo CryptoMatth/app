@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Modal, TextInput, Keyboard } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Modal, TextInput, Keyboard, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Feather from '@react-native-vector-icons/feather';
@@ -9,15 +9,17 @@ import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { PasswordInput } from '@/src/PasswordInput';
 import { useTranslation } from '@/src/i18n';
+import { api } from '@/src/api';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
 export default function AccountSettings() {
   const router = useRouter();
-  const { user, updateUsername, updatePassword } = useAuth();
+  const { user, updateUsername, updatePassword, logout } = useAuth();
   const { t } = useTranslation();
   const [editUsernameOpen, setEditUsernameOpen] = useState(false);
   const [editPasswordOpen, setEditPasswordOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
 
   useEffect(() => {
@@ -83,6 +85,19 @@ export default function AccountSettings() {
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
 
+        {/* Danger zone: delete account */}
+        <Text style={dangerStyles.zoneLabel}>{t('account.dangerZone')}</Text>
+        <Pressable onPress={() => setDeleteOpen(true)} style={dangerStyles.dangerRow} testID="btn-delete-account">
+          <View style={[s.actionIcon, { backgroundColor: '#FEF2F0' }]}>
+            <Feather name="trash-2" size={18} color={theme.color.error} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.actionTitle, { color: theme.color.error }]}>{t('account.delete.title')}</Text>
+            <Text style={s.actionSub}>{t('account.delete.sub')}</Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
+        </Pressable>
+
         {msg ? (
           <View style={[s.msgBox, msg.kind === 'err' ? s.msgErr : s.msgOk]} testID="account-msg">
             <Feather name={msg.kind === 'err' ? 'alert-circle' : 'check-circle'} size={16}
@@ -109,6 +124,16 @@ export default function AccountSettings() {
           await updatePassword(oldPw, newPw);
           setEditPasswordOpen(false);
           setMsg({ kind: 'ok', text: t('account.passwordUpdated') });
+        }}
+      />
+      <DeleteAccountModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirmed={async () => {
+          setDeleteOpen(false);
+          // Server has already wiped everything — force logout so the auth
+          // context clears and the user lands back on the login screen.
+          await logout();
         }}
       />
     </SafeAreaView>
@@ -230,3 +255,112 @@ function ChangePasswordModal({ open, onClose, onSave }: {
     </Modal>
   );
 }
+
+function DeleteAccountModal({ open, onClose, onConfirmed }: {
+  open: boolean;
+  onClose: () => void;
+  onConfirmed: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [pw, setPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const expectedConfirm = t('account.delete.confirmWord');
+
+  useEffect(() => { if (open) { setPw(''); setConfirm(''); setErr(''); } }, [open]);
+
+  const submit = async () => {
+    Keyboard.dismiss(); setErr('');
+    if (!pw) { setErr(t('account.delete.errors.password')); return; }
+    if (confirm.trim().toUpperCase() !== expectedConfirm.toUpperCase()) {
+      setErr(t('account.delete.errors.confirm', { word: expectedConfirm }));
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.deleteAccount(pw, confirm.trim());
+      await onConfirmed();
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.includes('invalid_password')) setErr(t('account.delete.errors.wrongPassword'));
+      else setErr(msg || t('common.error'));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
+      <View style={s.overlay}>
+        <View style={s.modalCard} testID="delete-account-modal">
+          <View style={dangerStyles.iconCircle}>
+            <Feather name="alert-triangle" size={22} color={theme.color.error} />
+          </View>
+          <Text style={[s.modalH, { color: theme.color.error }]}>{t('account.delete.title')}</Text>
+          <Text style={s.modalP}>{t('account.delete.body')}</Text>
+          <View style={dangerStyles.warnBox}>
+            <Feather name="info" size={14} color={theme.color.error} />
+            <Text style={dangerStyles.warnTxt}>{t('account.delete.irreversible')}</Text>
+          </View>
+          <PasswordInput
+            testID="delete-account-password"
+            placeholder={t('account.delete.pwPh')}
+            value={pw}
+            onChangeText={setPw}
+            style={s.input}
+            toggleTestID="delete-account-password-toggle"
+          />
+          <TextInput
+            testID="delete-account-confirm"
+            placeholder={t('account.delete.confirmPh', { word: expectedConfirm })}
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            value={confirm}
+            onChangeText={setConfirm}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={s.input}
+          />
+          {err ? <Text style={s.err} testID="delete-account-error">{err}</Text> : null}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.sm }}>
+            <Pressable onPress={onClose} style={s.btnGhost} disabled={busy} testID="delete-account-cancel">
+              <Text style={s.btnGhostTxt}>{t('common.cancel')}</Text>
+            </Pressable>
+            <Pressable onPress={submit} style={dangerStyles.btnDelete} disabled={busy} testID="delete-account-confirm-btn">
+              {busy ? <ActivityIndicator color="#fff" /> : (
+                <Text style={s.btnDangerTxt}>{t('account.delete.deleteBtn')}</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const dangerStyles = StyleSheet.create({
+  zoneLabel: {
+    fontSize: 11, fontWeight: '700', color: theme.color.onSurfaceTertiary,
+    letterSpacing: 0.6, marginTop: theme.spacing.xl, marginBottom: 6, textTransform: 'uppercase',
+  },
+  dangerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: '#F5C7C0', backgroundColor: '#FEF9F8',
+  },
+  iconCircle: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F0',
+    alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md,
+  },
+  warnBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    marginTop: 6, marginBottom: theme.spacing.md,
+    padding: 10, borderRadius: theme.radius.sm,
+    backgroundColor: '#FEF2F0',
+  },
+  warnTxt: { flex: 1, fontSize: 12, color: theme.color.error, lineHeight: 17 },
+  btnDelete: {
+    flex: 1, height: 46, borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.error,
+    alignItems: 'center', justifyContent: 'center',
+  },
+});

@@ -69,6 +69,21 @@ export default function SettingsHome() {
       ],
     },
     {
+      title: t('settings.section.plans'),
+      rows: [
+        {
+          key: 'plans',
+          href: '/settings/plans',
+          icon: 'award',
+          bg: '#F5E8D8',
+          color: theme.color.brand,
+          title: t('settings.plans.title'),
+          sub: t('settings.plans.sub'),
+          testID: 'nav-plans',
+        },
+      ],
+    },
+    {
       title: t('settings.section.guide'),
       rows: [
         {
