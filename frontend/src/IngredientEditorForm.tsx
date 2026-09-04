@@ -17,7 +17,7 @@ import { useAuth } from './auth';
 import { useTranslation } from './i18n';
 import { PhotoPicker } from './PhotoPicker';
 
-export const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'q.b.'];
+export const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'cucchiaino', 'tazza', 'q.b.'];
 
 export type IngredientDraft = {
   name: string;
@@ -51,6 +51,7 @@ export function IngredientEditorForm({
   const { prefs } = useAuth();
   const { t, tCat } = useTranslation();
   const cats = prefs.ingredient_categories;
+  const [unitPickerOpen, setUnitPickerOpen] = useState(false);
   const patch = (p: Partial<IngredientDraft>) => onChange({ ...value, ...p });
 
   return (
@@ -73,7 +74,7 @@ export function IngredientEditorForm({
       />
 
       <Text style={styles.label}>{quantityLabel || t('spesa.qty') + (quantitySuffix ? ` ${quantitySuffix}` : '')}</Text>
-      <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
         <TextInput
           testID={`${testIDPrefix}-qty`}
           placeholder={t('spesa.qty')}
@@ -81,24 +82,47 @@ export function IngredientEditorForm({
           value={value.quantity}
           onChangeText={(text) => patch({ quantity: text })}
           keyboardType="numeric"
-          style={[styles.input, { flex: 1 }]}
+          style={[styles.input, styles.qtyInput]}
         />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitRow}>
-          {UNITS.map(u => {
-            const active = value.unit === u;
-            return (
-              <Pressable
-                key={u}
-                testID={`${testIDPrefix}-unit-${u}`}
-                onPress={() => patch({ unit: u })}
-                style={[styles.unitBtn, active && styles.unitBtnOn]}
-              >
-                <Text style={[styles.unitTxt, active && styles.unitTxtOn]}>{u}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <Pressable
+          testID={`${testIDPrefix}-unit-picker`}
+          onPress={() => { Haptics.selectionAsync(); setUnitPickerOpen(true); }}
+          style={styles.unitPickBtn}
+        >
+          <Text style={styles.unitPickTxt}>{value.unit}</Text>
+          <Feather name="chevron-down" size={16} color={theme.color.onSurfaceSecondary} />
+        </Pressable>
       </View>
+
+      <Modal
+        transparent
+        visible={unitPickerOpen}
+        animationType="fade"
+        onRequestClose={() => setUnitPickerOpen(false)}
+      >
+        <Pressable style={styles.unitOverlay} onPress={() => setUnitPickerOpen(false)}>
+          <Pressable style={styles.unitSheet} onPress={e => e.stopPropagation?.()}>
+            <View style={styles.unitSheetHandle} />
+            <Text style={styles.unitSheetTitle}>{t('common.unit')}</Text>
+            <ScrollView style={{ maxHeight: 340 }}>
+              {UNITS.map(u => {
+                const active = value.unit === u;
+                return (
+                  <Pressable
+                    key={u}
+                    testID={`${testIDPrefix}-unit-${u}`}
+                    onPress={() => { patch({ unit: u }); setUnitPickerOpen(false); Haptics.selectionAsync(); }}
+                    style={[styles.unitOption, active && styles.unitOptionOn]}
+                  >
+                    <Text style={[styles.unitOptionTxt, active && styles.unitOptionTxtOn]}>{u}</Text>
+                    {active && <Feather name="check" size={18} color={theme.color.brandPrimary} />}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {showNotes && (
         <>
@@ -154,10 +178,11 @@ export function IngredientEditorModal({
   const [draft, setDraft] = useState<IngredientDraft>(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [confirmDel, setConfirmDel] = useState(false);
 
   // Reset when the modal opens
   useMemo(() => {
-    if (open) { setDraft(initial); setErr(''); }
+    if (open) { setDraft(initial); setErr(''); setConfirmDel(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -183,7 +208,7 @@ export function IngredientEditorModal({
           </Pressable>
           <Text style={mStyles.hTitle}>{t('piatti.ingredientEditor')}</Text>
           {onDelete ? (
-            <Pressable onPress={onDelete} style={mStyles.hBtn} testID="ing-editor-delete">
+            <Pressable onPress={() => setConfirmDel(true)} style={mStyles.hBtn} testID="ing-editor-delete">
               <Feather name="trash-2" size={20} color={theme.color.error} />
             </Pressable>
           ) : <View style={mStyles.hBtn} />}
@@ -202,6 +227,31 @@ export function IngredientEditorModal({
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={mStyles.saveTxt}>{t('common.save')}</Text>}
           </Pressable>
         </View>
+
+        {/* Delete confirmation */}
+        <Modal transparent visible={confirmDel} animationType="fade" onRequestClose={() => setConfirmDel(false)}>
+          <View style={mStyles.overlay}>
+            <View style={mStyles.confirmCard} testID="ing-delete-confirm">
+              <View style={mStyles.confirmIcon}>
+                <Feather name="alert-triangle" size={22} color={theme.color.error} />
+              </View>
+              <Text style={mStyles.confirmH}>{t('piatti.ingDelete.title', { name: draft.name || t('piatti.ingredientNamePlaceholder') })}</Text>
+              <Text style={mStyles.confirmP}>{t('piatti.ingDelete.body')}</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+                <Pressable onPress={() => setConfirmDel(false)} style={mStyles.btnGhost} testID="ing-delete-cancel">
+                  <Text style={mStyles.btnGhostTxt}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { setConfirmDel(false); onDelete?.(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); }}
+                  style={mStyles.btnDanger}
+                  testID="ing-delete-confirm-btn"
+                >
+                  <Text style={mStyles.btnDangerTxt}>{t('common.delete')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -215,11 +265,32 @@ const styles = StyleSheet.create({
     color: theme.color.onSurface, fontSize: 15,
   },
   textarea: { minHeight: 90, textAlignVertical: 'top' },
-  unitRow: { flexDirection: 'row', gap: 4, alignItems: 'center' },
-  unitBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: theme.radius.sm, minWidth: 34, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
-  unitBtnOn: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
-  unitTxt: { fontSize: 12, color: theme.color.onSurfaceSecondary },
-  unitTxtOn: { color: theme.color.brandPrimary, fontWeight: '600' },
+  qtyInput: { flex: 1, textAlign: 'left', fontSize: 18, fontWeight: '600', letterSpacing: 0.3 },
+  unitPickBtn: {
+    minWidth: 92, paddingHorizontal: 12, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
+    backgroundColor: theme.color.surfaceSecondary,
+  },
+  unitPickTxt: { fontSize: 15, color: theme.color.onSurface, fontWeight: '600' },
+  unitOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.4)', justifyContent: 'flex-end' },
+  unitSheet: {
+    backgroundColor: theme.color.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: theme.spacing.md, paddingBottom: theme.spacing.xl,
+  },
+  unitSheetHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: theme.color.border,
+    alignSelf: 'center', marginBottom: 8,
+  },
+  unitSheetTitle: { fontFamily: theme.font.display, fontSize: 16, color: theme.color.onSurface, textAlign: 'center', marginBottom: 8 },
+  unitOption: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 12,
+    borderBottomWidth: 1, borderBottomColor: theme.color.divider,
+  },
+  unitOptionOn: { backgroundColor: theme.color.brandTertiary, borderRadius: theme.radius.md },
+  unitOptionTxt: { fontSize: 16, color: theme.color.onSurface },
+  unitOptionTxtOn: { color: theme.color.brandPrimary, fontWeight: '700' },
   catRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
   catChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -241,4 +312,13 @@ const mStyles = StyleSheet.create({
   footer: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.color.divider, backgroundColor: theme.color.surface },
   saveBtn: { height: 52, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   saveTxt: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  overlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  confirmCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
+  confirmIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F5E0DC', alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },
+  confirmH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
+  confirmP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },
+  btnGhost: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
+  btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
+  btnDanger: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.error, alignItems: 'center', justifyContent: 'center' },
+  btnDangerTxt: { color: '#fff', fontWeight: '600' },
 });

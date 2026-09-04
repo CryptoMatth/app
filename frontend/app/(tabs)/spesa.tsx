@@ -157,10 +157,10 @@ export default function Spesa() {
     try { await api.reorderShopping(newList.map(i => i.id)); } catch {}
   };
 
-  const clearBought = async () => {
+  const clearBought = async (toFridge: boolean) => {
     setClearing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try { await api.clearChecked(); await load(); } catch {}
+    try { await api.clearChecked(toFridge); await load(); } catch {}
     setClearing(false);
     setConfirmClearBought(false);
   };
@@ -334,9 +334,39 @@ export default function Spesa() {
             </View>
             <Text style={styles.modalH}>{t('spesa.clearConfirm.title', { n: boughtCount })}</Text>
             <Text style={styles.modalP}>
-              {isPro ? t('spesa.clearConfirm.bodyPro') : t('spesa.clearConfirm.body')}
+              {isPro ? t('spesa.clearConfirm.bodyChoice') : t('spesa.clearConfirm.body')}
             </Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+            <View style={{ gap: 8, marginTop: theme.spacing.md }}>
+              {isPro && (
+                <Pressable
+                  onPress={() => clearBought(true)}
+                  style={styles.btnPrim}
+                  testID="confirm-clear-to-fridge"
+                  disabled={clearing}
+                >
+                  {clearing ? <ActivityIndicator color="#fff" /> : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Feather name="package" size={16} color="#fff" />
+                      <Text style={styles.btnDangerTxt}>{t('spesa.clearConfirm.toFridge')}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )}
+              <Pressable
+                onPress={() => clearBought(false)}
+                style={styles.btnDanger}
+                testID="confirm-clear-delete"
+                disabled={clearing}
+              >
+                {clearing ? <ActivityIndicator color="#fff" /> : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Feather name="trash-2" size={16} color="#fff" />
+                    <Text style={styles.btnDangerTxt}>
+                      {isPro ? t('spesa.clearConfirm.deleteOnly') : t('common.remove')}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
               <Pressable
                 onPress={() => setConfirmClearBought(false)}
                 style={styles.btnGhost}
@@ -344,14 +374,6 @@ export default function Spesa() {
                 disabled={clearing}
               >
                 <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
-              </Pressable>
-              <Pressable
-                onPress={clearBought}
-                style={styles.btnDanger}
-                testID="confirm-clear-confirm"
-                disabled={clearing}
-              >
-                {clearing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('common.remove')}</Text>}
               </Pressable>
             </View>
           </View>
@@ -453,6 +475,7 @@ const styles = StyleSheet.create({
   btnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
   btnDanger: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.error, alignItems: 'center', justifyContent: 'center' },
   btnDangerTxt: { color: '#fff', fontWeight: '600' },
+  btnPrim: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
   modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
   modalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.color.brandTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },

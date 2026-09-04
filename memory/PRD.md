@@ -105,7 +105,16 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - ~~Endpoint AI rimosso su richiesta utente~~ (consumava credit balance Emergent Universal Key)
 - Feature completamente rimossa: nessun endpoint backend, nessuna schermata, nessuna stringa i18n `ai.*`
 
-## Pro plan (giu 2026)
+## Bugfix Batch (giu 2026)
+- **B1 Unit picker**: unità di misura ora in bottom sheet modal invece che chip orizzontali (troppi valori). Quantità mostrata in font 18pt bold. Aggiunta `cucchiaino` e `tazza` all'elenco unità.
+- **B2 Rename categoria**: `translateDefaultLabel` ora rispetta il label custom dell'utente — se differisce dal default IT, mostra quello. Prima veniva sovrascritto dalla traduzione.
+- **B3 Update piatto ↛ auto-add spesa**: `PUT /dishes/{id}` ora chiama `_add_dish_to_shopping(only_update_existing=True)` — propaga modifiche solo se l'ingrediente è GIÀ nella spesa, non aggiunge ingredienti nuovi.
+- **B4 Conferma delete ingrediente**: modale `IngredientEditorModal` ora chiede conferma prima di eliminare l'ingrediente dal piatto.
+- **A1 Icone corso**: nuovo helper `iconForCourse(courseId, label)` mappa `primo→align-justify`, `secondo→award`, `contorno→feather`, `dolce→gift`, con fallback intelligenti su label EN/IT. La foto piatto se caricata sostituisce comunque l'icona.
+- **A2 Rimuovi presi → scelta**: modale ora ha 3 pulsanti: `Sposta nel Frigorifero` / `Elimina soltanto` / Annulla. Backend `POST /shopping/clear-checked?to_fridge=true|false`.
+- **A3 Planner sync spesa**: modifica `PUT /planner/slot` accetta `sync_shopping: boolean` (default true). Frontend `planner-slot.tsx` mostra un prompt "Aggiornare la lista Spesa?" al Salva se i piatti sono cambiati. Se non ci sono modifiche, salta il prompt.
+- **A4 Lightbox foto**: tap su qualsiasi foto (piatti, ingredienti, spesa, frigo) apre modale a schermo intero con pulsanti `Cambia foto` + `Rimuovi`. Nuovo componente `PhotoLightboxThumb` per uso read-only.
+- **Tutorial aggiornato**: slide s3 e s4 riflettono i nuovi prompt (Planner e Rimuovi presi). Traduzioni EN aggiornate simmetricamente.
 - Prezzo comunicato: **2€ una tantum** (non ricorrente)
 - Feature Pro elencate ovunque: Foto piatti/ingredienti, Frigorifero, Notifiche scadenza, Alert surgelati, Backup Google Drive
 - **Settings hub** mostra card Pro-status in cima: "Sei un utente Pro ⭐" (Pro) o "Versione Free · Passa a Pro (2€)" cliccabile (Free)

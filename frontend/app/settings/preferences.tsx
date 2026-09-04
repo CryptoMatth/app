@@ -65,26 +65,35 @@ export default function PreferencesSettings() {
   }, [msg]);
 
   const dirty = useMemo(() => {
-    if (weekStart !== prefs.week_start_day) return true;
-    if (span !== prefs.planner_span) return true;
-    if (language !== prefs.language) return true;
-    if (courses.length !== prefs.courses.length) return true;
-    for (let i = 0; i < courses.length; i++) {
-      if (courses[i].label !== prefs.courses[i]?.label) return true;
-      if (courses[i].id !== prefs.courses[i]?.id) return true;
-    }
-    if (ingCats.length !== prefs.ingredient_categories.length) return true;
-    for (let i = 0; i < ingCats.length; i++) {
-      if (ingCats[i].label !== prefs.ingredient_categories[i]?.label) return true;
-      if (ingCats[i].id !== prefs.ingredient_categories[i]?.id) return true;
-      if ((ingCats[i].icon || '') !== (prefs.ingredient_categories[i]?.icon || '')) return true;
-    }
-    const pn = prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true };
-    if (notif.enabled !== pn.enabled) return true;
-    if (notif.expiry_days_ahead !== pn.expiry_days_ahead) return true;
-    if (notif.notify_hour !== pn.notify_hour) return true;
-    if (notif.freezer_enabled !== pn.freezer_enabled) return true;
-    return false;
+    // Deep JSON compare against server-side prefs — resilient to future
+    // schema tweaks (e.g. renamed icon field) and covers every editable knob.
+    const current = {
+      week_start_day: weekStart,
+      planner_span: span,
+      language,
+      courses: courses.map(c => ({ id: c.id || '', label: c.label })),
+      ingredient_categories: ingCats.map(c => ({
+        id: c.id || '',
+        label: c.label,
+        icon: c.icon || null,
+        color: c.color || null,
+      })),
+      notifications: notif,
+    };
+    const original = {
+      week_start_day: prefs.week_start_day,
+      planner_span: prefs.planner_span,
+      language: prefs.language,
+      courses: (prefs.courses || []).map(c => ({ id: c.id || '', label: c.label })),
+      ingredient_categories: (prefs.ingredient_categories || []).map(c => ({
+        id: c.id || '',
+        label: c.label,
+        icon: c.icon || null,
+        color: c.color || null,
+      })),
+      notifications: prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true },
+    };
+    return JSON.stringify(current) !== JSON.stringify(original);
   }, [weekStart, span, language, courses, ingCats, notif, prefs]);
 
   const save = async () => {

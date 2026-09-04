@@ -11,7 +11,7 @@ import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
-import { PhotoPicker, PhotoThumb } from '@/src/PhotoPicker';
+import { PhotoPicker, PhotoLightboxThumb } from '@/src/PhotoPicker';
 import { IngredientEditorModal, type IngredientDraft } from '@/src/IngredientEditorForm';
 
 type Ing = IngredientDraft;
@@ -213,7 +213,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
                 style={styles.ingRow}
                 testID={`ing-row-${i}`}
               >
-                <PhotoThumb path={ing.photo_path} size={40} rounded fallbackIcon="package" />
+                <PhotoLightboxThumb path={ing.photo_path} size={40} rounded fallbackIcon="package" testID={`ing-thumb-${i}`} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.ingName} numberOfLines={1}>
                     {ing.name || t('piatti.ingredientNamePlaceholder')}

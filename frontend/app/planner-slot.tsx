@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, FlatList,
+  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, FlatList, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -39,6 +39,26 @@ export default function PlannerSlot() {
   const [tab, setTab] = useState<string>(courses[0]?.id || 'primo');
   const [q, setQ] = useState('');
   const [saving, setSaving] = useState(false);
+  // Ask user whether to propagate slot changes to the shopping list.
+  const [askShopping, setAskShopping] = useState(false);
+
+  // Snapshot of the items that were in the slot when it was opened.
+  // Used to detect whether saving would change the shopping list.
+  const initialSnapshot = useMemo(() => {
+    try { return initialItems ? JSON.parse(initialItems as string) as Item[] : []; }
+    catch { return []; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const shoppingWouldChange = useMemo(() => {
+    // Build a canonical key per item ("dish|persons") and compare sets.
+    const key = (it: Item) => `${it.dish_id}|${it.persons || 1}`;
+    const a = new Set(initialSnapshot.map(key));
+    const b = new Set(items.map(key));
+    if (a.size !== b.size) return true;
+    for (const k of a) if (!b.has(k)) return true;
+    return false;
+  }, [initialSnapshot, items]);
 
   useEffect(() => {
     (async () => {
@@ -89,7 +109,7 @@ export default function PlannerSlot() {
     ));
   };
 
-  const save = async () => {
+  const save = async (syncShopping: boolean) => {
     setSaving(true);
     try {
       await api.updateSlot({
@@ -97,11 +117,20 @@ export default function PlannerSlot() {
         day_index: parseInt(dayIndex as string),
         meal,
         items: items.map(it => ({ dish_id: it.dish_id, persons: it.persons })),
+        sync_shopping: syncShopping,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch {}
     setSaving(false);
+    setAskShopping(false);
+  };
+
+  const onSavePress = () => {
+    // If the slot content didn't change vs. what it was when opened, just save
+    // without asking — shopping list is a no-op either way.
+    if (!shoppingWouldChange) { save(true); return; }
+    setAskShopping(true);
   };
 
   const usedIds = useMemo(() => new Set(items.map(i => i.dish_id)), [items]);
@@ -256,7 +285,7 @@ export default function PlannerSlot() {
           </Pressable>
         ) : null}
         <Pressable
-          onPress={save}
+          onPress={onSavePress}
           disabled={saving}
           style={styles.saveBtn}
           testID="slot-save"
@@ -268,6 +297,37 @@ export default function PlannerSlot() {
           )}
         </Pressable>
       </View>
+
+      {/* Sync-shopping prompt */}
+      <Modal
+        transparent
+        visible={askShopping}
+        animationType="fade"
+        onRequestClose={() => setAskShopping(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard} testID="slot-sync-shopping-modal">
+            <View style={styles.modalIcon}>
+              <Feather name="shopping-cart" size={22} color={theme.color.brand} />
+            </View>
+            <Text style={styles.modalH}>{t('planner.slot.syncTitle')}</Text>
+            <Text style={styles.modalP}>{t('planner.slot.syncBody')}</Text>
+            <View style={{ gap: 8, marginTop: theme.spacing.md }}>
+              <Pressable onPress={() => save(true)} style={styles.mBtnPrim} testID="slot-sync-yes" disabled={saving}>
+                {saving ? <ActivityIndicator color="#fff" /> : (
+                  <Text style={styles.mBtnPrimTxt}>{t('planner.slot.syncYes')}</Text>
+                )}
+              </Pressable>
+              <Pressable onPress={() => save(false)} style={styles.mBtnGhost} testID="slot-sync-no" disabled={saving}>
+                <Text style={styles.mBtnGhostTxt}>{t('planner.slot.syncNo')}</Text>
+              </Pressable>
+              <Pressable onPress={() => setAskShopping(false)} style={styles.mBtnCancel} testID="slot-sync-cancel" disabled={saving}>
+                <Text style={styles.mBtnCancelTxt}>{t('common.cancel')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -346,4 +406,15 @@ const styles = StyleSheet.create({
   clearTxt: { color: theme.color.error, fontWeight: '500' },
   saveBtn: { flex: 1, height: 52, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   saveTxt: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
+  modalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#F5E8D8', alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },
+  modalH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
+  modalP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },
+  mBtnPrim: { height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  mBtnPrimTxt: { color: '#fff', fontWeight: '600' },
+  mBtnGhost: { height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.color.border },
+  mBtnGhostTxt: { color: theme.color.onSurface, fontWeight: '500' },
+  mBtnCancel: { height: 40, alignItems: 'center', justifyContent: 'center' },
+  mBtnCancelTxt: { color: theme.color.onSurfaceTertiary, fontSize: 13 },
 });

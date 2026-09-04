@@ -223,6 +223,10 @@ class PlannerSlotUpdate(BaseModel):
     # Legacy single-dish form (still supported for old clients):
     dish_id: Optional[str] = None
     persons: int = 1
+    # Whether the update should propagate changes to the shopping list.
+    # Default True for back-compat. Set False to only update the planner
+    # visually and leave the shopping list untouched.
+    sync_shopping: bool = True
 
 
 class SessionBody(BaseModel):
@@ -873,12 +877,14 @@ async def update_dish(dish_id: str, body: DishCreate, current_user=Depends(get_c
                         if it.get("dish_id") == dish_id:
                             persons = int(it.get("persons") or 1)
                             await _remove_dish_source_from_shopping(user_id, week_start, day_index, meal, dish_id)
-                            await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons)
+                            await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons,
+                                                        only_update_existing=True)
                 # Legacy single-item form
                 elif slot.get("dish_id") == dish_id:
                     persons = int(slot.get("persons") or 1)
                     await _remove_dish_source_from_shopping(user_id, week_start, day_index, meal, dish_id)
-                    await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons)
+                    await _add_dish_to_shopping(user_id, week_start, day_index, meal, updated_dish, persons,
+                                                only_update_existing=True)
 
     d = await db.dishes.find_one({"id": dish_id}, {"_id": 0})
     return d
@@ -916,8 +922,16 @@ def _norm_name(name: str, unit: str) -> str:
 
 
 async def _add_dish_to_shopping(user_id: str, week_start: str, day_index: int, meal: str,
-                                 dish: Dict[str, Any], persons: int):
-    """Add scaled ingredients from a dish to the shopping list."""
+                                 dish: Dict[str, Any], persons: int,
+                                 only_update_existing: bool = False):
+    """Add scaled ingredients from a dish to the shopping list.
+
+    When `only_update_existing` is True, ingredients that do NOT already have a
+    matching shopping_items row are skipped instead of being inserted. This is
+    used when a dish is *edited* and the caller wants to propagate quantity
+    changes to items already on the shopping list, without silently adding
+    freshly-introduced ingredients to it.
+    """
     base_servings = max(1, dish.get("servings", 1))
     multiplier = persons / base_servings
     for ing in dish.get("ingredients", []):
@@ -945,6 +959,9 @@ async def _add_dish_to_shopping(user_id: str, week_start: str, day_index: int, m
                 {"$set": set_fields},
             )
         else:
+            if only_update_existing:
+                # Caller opted out of inserting new rows — silently skip.
+                continue
             # find max order
             last = await db.shopping_items.find_one({"user_id": user_id}, {"_id": 0}, sort=[("order", -1)])
             next_order = (last["order"] + 1) if last else 0
@@ -1103,7 +1120,8 @@ async def update_slot(body: PlannerSlotUpdate, current_user=Depends(get_current_
         await db.weekly_plans.insert_one(dict(plan))
 
     # Always clear existing shopping contributions of that slot (whatever shape it had)
-    if plan.get("slots", {}).get(slot_key):
+    # Skip when the client explicitly opted out of shopping propagation.
+    if body.sync_shopping and plan.get("slots", {}).get(slot_key):
         await _remove_planner_source_from_shopping(user_id, body.week_start, body.day_index, body.meal)
 
     if new_items:
@@ -1120,7 +1138,8 @@ async def update_slot(body: PlannerSlotUpdate, current_user=Depends(get_current_
                 "course": dish.get("course", ""),
                 "persons": it["persons"],
             })
-            await _add_dish_to_shopping(user_id, body.week_start, body.day_index, body.meal, dish, it["persons"])
+            if body.sync_shopping:
+                await _add_dish_to_shopping(user_id, body.week_start, body.day_index, body.meal, dish, it["persons"])
         if not resolved_items:
             # All requested dishes missing → unset slot
             await db.weekly_plans.update_one(
@@ -1365,15 +1384,20 @@ async def _cleanup_expired_fridge(user_id: str) -> int:
 
 
 @api_router.post("/shopping/clear-checked")
-async def clear_checked(current_user=Depends(get_current_user)):
+async def clear_checked(
+    to_fridge: bool = True,
+    current_user=Depends(get_current_user),
+):
     """Mark ALL checked shopping items as bought.
-    For Pro users the items are moved to the Frigorifero (fridge) collection
-    instead of being deleted, so expirations can be tracked.
-    For non-Pro users the historical behavior is preserved (delete only).
+
+    Query params:
+    - `to_fridge` (default True): when True AND the user is Pro, checked items
+      are migrated to the Frigorifero (fridge) so expirations can be tracked.
+      When False (or the user is not Pro), items are simply deleted.
     """
     user_id = current_user["user_id"]
     is_pro = _is_pro(current_user)
-    if is_pro:
+    if is_pro and to_fridge:
         # Move each checked shopping item to fridge_items (merge by name+unit key).
         cursor = db.shopping_items.find({"user_id": user_id, "checked": True}, {"_id": 0})
         checked_items = await cursor.to_list(length=None)
@@ -1411,7 +1435,7 @@ async def clear_checked(current_user=Depends(get_current_user)):
         await _cleanup_expired_fridge(user_id)
         await db.shopping_items.delete_many({"user_id": user_id, "checked": True})
         return {"ok": True, "moved_to_fridge": moved}
-    # Free tier: legacy behavior — just delete
+    # Delete-only path (Free tier OR Pro user chose "delete only"):
     result = await db.shopping_items.delete_many({"user_id": user_id, "checked": True})
     return {"ok": True, "moved_to_fridge": 0, "deleted": result.deleted_count}
 

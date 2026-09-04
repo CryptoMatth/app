@@ -12,6 +12,7 @@ import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
+import { iconForCourse } from '@/src/courseIcons';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[]; preparation: string; servings: number };
 
@@ -123,13 +124,16 @@ export default function Piatti() {
           contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 120 }}
           ListHeaderComponent={null}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.color.brandPrimary} />}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const courseObj = courses.find(c => c.id === item.course);
+            const fallbackIcon = iconForCourse(item.course, courseObj?.label);
+            return (
             <Pressable
               testID={`dish-card-${item.id}`}
               onPress={() => router.push(`/dish/${item.id}`)}
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]}
             >
-              <PhotoThumb path={(item as any).photo_path} size={48} rounded fallbackIcon="coffee" />
+              <PhotoThumb path={(item as any).photo_path} size={48} rounded fallbackIcon={fallbackIcon} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <Text style={styles.cardMeta}>
@@ -138,7 +142,8 @@ export default function Piatti() {
               </View>
               <Feather name="chevron-right" size={22} color={theme.color.onSurfaceTertiary} />
             </Pressable>
-          )}
+            );
+          }}
           ItemSeparatorComponent={() => <View style={{ height: theme.spacing.sm }} />}
         />
       )}

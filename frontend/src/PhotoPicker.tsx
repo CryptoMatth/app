@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, Image, Pressable, ActivityIndicator, StyleSheet, Alert, Platform, Linking,
+  View, Text, Image, Pressable, ActivityIndicator, StyleSheet, Alert, Platform, Linking, Modal, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
@@ -66,6 +66,7 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
   const isPro = useIsPro();
   const [busy, setBusy] = useState(false);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const { uri, headers } = usePhotoUrl(value);
 
   const pick = useCallback(async () => {
@@ -111,14 +112,24 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
 
   const remove = useCallback(() => {
     onChange(null);
+    setLightboxOpen(false);
   }, [onChange]);
 
+  const onThumbPress = useCallback(() => {
+    // With no photo yet → open picker (existing behavior).
+    // With photo present → open lightbox so users can inspect / replace / remove.
+    if (!value) { pick(); return; }
+    setLightboxOpen(true);
+  }, [value, pick]);
+
   const borderRadius = rounded ? size / 2 : theme.radius.md;
+  const win = Dimensions.get('window');
+  const boxSize = Math.min(win.width, win.height) * 0.86;
 
   return (
     <View style={{ alignItems: 'center' }}>
       <Pressable
-        onPress={pick}
+        onPress={onThumbPress}
         disabled={busy}
         style={[
           styles.wrap,
@@ -155,7 +166,97 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
         </Pressable>
       ) : null}
       <ProUpsellModal open={upsellOpen} onClose={() => setUpsellOpen(false)} feature="photos" />
+
+      {/* Lightbox */}
+      <Modal
+        visible={lightboxOpen && !!uri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxOpen(false)}
+      >
+        <Pressable style={lbStyles.overlay} onPress={() => setLightboxOpen(false)}>
+          <Pressable onPress={e => e.stopPropagation?.()} style={lbStyles.card}>
+            <Pressable style={lbStyles.closeBtn} onPress={() => setLightboxOpen(false)} testID={`${testID}-lightbox-close`}>
+              <Feather name="x" size={22} color="#fff" />
+            </Pressable>
+            {uri ? (
+              <Image
+                source={{ uri, headers }}
+                style={{ width: boxSize, height: boxSize, borderRadius: theme.radius.lg }}
+                resizeMode="contain"
+              />
+            ) : null}
+            <View style={lbStyles.actions}>
+              <Pressable
+                style={lbStyles.actionBtn}
+                onPress={() => { setLightboxOpen(false); pick(); }}
+                testID={`${testID}-lightbox-edit`}
+              >
+                <Feather name="edit-2" size={16} color={theme.color.onSurface} />
+                <Text style={lbStyles.actionTxt}>{t('photo.change')}</Text>
+              </Pressable>
+              <Pressable
+                style={[lbStyles.actionBtn, lbStyles.actionDanger]}
+                onPress={remove}
+                testID={`${testID}-lightbox-remove`}
+              >
+                <Feather name="trash-2" size={16} color={theme.color.error} />
+                <Text style={[lbStyles.actionTxt, { color: theme.color.error }]}>{t('common.remove')}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+/** Enlarge a read-only thumbnail on tap (used inside DishEditor ingredient rows). */
+export function PhotoLightboxThumb({
+  path, size = 44, rounded = false, fallbackIcon = 'image', testID,
+}: { path?: string | null; size?: number; rounded?: boolean; fallbackIcon?: any; testID?: string }) {
+  const { uri, headers } = usePhotoUrl(path);
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const borderRadius = rounded ? size / 2 : theme.radius.sm;
+  const win = Dimensions.get('window');
+  const boxSize = Math.min(win.width, win.height) * 0.86;
+
+  if (!path) {
+    return (
+      <View style={[styles.thumbFallback, { width: size, height: size, borderRadius }]}>
+        <Feather name={fallbackIcon} size={size / 2.4} color={theme.color.onSurfaceTertiary} />
+      </View>
+    );
+  }
+  if (!uri) {
+    return <View style={[styles.thumbFallback, { width: size, height: size, borderRadius }]} />;
+  }
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} testID={testID} hitSlop={4}>
+        <Image
+          source={{ uri, headers }}
+          style={{ width: size, height: size, borderRadius, backgroundColor: theme.color.surfaceSecondary }}
+          resizeMode="cover"
+        />
+      </Pressable>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={lbStyles.overlay} onPress={() => setOpen(false)}>
+          <Pressable onPress={e => e.stopPropagation?.()} style={lbStyles.card}>
+            <Pressable style={lbStyles.closeBtn} onPress={() => setOpen(false)}>
+              <Feather name="x" size={22} color="#fff" />
+            </Pressable>
+            <Image
+              source={{ uri, headers }}
+              style={{ width: boxSize, height: boxSize, borderRadius: theme.radius.lg }}
+              resizeMode="contain"
+            />
+            <Text style={lbStyles.hint}>{t('photo.tapToClose')}</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -219,4 +320,32 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.color.border,
     alignItems: 'center', justifyContent: 'center',
   },
+});
+
+const lbStyles = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  card: {
+    alignItems: 'center', gap: theme.spacing.md,
+  },
+  closeBtn: {
+    position: 'absolute', top: -50, right: -8, zIndex: 2,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actions: {
+    flexDirection: 'row', gap: 12, marginTop: 6,
+  },
+  actionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 18, paddingVertical: 12,
+    backgroundColor: theme.color.surface, borderRadius: theme.radius.pill,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  actionDanger: { backgroundColor: '#FEF2F0', borderColor: '#F5C7C0' },
+  actionTxt: { color: theme.color.onSurface, fontWeight: '600', fontSize: 14 },
+  hint: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontStyle: 'italic' },
 });

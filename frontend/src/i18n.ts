@@ -58,6 +58,7 @@ const IT: Dict = {
   'common.restore': 'Ripristina',
   'common.merge': 'Unisci',
   'common.refresh': 'Aggiorna',
+  'common.unit': 'Unità di misura',
 
   // ---- Pro upsell + gating ----
   'pro.upsell.title': 'Sblocca PlanEat Pro',
@@ -84,6 +85,7 @@ const IT: Dict = {
   'photo.permTitle': 'Permesso foto necessario',
   'photo.permBody': 'Consenti l\'accesso alle foto per aggiungere immagini ai tuoi piatti.',
   'photo.openSettings': 'Apri impostazioni',
+  'photo.tapToClose': 'Tocca fuori per chiudere',
 
   // ---- Expiry + freezer ----
   'expiry.h': 'Scadenza',
@@ -156,6 +158,8 @@ const IT: Dict = {
   'piatti.errors.save': 'Errore salvataggio',
   'piatti.ingredientCategoryPh': 'Categoria',
   'piatti.ingredientEditor': 'Ingrediente',
+  'piatti.ingDelete.title': 'Eliminare "{name}"?',
+  'piatti.ingDelete.body': 'L\'ingrediente verrà rimosso da questo piatto. Se il piatto è già nel Planner, la Spesa non aggiungerà più questo ingrediente.',
 
   // ---- Planner tab ----
   'planner.title': 'Planner',
@@ -178,6 +182,10 @@ const IT: Dict = {
   'planner.slot.emptyCategory': 'Nessun piatto in questa categoria.',
   'planner.slot.emptyCategorySub': 'Aggiungilo prima nel tab Piatti.',
   'planner.slot.mealCount': '{meal} · {n} piatti',
+  'planner.slot.syncTitle': 'Aggiornare la lista Spesa?',
+  'planner.slot.syncBody': 'Hai modificato i piatti di questo pasto. Vuoi che gli ingredienti vengano aggiunti/rimossi automaticamente anche dalla lista della spesa?',
+  'planner.slot.syncYes': 'Sì, aggiorna la Spesa',
+  'planner.slot.syncNo': 'No, salva solo il Planner',
   'planner.duplicate.title': 'Duplica una settimana',
   'planner.duplicate.body': 'Scegli quale settimana copiare in {week}.',
   'planner.duplicate.bodyBiweekly': ' Per la seconda settimana, ripeti l\'operazione.',
@@ -205,6 +213,9 @@ const IT: Dict = {
   'spesa.clearConfirm.title': 'Rimuovere {n} elementi presi?',
   'spesa.clearConfirm.body': 'Gli elementi spuntati verranno eliminati dalla lista della spesa. Se erano dal Planner, i piatti restano pianificati.',
   'spesa.clearConfirm.bodyPro': 'Gli elementi spuntati verranno **spostati nel Frigorifero** dove potrai aggiungere le date di scadenza. Se erano dal Planner, i piatti restano pianificati.',
+  'spesa.clearConfirm.bodyChoice': 'Vuoi spostare gli elementi comprati nel Frigorifero (così puoi tracciarne la scadenza) oppure eliminarli soltanto dalla lista?',
+  'spesa.clearConfirm.toFridge': 'Sposta nel Frigorifero',
+  'spesa.clearConfirm.deleteOnly': 'Elimina soltanto',
   'spesa.category': 'Categoria',
   'spesa.uncategorized': 'Senza categoria',
   'spesa.legend.planner': 'Planner',
@@ -417,14 +428,14 @@ const IT: Dict = {
   'tut.s2.b3': 'Cerca velocemente dalla barra di ricerca',
   'tut.s3.title': 'Planner · la settimana',
   'tut.s3.body': 'I giorni della settimana con Pranzo e Cena. Tocca uno slot per assegnare uno o più piatti e indicare per quante persone.',
-  'tut.s3.b1': 'La spesa si aggiorna automaticamente',
+  'tut.s3.b1': 'Quando salvi uno slot, ti chiedo se aggiornare anche la Spesa',
   'tut.s3.b2': 'Usa "Oggi" per tornare alla settimana corrente',
   'tut.s3.b3': 'Duplica una settimana passata con l\'icona 📋',
   'tut.s4.title': 'Spesa · sempre pronta',
-  'tut.s4.body': 'La lista si compila da sola dal Planner. Puoi anche aggiungere elementi extra a mano.',
+  'tut.s4.body': 'La lista si compila dal Planner o a mano. Al termine ti chiedo se spostare i comprati nel Frigorifero o eliminarli soltanto.',
   'tut.s4.b1': '🟢 Verdi = dal Planner  ·  🟠 Arancioni = manuali',
   'tut.s4.b2': 'Trascina per riordinare, spunta al supermercato',
-  'tut.s4.b3': 'Tocca "Rimuovi presi" a fine spesa',
+  'tut.s4.b3': 'Tocca "Rimuovi presi" e scegli come procedere',
   'tut.s5.title': 'Un ultimo consiglio',
   'tut.s5.body': 'Nei tuoi Codici di Recupero hai la chiave per rientrare se dimentichi la password. Salvali in un posto sicuro dalla schermata Impostazioni.',
   'tut.s5.b1': 'Trovi tutto in Impostazioni ⚙️',
@@ -511,6 +522,7 @@ const EN: Dict = {
   'common.restore': 'Restore',
   'common.merge': 'Merge',
   'common.refresh': 'Refresh',
+  'common.unit': 'Unit',
 
   // ---- Pro upsell + gating ----
   'pro.upsell.title': 'Unlock PlanEat Pro',
@@ -537,6 +549,7 @@ const EN: Dict = {
   'photo.permTitle': 'Photo permission needed',
   'photo.permBody': 'Allow photo access to add images to your dishes.',
   'photo.openSettings': 'Open settings',
+  'photo.tapToClose': 'Tap outside to close',
 
   // ---- Expiry + freezer ----
   'expiry.h': 'Expiration',
@@ -608,6 +621,8 @@ const EN: Dict = {
   'piatti.errors.save': 'Save failed',
   'piatti.ingredientCategoryPh': 'Category',
   'piatti.ingredientEditor': 'Ingredient',
+  'piatti.ingDelete.title': 'Remove "{name}"?',
+  'piatti.ingDelete.body': 'This ingredient will be removed from the dish. If the dish is already in the Planner, it will no longer contribute to Shopping.',
 
   'planner.title': 'Planner',
   'planner.pranzo': 'Lunch',
@@ -629,6 +644,10 @@ const EN: Dict = {
   'planner.slot.emptyCategory': 'No dishes in this category.',
   'planner.slot.emptyCategorySub': 'Add one first from the Dishes tab.',
   'planner.slot.mealCount': '{meal} · {n} dishes',
+  'planner.slot.syncTitle': 'Update the Shopping list?',
+  'planner.slot.syncBody': 'You changed the dishes for this meal. Should ingredients be automatically added/removed from the shopping list too?',
+  'planner.slot.syncYes': 'Yes, update Shopping',
+  'planner.slot.syncNo': 'No, save Planner only',
   'planner.duplicate.title': 'Duplicate a week',
   'planner.duplicate.body': 'Pick which week to copy into {week}.',
   'planner.duplicate.bodyBiweekly': ' For the second week, repeat the operation.',
@@ -655,6 +674,9 @@ const EN: Dict = {
   'spesa.clearConfirm.title': 'Remove {n} bought items?',
   'spesa.clearConfirm.body': 'Ticked items will be deleted from the shopping list. If they came from the Planner, the dishes stay planned.',
   'spesa.clearConfirm.bodyPro': 'Ticked items will be **moved to the Fridge** where you can set expiration dates. If they came from the Planner, the dishes stay planned.',
+  'spesa.clearConfirm.bodyChoice': 'Move bought items to the Fridge (so you can track expirations) or just delete them from the list?',
+  'spesa.clearConfirm.toFridge': 'Move to Fridge',
+  'spesa.clearConfirm.deleteOnly': 'Delete only',
   'spesa.category': 'Category',
   'spesa.uncategorized': 'Uncategorized',
   'spesa.legend.planner': 'Planner',
@@ -858,14 +880,14 @@ const EN: Dict = {
   'tut.s2.b3': 'Search quickly from the search bar',
   'tut.s3.title': 'Planner · the week',
   'tut.s3.body': 'The days of the week with Lunch and Dinner. Tap a slot to assign one or more dishes and pick how many people they\'re for.',
-  'tut.s3.b1': 'The shopping list updates automatically',
+  'tut.s3.b1': 'When you save a slot, I ask if you want Shopping updated too',
   'tut.s3.b2': 'Use "Today" to snap back to this week',
   'tut.s3.b3': 'Duplicate a past week with the 📋 icon',
   'tut.s4.title': 'Shopping · always ready',
-  'tut.s4.body': 'The list builds itself from the Planner. You can also add extra items manually.',
+  'tut.s4.body': 'The list fills from the Planner or by hand. When done, I ask whether to move bought items to the Fridge or just delete them.',
   'tut.s4.b1': '🟢 Green = from Planner  ·  🟠 Orange = manual',
   'tut.s4.b2': 'Drag to reorder, tick at the supermarket',
-  'tut.s4.b3': 'Tap "Remove bought" when you\'re done',
+  'tut.s4.b3': 'Tap "Remove bought" and choose how to proceed',
   'tut.s5.title': 'One last tip',
   'tut.s5.body': 'Your Recovery Codes are the key to get back in if you forget your password. Save them somewhere safe from the Settings screen.',
   'tut.s5.b1': 'Everything sits in Settings ⚙️',
@@ -935,6 +957,13 @@ export function translateDefaultLabel(
 ): string {
   if (!id && !storedLabel) return '';
   const dict = DICTS[lang];
+  // If the user has renamed a default category (stored label != default IT
+  // label for this id), always prefer their customization — never overwrite
+  // it with the built-in translation.
+  const defaultItLabel = id ? IT[`${namespace}.${id}`] : undefined;
+  const userCustomized = !!defaultItLabel && !!storedLabel &&
+    storedLabel.trim().toLowerCase() !== defaultItLabel.trim().toLowerCase();
+  if (userCustomized) return storedLabel;
   // Try by id first
   const byId = id ? dict[`${namespace}.${id}`] : undefined;
   if (byId) return byId;

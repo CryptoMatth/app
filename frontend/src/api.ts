@@ -144,7 +144,8 @@ export const api = {
   forceDeleteShopping: (id: string) => req(`/shopping/${id}/force`, { method: 'DELETE' }),
   reorderShopping: (ordered_ids: string[]) =>
     req('/shopping/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
-  clearChecked: () => req('/shopping/clear-checked', { method: 'POST' }),
+  clearChecked: (toFridge: boolean = true) =>
+    req(`/shopping/clear-checked?to_fridge=${toFridge ? 'true' : 'false'}`, { method: 'POST' }),
 
   // Frigorifero (Pro feature)
   listFridge: () => req('/fridge'),
