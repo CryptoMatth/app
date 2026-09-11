@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, StyleSheet, Modal, Keyboard, Platform, ScrollView } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, StyleSheet, Modal, Keyboard, Platform, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import Feather from '@react-native-vector-icons/feather';
@@ -9,6 +9,7 @@ import { api } from '@/src/api';
 import { theme } from '@/src/theme';
 import { useTranslation } from '@/src/i18n';
 import { IngredientEditorForm, type IngredientDraft } from '@/src/IngredientEditorForm';
+import type { ExpiryEntry } from '@/src/auth';
 
 function todayIso(): string {
   const d = new Date();
@@ -36,12 +37,12 @@ export default function FridgeEditor() {
   const { t, locale } = useTranslation();
 
   const [draft, setDraft] = useState<IngredientDraft>({ name: '', quantity: '', unit: 'g', category_id: 'altro', notes: '', photo_path: null });
-  const [expiries, setExpiries] = useState<string[]>([]);
+  const [expiries, setExpiries] = useState<ExpiryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [showDelete, setShowDelete] = useState(false);
-  const [datePicking, setDatePicking] = useState<{ index: number | null; value: string } | null>(null);
+  const [datePicking, setDatePicking] = useState<{ index: number | null; value: string; label: string } | null>(null);
   const isNew = !id || id === 'new';
 
   useEffect(() => {
@@ -59,7 +60,11 @@ export default function FridgeEditor() {
             category_id: it.category_id || 'altro',
             photo_path: it.photo_path || null,
           });
-          setExpiries([...(it.expiries || [])].sort());
+          // Backend now returns [{date,label}]; older data may be strings.
+          const raw: any[] = it.expiries || [];
+          const norm: ExpiryEntry[] = raw.map(e => (typeof e === 'string' ? { date: e, label: '' } : { date: e.date, label: e.label || '' }));
+          norm.sort((a, b) => a.date.localeCompare(b.date));
+          setExpiries(norm);
         }
       } catch {}
       setLoading(false);
@@ -81,7 +86,7 @@ export default function FridgeEditor() {
         notes: draft.notes || '',
         category_id: draft.category_id,
         photo_path: draft.photo_path || null,
-        expiries: [...expiries].sort(),
+        expiries: [...expiries].sort((a, b) => a.date.localeCompare(b.date)),
       };
       if (isNew) {
         await api.addFridge(payload);
@@ -107,22 +112,24 @@ export default function FridgeEditor() {
 
   const addExpiry = () => {
     const def = todayIso();
-    setDatePicking({ index: null, value: def });
+    setDatePicking({ index: null, value: def, label: '' });
   };
   const editExpiry = (i: number) => {
-    setDatePicking({ index: i, value: expiries[i] });
+    setDatePicking({ index: i, value: expiries[i].date, label: expiries[i].label || '' });
   };
   const removeExpiry = (i: number) => {
     setExpiries(prev => prev.filter((_, idx) => idx !== i));
     Haptics.selectionAsync();
   };
-  const commitDate = (iso: string) => {
+  const commitDate = (iso: string, label: string) => {
     if (!datePicking) return;
+    const entry: ExpiryEntry = { date: iso, label: label.trim() };
     if (datePicking.index === null) {
-      if (!expiries.includes(iso)) setExpiries(prev => [...prev, iso].sort());
+      // Allow multiple entries with the same date but different labels.
+      setExpiries(prev => [...prev, entry].sort((a, b) => a.date.localeCompare(b.date)));
     } else {
-      const arr = [...expiries]; arr[datePicking.index] = iso;
-      setExpiries(arr.sort());
+      const arr = [...expiries]; arr[datePicking.index] = entry;
+      setExpiries(arr.sort((a, b) => a.date.localeCompare(b.date)));
     }
     setDatePicking(null);
     Haptics.selectionAsync();
@@ -162,7 +169,9 @@ export default function FridgeEditor() {
           <Text style={styles.noExp}>{t('fridge.editor.noExpiries')}</Text>
         ) : null}
 
-        {expiries.map((iso, i) => {
+        {expiries.map((e, i) => {
+          const iso = e.date;
+          const label = e.label || '';
           const d = parseIso(iso);
           const days = daysUntil(iso);
           let fg = theme.color.brandSecondary;
@@ -180,6 +189,7 @@ export default function FridgeEditor() {
                     : days === 1 ? t('expiry.tomorrow')
                     : t('expiry.in', { n: days })}
                 </Text>
+                {label ? <Text style={styles.expLabel} numberOfLines={1}>🏷️ {label}</Text> : null}
               </Pressable>
               <Pressable onPress={() => removeExpiry(i)} hitSlop={12} testID={`exp-remove-${i}`}>
                 <Feather name="x" size={18} color={theme.color.onSurfaceTertiary} />
@@ -204,7 +214,7 @@ export default function FridgeEditor() {
         </View>
       </KeyboardStickyView>
 
-      {/* Date picker modal */}
+      {/* Date picker modal with optional label */}
       <Modal transparent visible={!!datePicking} animationType="fade" onRequestClose={() => setDatePicking(null)}>
         <Pressable style={styles.overlay} onPress={() => setDatePicking(null)}>
           <Pressable style={styles.dateCard} onPress={e => e.stopPropagation?.()}>
@@ -225,12 +235,22 @@ export default function FridgeEditor() {
                 onChange={(v) => setDatePicking(prev => prev ? { ...prev, value: v } : prev)}
               />
             )}
+            <Text style={styles.smallLabel}>{t('expiry.labelOptional')}</Text>
+            <TextInput
+              value={datePicking?.label || ''}
+              onChangeText={(text) => setDatePicking(prev => prev ? { ...prev, label: text } : prev)}
+              placeholder={t('expiry.labelPh')}
+              placeholderTextColor={theme.color.onSurfaceTertiary}
+              maxLength={60}
+              style={styles.labelInput}
+              testID="exp-label-input"
+            />
             <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
               <Pressable onPress={() => setDatePicking(null)} style={styles.btnGhost}>
                 <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
-                onPress={() => datePicking && commitDate(datePicking.value)}
+                onPress={() => datePicking && commitDate(datePicking.value, datePicking.label || '')}
                 style={styles.btnPrim}
                 testID="date-confirm"
               >
@@ -263,49 +283,102 @@ export default function FridgeEditor() {
 }
 
 function NativeDatePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const now = new Date();
-  const cur = value ? new Date(value) : now;
-  const [y, setY] = useState(cur.getFullYear());
-  const [m, setM] = useState(cur.getMonth());
-  const [d, setD] = useState(cur.getDate());
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const parseVal = (s: string) => {
+    const [yy, mm, dd] = s.split('-').map(Number);
+    return { y: yy || new Date().getFullYear(), m: (mm || 1) - 1, d: dd || 1 };
+  };
+  const { y: initY, m: initM } = parseVal(value);
+  const [viewY, setViewY] = useState(initY);
+  const [viewM, setViewM] = useState(initM);
 
-  useEffect(() => {
-    const yy = y, mm = String(m + 1).padStart(2, '0'), dd = String(Math.min(d, daysInMonth)).padStart(2, '0');
-    onChange(`${yy}-${mm}-${dd}`);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [y, m, d]);
+  const firstDay = new Date(viewY, viewM, 1);
+  // Convert JS getDay() (0=Sunday..6=Saturday) into Mon=0..Sun=6 grid offset
+  const jsDow = firstDay.getDay();
+  const startOffset = (jsDow + 6) % 7;
+  const daysInMonth = new Date(viewY, viewM + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let i = 1; i <= daysInMonth; i++) cells.push(i);
+  while (cells.length % 7 !== 0) cells.push(null);
 
-  const yearOpts = Array.from({ length: 3 }, (_, i) => now.getFullYear() + i);
-  const monthOpts = Array.from({ length: 12 }, (_, i) => i);
-  const dayOpts = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-  return (
-    <View style={{ flexDirection: 'row', marginTop: 12 }}>
-      <PickerCol values={dayOpts} value={d} onChange={setD} format={n => String(n).padStart(2, '0')} width={70} />
-      <PickerCol values={monthOpts} value={m} onChange={setM} format={n => new Date(2000, n, 1).toLocaleDateString('it-IT', { month: 'short' })} width={100} />
-      <PickerCol values={yearOpts} value={y} onChange={setY} format={n => String(n)} width={80} />
-    </View>
+  const monthName = new Date(viewY, viewM, 1).toLocaleDateString(
+    typeof navigator !== 'undefined' ? navigator.language : 'it',
+    { month: 'long', year: 'numeric' },
   );
-}
-function PickerCol<T>({ values, value, onChange, format, width }: { values: T[]; value: T; onChange: (v: T) => void; format: (v: T) => string; width: number }) {
+  const weekdays = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+
+  const goPrev = () => {
+    if (viewM === 0) { setViewM(11); setViewY(y => y - 1); }
+    else setViewM(m => m - 1);
+    Haptics.selectionAsync();
+  };
+  const goNext = () => {
+    if (viewM === 11) { setViewM(0); setViewY(y => y + 1); }
+    else setViewM(m => m + 1);
+    Haptics.selectionAsync();
+  };
+
+  const pick = (day: number) => {
+    const iso = `${viewY}-${String(viewM + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    Haptics.selectionAsync();
+    onChange(iso);
+  };
+
+  const { y: selY, m: selM, d: selD } = parseVal(value);
+  const today = new Date();
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth();
+  const todayD = today.getDate();
+
   return (
-    <ScrollView style={{ height: 160, width }} contentContainerStyle={{ alignItems: 'center', paddingVertical: 50 }}>
-      {values.map((v, i) => {
-        const active = v === value;
-        return (
-          <Pressable key={i} onPress={() => onChange(v)} style={{ paddingVertical: 6 }}>
-            <Text style={{
-              fontSize: active ? 18 : 14,
-              color: active ? theme.color.brandPrimary : theme.color.onSurfaceSecondary,
-              fontWeight: active ? '700' : '400',
-            }}>
-              {format(v)}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <View style={{ marginTop: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Pressable onPress={goPrev} hitSlop={12} style={{ padding: 6 }} testID="cal-prev">
+          <Feather name="chevron-left" size={22} color={theme.color.onSurface} />
+        </Pressable>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: theme.color.onSurface, textTransform: 'capitalize' }}>{monthName}</Text>
+        <Pressable onPress={goNext} hitSlop={12} style={{ padding: 6 }} testID="cal-next">
+          <Feather name="chevron-right" size={22} color={theme.color.onSurface} />
+        </Pressable>
+      </View>
+      <View style={{ flexDirection: 'row', marginBottom: 4 }}>
+        {weekdays.map((w, i) => (
+          <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: theme.color.onSurfaceTertiary }}>{w}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {cells.map((day, i) => {
+          if (day === null) {
+            return <View key={i} style={{ width: `${100 / 7}%`, height: 40 }} />;
+          }
+          const isSelected = day === selD && viewM === selM && viewY === selY;
+          const isToday = day === todayD && viewM === todayM && viewY === todayY;
+          return (
+            <View key={i} style={{ width: `${100 / 7}%`, height: 40, padding: 2 }}>
+              <Pressable
+                onPress={() => pick(day)}
+                style={{
+                  flex: 1, borderRadius: 8,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isSelected ? theme.color.brandPrimary : (isToday ? theme.color.brandTertiary : 'transparent'),
+                  borderWidth: isToday && !isSelected ? 1 : 0,
+                  borderColor: theme.color.brandPrimary,
+                }}
+                testID={`cal-day-${day}`}
+              >
+                <Text style={{
+                  fontSize: 14,
+                  color: isSelected ? '#fff' : theme.color.onSurface,
+                  fontWeight: isSelected || isToday ? '700' : '400',
+                }}>{day}</Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -321,6 +394,13 @@ const styles = StyleSheet.create({
   expRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderWidth: 1, borderColor: theme.color.border, borderRadius: theme.radius.md, marginBottom: 8 },
   expDate: { fontSize: 14, color: theme.color.onSurface, fontWeight: '500' },
   expDays: { fontSize: 12, marginTop: 2 },
+  expLabel: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 4, fontStyle: 'italic' },
+  smallLabel: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 8, marginBottom: 4 },
+  labelInput: {
+    minHeight: 42, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.color.border,
+    paddingHorizontal: theme.spacing.md, paddingVertical: 10, backgroundColor: theme.color.surfaceSecondary,
+    color: theme.color.onSurface, fontSize: 14,
+  },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, alignSelf: 'flex-start' },
   addBtnTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 14 },
   err: { color: theme.color.error, fontSize: 13, marginTop: theme.spacing.md },

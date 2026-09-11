@@ -34,7 +34,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
 
   const [name, setName] = useState('');
   const [course, setCourse] = useState<string>(startCourse);
-  const [servings, setServings] = useState('1');
+  const [servings, setServings] = useState(String(prefs.defaults?.default_servings || 1));
   const [ingredients, setIngredients] = useState<Ing[]>([]);
   const [preparation, setPreparation] = useState('');
   const [notes, setNotes] = useState('');

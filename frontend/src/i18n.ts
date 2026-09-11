@@ -111,12 +111,36 @@ const IT: Dict = {
   'notif.h': 'Notifiche',
   'notif.sub': 'Ricevi promemoria per scadenze e surgelati.',
   'notif.enabled': 'Attive',
+  'notif.enabledSub': 'Attiva le notifiche push sul dispositivo',
   'notif.expiryDays': 'Preavviso scadenza (giorni)',
   'notif.expiryTime': 'Ora della notifica',
-  'notif.freezer': 'Alert surgelati (24h prima)',
+  'notif.freezer': 'Alert surgelati',
+  'notif.freezerHoursSub': 'Ricevi un avviso queste ore prima del piatto surgelato',
+  'notif.hoursSuffix': 'ore prima',
+  'notif.daysAhead.h': 'Preavviso scadenza',
+  'notif.daysAhead.sub': 'Scegli quanti giorni prima ricevere i promemoria (multi-selezione)',
+  'notif.timeH': 'Orario notifiche',
+  'notif.timeSub': 'A che ora del giorno vuoi essere avvisato',
   'notif.permTitle': 'Permesso notifiche necessario',
   'notif.permBody': 'Consenti le notifiche per ricevere promemoria scadenze e surgelati.',
   'notif.nativeOnly': 'Le notifiche funzionano solo su build nativa (non in Expo Go/web preview).',
+
+  // ---- Valori predefiniti (Preferenze) — A11 ----
+  'prefs.defaults.h': 'Valori predefiniti',
+  'prefs.defaults.sub': 'Precompila quantità, unità e porzioni quando crei un nuovo ingrediente o piatto.',
+  'prefs.defaults.qty': 'Quantità e unità di default',
+  'prefs.defaults.servings': 'Porzioni di default per un nuovo piatto',
+
+  // ---- Expiry label (A6) ----
+  'expiry.labelOptional': 'Etichetta (facoltativa)',
+  'expiry.labelPh': 'es. confezione grande, sfusi…',
+
+  // ---- Notification center (A4) ----
+  'notifications.header': 'Notifiche',
+  'notifications.unread': '{n} da leggere',
+  'notifications.allRead': 'Tutto letto ✨',
+  'notifications.empty.title': 'Nessuna notifica',
+  'notifications.empty.sub': 'Quando qualche ingrediente sta per scadere lo troverai qui.',
 
   // ---- Frigorifero ----
   'fridge.title': 'Frigorifero',
@@ -615,12 +639,36 @@ const EN: Dict = {
   'notif.h': 'Notifications',
   'notif.sub': 'Get reminders for expiring items and frozen meals.',
   'notif.enabled': 'Enabled',
+  'notif.enabledSub': 'Enable push notifications on this device',
   'notif.expiryDays': 'Expiry warning (days ahead)',
   'notif.expiryTime': 'Notification time',
-  'notif.freezer': 'Freezer alerts (24h before)',
+  'notif.freezer': 'Freezer alerts',
+  'notif.freezerHoursSub': 'Get a heads-up this many hours before a freezer meal',
+  'notif.hoursSuffix': 'hours before',
+  'notif.daysAhead.h': 'Days ahead',
+  'notif.daysAhead.sub': 'Pick how many days in advance to be reminded (multi-select)',
+  'notif.timeH': 'Notification time',
+  'notif.timeSub': 'When during the day do you want to be alerted',
   'notif.permTitle': 'Notification permission needed',
   'notif.permBody': 'Allow notifications to get reminders for expiry and freezer alerts.',
   'notif.nativeOnly': 'Notifications only work on a native build (not in Expo Go / web preview).',
+
+  // ---- Defaults (Preferences) — A11 ----
+  'prefs.defaults.h': 'Default values',
+  'prefs.defaults.sub': 'Prefill quantity, unit and servings when creating a new ingredient or dish.',
+  'prefs.defaults.qty': 'Default quantity and unit',
+  'prefs.defaults.servings': 'Default servings for a new dish',
+
+  // ---- Expiry label (A6) ----
+  'expiry.labelOptional': 'Label (optional)',
+  'expiry.labelPh': 'e.g. large pack, loose…',
+
+  // ---- Notification center (A4) ----
+  'notifications.header': 'Notifications',
+  'notifications.unread': '{n} unread',
+  'notifications.allRead': 'All read ✨',
+  'notifications.empty.title': 'No notifications',
+  'notifications.empty.sub': 'When an item is about to expire, you\'ll see it here.',
 
   // ---- Fridge ----
   'fridge.title': 'Fridge',

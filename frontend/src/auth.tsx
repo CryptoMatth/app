@@ -8,10 +8,18 @@ export type PlannerSpan = 'weekly' | 'biweekly';
 export type Lang = 'it' | 'en';
 export type NotificationPrefs = {
   enabled: boolean;
-  expiry_days_ahead: number;
+  expiry_days_ahead: number;      // legacy fallback (largest of days_ahead)
+  days_ahead?: number[];          // new: multi-day preavviso
   notify_hour: number;
   freezer_enabled: boolean;
+  freezer_hours?: number;         // new: hours before freezer meal
 };
+export type DefaultsPrefs = {
+  default_qty: number;
+  default_unit: string;
+  default_servings: number;
+};
+export type ExpiryEntry = { date: string; label?: string };
 export type UserPreferences = {
   week_start_day: number; // 0=Mon..6=Sun
   planner_span: PlannerSpan;
@@ -19,6 +27,7 @@ export type UserPreferences = {
   courses: Course[];
   ingredient_categories: IngredientCategory[];
   notifications?: NotificationPrefs;
+  defaults?: DefaultsPrefs;
 };
 export type User = {
   user_id: string;
@@ -49,7 +58,8 @@ const DEFAULT_PREFS: UserPreferences = {
     { id: 'dispensa', label: 'Dispensa', icon: '🫙', color: '#A38963' },
     { id: 'altro', label: 'Altro', icon: '📦', color: '#8C8478' },
   ],
-  notifications: { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true },
+  notifications: { enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9, freezer_enabled: true, freezer_hours: 24 },
+  defaults: { default_qty: 1, default_unit: 'pz', default_servings: 2 },
 };
 
 type AuthCtx = {

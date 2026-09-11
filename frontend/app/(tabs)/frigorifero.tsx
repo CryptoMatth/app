@@ -12,6 +12,7 @@ import { theme } from '@/src/theme';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
+import type { ExpiryEntry } from '@/src/auth';
 
 type FridgeItem = {
   id: string;
@@ -21,9 +22,15 @@ type FridgeItem = {
   category_id?: string;
   photo_path?: string | null;
   notes?: string;
-  expiries: string[]; // ISO
+  expiries: ExpiryEntry[]; // {date, label?}
   created_at?: string;
 };
+
+// Turn any incoming expiry (legacy string or new dict) into just its ISO date.
+function expDate(e: any): string {
+  if (!e) return '';
+  return typeof e === 'string' ? e : (e.date || '');
+}
 
 function parseIso(s: string): Date | null {
   const [y, m, d] = s.split('-').map(Number);
@@ -89,13 +96,13 @@ export default function Frigorifero() {
     const nodate: FridgeItem[] = [];
     for (const it of items) {
       if (!it.expiries || it.expiries.length === 0) { nodate.push(it); continue; }
-      const min = Math.min(...it.expiries.map(daysUntil).filter(Number.isFinite));
+      const min = Math.min(...it.expiries.map(e => daysUntil(expDate(e))).filter(Number.isFinite));
       if (min <= 3) soon.push(it);
       else ok.push(it);
     }
     const byEarliestExpiry = (a: FridgeItem, b: FridgeItem) => {
-      const ea = a.expiries && a.expiries.length ? [...a.expiries].sort()[0] : '';
-      const eb = b.expiries && b.expiries.length ? [...b.expiries].sort()[0] : '';
+      const ea = a.expiries && a.expiries.length ? [...a.expiries.map(expDate)].sort()[0] : '';
+      const eb = b.expiries && b.expiries.length ? [...b.expiries.map(expDate)].sort()[0] : '';
       return ea.localeCompare(eb);
     };
     soon.sort(byEarliestExpiry);
@@ -131,9 +138,9 @@ export default function Frigorifero() {
 
   const renderItem = (it: FridgeItem) => {
     const cat = catById[it.category_id || 'altro'];
-    const nextExp = it.expiries && it.expiries.length > 0
-      ? [...it.expiries].sort()[0]
-      : null;
+    const sortedExpiries = [...(it.expiries || [])].map(e => ({ date: expDate(e), label: typeof e === 'string' ? '' : (e.label || '') })).filter(x => x.date).sort((a, b) => a.date.localeCompare(b.date));
+    const first = sortedExpiries[0];
+    const nextExp = first ? first.date : null;
     const d = nextExp ? daysUntil(nextExp) : Number.NaN;
     let badgeBg = '#E5EDDF', badgeFg = theme.color.brandSecondary, badgeLbl = '';
     if (nextExp) {
@@ -161,9 +168,9 @@ export default function Frigorifero() {
           {nextExp ? (
             <View style={[styles.badge, { backgroundColor: badgeBg }]}>
               <Feather name="clock" size={10} color={badgeFg} />
-              <Text style={[styles.badgeTxt, { color: badgeFg }]}>{badgeLbl}</Text>
-              {it.expiries.length > 1 && (
-                <Text style={[styles.badgeTxt, { color: badgeFg, marginLeft: 4 }]}>+{it.expiries.length - 1}</Text>
+              <Text style={[styles.badgeTxt, { color: badgeFg }]}>{badgeLbl}{first?.label ? ` · ${first.label}` : ''}</Text>
+              {sortedExpiries.length > 1 && (
+                <Text style={[styles.badgeTxt, { color: badgeFg, marginLeft: 4 }]}>+{sortedExpiries.length - 1}</Text>
               )}
             </View>
           ) : (
@@ -188,6 +195,15 @@ export default function Frigorifero() {
     { key: 'nodate', label: t('fridge.group.nodate'), data: sections.nodate },
   ].filter(g => g.data.length > 0);
 
+  const [unreadCount, setUnreadCount] = useState(0);
+  const loadUnread = useCallback(async () => {
+    try {
+      const r = await api.listNotifications();
+      setUnreadCount(r?.unread || 0);
+    } catch {}
+  }, []);
+  useFocusEffect(useCallback(() => { loadUnread(); }, [loadUnread]));
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="fridge-tab">
       <View style={styles.header}>
@@ -197,6 +213,19 @@ export default function Frigorifero() {
             {items.length === 1 ? t('spesa.count.item') : t('spesa.count.items', { n: items.length })}
           </Text>
         </View>
+        <Pressable
+          onPress={() => router.push('/notifications')}
+          style={styles.iconBtn}
+          testID="fridge-notifications"
+          hitSlop={8}
+        >
+          <Feather name="bell" size={19} color={theme.color.onSurface} />
+          {unreadCount > 0 && (
+            <View style={styles.badgeBell} testID="notif-badge">
+              <Text style={styles.badgeBellTxt}>{unreadCount > 9 ? '9+' : String(unreadCount)}</Text>
+            </View>
+          )}
+        </Pressable>
         <Pressable
           onPress={onRefresh}
           style={styles.iconBtn}
@@ -260,6 +289,14 @@ const styles = StyleSheet.create({
   h1: { fontFamily: theme.font.display, fontSize: 26, color: theme.color.onSurface },
   sub: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
+  badgeBell: {
+    position: 'absolute', top: 4, right: 4,
+    minWidth: 16, height: 16, borderRadius: 8,
+    paddingHorizontal: 4, backgroundColor: theme.color.error,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: theme.color.surfaceSecondary,
+  },
+  badgeBellTxt: { color: '#fff', fontSize: 9, fontWeight: '700' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
   emptyH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginTop: theme.spacing.md, textAlign: 'center' },
   emptyP: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginTop: 6, textAlign: 'center', maxWidth: 280 },

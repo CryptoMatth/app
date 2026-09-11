@@ -6,7 +6,7 @@
  *
  * The parent owns state and passes callbacks — this component is pure UI.
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, ScrollView, Modal,
 } from 'react-native';
@@ -58,6 +58,24 @@ export function IngredientEditorForm({
   const patch = (p: Partial<IngredientDraft>) => onChange({ ...value, ...p });
   // Ingredient categories are a Pro+ feature — hide the selector for anyone below.
   const categoryVisible = showCategory && isProPlus;
+  // Apply user's default quantity/unit as one-shot placeholder when the form
+  // opens with truly empty values (new item flow). Never overrides user typing.
+  const primedRef = useRef(false);
+  useEffect(() => {
+    if (primedRef.current) return;
+    const d = prefs.defaults;
+    if (!d) return;
+    const nothingTyped = !value.name && !value.quantity;
+    if (nothingTyped) {
+      primedRef.current = true;
+      onChange({
+        ...value,
+        quantity: d.default_qty ? String(d.default_qty) : value.quantity,
+        unit: d.default_unit || value.unit,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs.defaults]);
 
   return (
     <View>

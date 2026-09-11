@@ -7,7 +7,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useAuth, Course, IngredientCategory, NotificationPrefs } from '@/src/auth';
+import { useAuth, Course, IngredientCategory, NotificationPrefs, DefaultsPrefs } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { weekStartOptions } from '@/src/week';
@@ -45,7 +45,8 @@ export default function PreferencesSettings() {
   const [language, setLanguage] = useState<'it' | 'en'>(prefs.language);
   const [courses, setCourses] = useState<Course[]>(prefs.courses);
   const [ingCats, setIngCats] = useState<IngredientCategory[]>(prefs.ingredient_categories);
-  const [notif, setNotif] = useState<NotificationPrefs>(prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true });
+  const [notif, setNotif] = useState<NotificationPrefs>(prefs.notifications || { enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9, freezer_enabled: true, freezer_hours: 24 });
+  const [defaults, setDefaults] = useState<DefaultsPrefs>(prefs.defaults || { default_qty: 1, default_unit: 'pz', default_servings: 2 });
   const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -58,7 +59,8 @@ export default function PreferencesSettings() {
     setLanguage(prefs.language);
     setCourses(prefs.courses);
     setIngCats(prefs.ingredient_categories);
-    setNotif(prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true });
+    setNotif(prefs.notifications || { enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9, freezer_enabled: true, freezer_hours: 24 });
+    setDefaults(prefs.defaults || { default_qty: 1, default_unit: 'pz', default_servings: 2 });
   }, [prefs]);
   useEffect(() => {
     if (!msg) return;
@@ -81,6 +83,7 @@ export default function PreferencesSettings() {
         color: c.color || null,
       })),
       notifications: notif,
+      defaults: defaults,
     };
     const original = {
       week_start_day: prefs.week_start_day,
@@ -93,10 +96,11 @@ export default function PreferencesSettings() {
         icon: c.icon || null,
         color: c.color || null,
       })),
-      notifications: prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true },
+      notifications: prefs.notifications || { enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9, freezer_enabled: true, freezer_hours: 24 },
+      defaults: prefs.defaults || { default_qty: 1, default_unit: 'pz', default_servings: 2 },
     };
     return JSON.stringify(current) !== JSON.stringify(original);
-  }, [weekStart, span, language, courses, ingCats, notif, prefs]);
+  }, [weekStart, span, language, courses, ingCats, notif, defaults, prefs]);
 
   const save = async () => {
     Keyboard.dismiss();
@@ -110,6 +114,7 @@ export default function PreferencesSettings() {
         courses,
         ingredient_categories: ingCats,
         notifications: notif,
+        defaults: defaults,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMsg({ kind: 'ok', text: t('prefs.saved') });
@@ -341,7 +346,62 @@ export default function PreferencesSettings() {
           )}
         </View>
 
-        {/* --- Notifications (Pro+) --- */}
+        {/* --- Valori predefiniti (A11) --- */}
+        <View style={s.section}>
+          <Text style={s.sectionH}>{t('prefs.defaults.h')}</Text>
+          <Text style={s.sectionSub}>{t('prefs.defaults.sub')}</Text>
+
+          <Text style={notifStyles.subLabel}>{t('prefs.defaults.qty')}</Text>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TextInput
+              value={String(defaults.default_qty)}
+              onChangeText={(text) => {
+                const v = parseFloat(text.replace(',', '.'));
+                setDefaults(d => ({ ...d, default_qty: isNaN(v) ? 0 : v }));
+              }}
+              keyboardType="numeric"
+              maxLength={6}
+              style={[s.input, { flex: 1 }]}
+              testID="def-qty"
+            />
+            <View style={{ flex: 1 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'cucchiaino'].map(u => {
+                  const active = defaults.default_unit === u;
+                  return (
+                    <Pressable
+                      key={u}
+                      onPress={() => { Haptics.selectionAsync(); setDefaults(d => ({ ...d, default_unit: u })); }}
+                      style={[notifStyles.chip, active && notifStyles.chipActive]}
+                      testID={`def-unit-${u}`}
+                    >
+                      <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{u}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+
+          <Text style={notifStyles.subLabel}>{t('prefs.defaults.servings')}</Text>
+          <View style={notifStyles.chipsRow}>
+            {[1, 2, 3, 4, 6, 8].map(n => {
+              const active = defaults.default_servings === n;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => { Haptics.selectionAsync(); setDefaults(d => ({ ...d, default_servings: n })); }}
+                  style={[notifStyles.chip, active && notifStyles.chipActive]}
+                  testID={`def-servings-${n}`}
+                >
+                  <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{n}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* --- Notifications (Pro+) — redesigned (A3 + A10) --- */}
         <View style={s.section}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={s.sectionH}>{t('notif.h')}</Text>
@@ -354,67 +414,149 @@ export default function PreferencesSettings() {
           </View>
           <Text style={s.sectionSub}>{t('notif.sub')}</Text>
 
-          <View style={notifStyles.row}>
-            <Text style={notifStyles.rowLabel}>{t('notif.enabled')}</Text>
-            <Pressable
-              onPress={() => {
-                if (!isProPlus) { setUpsell(true); return; }
-                Haptics.selectionAsync();
-                setNotif(n => ({ ...n, enabled: !n.enabled }));
-              }}
-              style={[notifStyles.switch, notif.enabled && notifStyles.switchOn]}
-              testID="notif-enabled"
-            >
-              <View style={[notifStyles.thumb, notif.enabled && notifStyles.thumbOn]} />
-            </Pressable>
+          <View style={notifStyles.card}>
+            <View style={notifStyles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={notifStyles.rowLabel}>{t('notif.enabled')}</Text>
+                <Text style={notifStyles.rowSub}>{t('notif.enabledSub')}</Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (!isProPlus) { setUpsell(true); return; }
+                  Haptics.selectionAsync();
+                  setNotif(n => ({ ...n, enabled: !n.enabled }));
+                }}
+                style={[notifStyles.switch, notif.enabled && notifStyles.switchOn]}
+                testID="notif-enabled"
+              >
+                <View style={[notifStyles.thumb, notif.enabled && notifStyles.thumbOn]} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={{ opacity: (notif.enabled && isProPlus) ? 1 : 0.45 }} pointerEvents={(notif.enabled && isProPlus) ? 'auto' : 'none'}>
-            <Text style={notifStyles.subLabel}>{t('notif.expiryDays')}</Text>
-            <View style={notifStyles.chipsRow}>
-              {[0, 1, 2, 3, 7].map(d => {
-                const active = notif.expiry_days_ahead === d;
-                return (
-                  <Pressable
-                    key={d}
-                    onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, expiry_days_ahead: d })); }}
-                    style={[notifStyles.chip, active && notifStyles.chipActive]}
-                    testID={`notif-days-${d}`}
-                  >
-                    <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>
-                      {d === 0 ? t('common.today') : `${d}g`}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            {/* Multi-day preavviso — A10 */}
+            <View style={notifStyles.card}>
+              <View style={notifStyles.cardHead}>
+                <Feather name="clock" size={14} color={theme.color.brand} />
+                <Text style={notifStyles.cardH}>{t('notif.daysAhead.h')}</Text>
+              </View>
+              <Text style={notifStyles.rowSub}>{t('notif.daysAhead.sub')}</Text>
+              <View style={notifStyles.chipsRow}>
+                {[3, 2, 1, 0].map(d => {
+                  const active = (notif.days_ahead || [notif.expiry_days_ahead]).includes(d);
+                  return (
+                    <Pressable
+                      key={d}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setNotif(n => {
+                          const cur = new Set(n.days_ahead || [n.expiry_days_ahead]);
+                          if (cur.has(d)) cur.delete(d); else cur.add(d);
+                          if (cur.size === 0) cur.add(1); // keep at least one selected
+                          const arr = Array.from(cur).sort((a, b) => b - a);
+                          return { ...n, days_ahead: arr, expiry_days_ahead: arr[0] };
+                        });
+                      }}
+                      style={[notifStyles.chip, active && notifStyles.chipActive]}
+                      testID={`notif-days-${d}`}
+                    >
+                      <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>
+                        {d === 0 ? t('common.today') : `${d}g`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
-            <Text style={notifStyles.subLabel}>{t('notif.expiryTime')}</Text>
-            <View style={notifStyles.chipsRow}>
-              {[7, 9, 12, 18, 20].map(h => {
-                const active = notif.notify_hour === h;
-                return (
-                  <Pressable
-                    key={h}
-                    onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, notify_hour: h })); }}
-                    style={[notifStyles.chip, active && notifStyles.chipActive]}
-                    testID={`notif-hour-${h}`}
-                  >
-                    <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{h}:00</Text>
-                  </Pressable>
-                );
-              })}
+            {/* Notification time — A3 (custom hour input) */}
+            <View style={notifStyles.card}>
+              <View style={notifStyles.cardHead}>
+                <Feather name="bell" size={14} color={theme.color.brand} />
+                <Text style={notifStyles.cardH}>{t('notif.timeH')}</Text>
+              </View>
+              <Text style={notifStyles.rowSub}>{t('notif.timeSub')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <TextInput
+                  value={String(notif.notify_hour)}
+                  onChangeText={(text) => {
+                    const v = parseInt(text.replace(/[^0-9]/g, ''));
+                    setNotif(n => ({ ...n, notify_hour: isNaN(v) ? 0 : Math.max(0, Math.min(23, v)) }));
+                  }}
+                  keyboardType="numeric"
+                  maxLength={2}
+                  style={[s.input, { width: 78, textAlign: 'center', fontSize: 18, fontWeight: '600' }]}
+                  testID="notif-hour-input"
+                />
+                <Text style={{ fontSize: 15, color: theme.color.onSurfaceSecondary }}>:00</Text>
+                <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {[7, 9, 12, 18, 20].map(h => {
+                    const active = notif.notify_hour === h;
+                    return (
+                      <Pressable
+                        key={h}
+                        onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, notify_hour: h })); }}
+                        style={[notifStyles.chipSmall, active && notifStyles.chipActive]}
+                        testID={`notif-hour-${h}`}
+                      >
+                        <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{h}h</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
             </View>
 
-            <View style={notifStyles.row}>
-              <Text style={notifStyles.rowLabel}>{t('notif.freezer')}</Text>
-              <Pressable
-                onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, freezer_enabled: !n.freezer_enabled })); }}
-                style={[notifStyles.switch, notif.freezer_enabled && notifStyles.switchOn]}
-                testID="notif-freezer"
-              >
-                <View style={[notifStyles.thumb, notif.freezer_enabled && notifStyles.thumbOn]} />
-              </Pressable>
+            {/* Freezer alerts — A3 (hours before) */}
+            <View style={notifStyles.card}>
+              <View style={notifStyles.row}>
+                <View style={notifStyles.cardHead}>
+                  <Feather name="cloud-snow" size={14} color={theme.color.brand} />
+                  <Text style={notifStyles.cardH}>{t('notif.freezer')}</Text>
+                </View>
+                <Pressable
+                  onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, freezer_enabled: !n.freezer_enabled })); }}
+                  style={[notifStyles.switch, notif.freezer_enabled && notifStyles.switchOn]}
+                  testID="notif-freezer"
+                >
+                  <View style={[notifStyles.thumb, notif.freezer_enabled && notifStyles.thumbOn]} />
+                </Pressable>
+              </View>
+              {notif.freezer_enabled && (
+                <>
+                  <Text style={notifStyles.rowSub}>{t('notif.freezerHoursSub')}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <TextInput
+                      value={String(notif.freezer_hours ?? 24)}
+                      onChangeText={(text) => {
+                        const v = parseInt(text.replace(/[^0-9]/g, ''));
+                        setNotif(n => ({ ...n, freezer_hours: isNaN(v) ? 24 : Math.max(1, Math.min(168, v)) }));
+                      }}
+                      keyboardType="numeric"
+                      maxLength={3}
+                      style={[s.input, { width: 78, textAlign: 'center', fontSize: 18, fontWeight: '600' }]}
+                      testID="freezer-hours-input"
+                    />
+                    <Text style={{ fontSize: 14, color: theme.color.onSurfaceSecondary }}>{t('notif.hoursSuffix')}</Text>
+                    <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {[12, 24, 48, 72].map(h => {
+                        const active = (notif.freezer_hours ?? 24) === h;
+                        return (
+                          <Pressable
+                            key={h}
+                            onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, freezer_hours: h })); }}
+                            style={[notifStyles.chipSmall, active && notifStyles.chipActive]}
+                            testID={`freezer-hours-${h}`}
+                          >
+                            <Text style={[notifStyles.chipTxt, active && notifStyles.chipTxtActive]}>{h}h</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           </View>
 
@@ -495,10 +637,20 @@ const notifStyles = StyleSheet.create({
   proBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, backgroundColor: theme.color.brand },
   proBadgeTxt: { color: '#fff', fontWeight: '700', fontSize: 9 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: theme.spacing.sm },
-  rowLabel: { fontSize: 14, color: theme.color.onSurface, flex: 1 },
+  rowLabel: { fontSize: 14, color: theme.color.onSurface, fontWeight: '500' },
+  rowSub: { fontSize: 11, color: theme.color.onSurfaceSecondary, lineHeight: 15, marginTop: 2, marginBottom: 8 },
   subLabel: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: theme.spacing.md, marginBottom: 6, fontWeight: '500' },
+  card: {
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+    marginTop: theme.spacing.sm,
+  },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  cardH: { fontSize: 13, fontWeight: '600', color: theme.color.onSurface },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: theme.radius.pill, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
+  chipSmall: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: theme.radius.pill, backgroundColor: theme.color.surface, borderWidth: 1, borderColor: theme.color.border },
   chipActive: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
   chipTxt: { fontSize: 13, color: theme.color.onSurfaceSecondary, fontWeight: '500' },
   chipTxtActive: { color: theme.color.brandPrimary, fontWeight: '600' },

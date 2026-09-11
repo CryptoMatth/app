@@ -72,7 +72,8 @@ export const api = {
     language?: 'it' | 'en';
     courses?: { id?: string; label: string }[];
     ingredient_categories?: { id?: string; label: string; icon?: string | null; color?: string | null }[];
-    notifications?: Partial<{ enabled: boolean; expiry_days_ahead: number; notify_hour: number; freezer_enabled: boolean }>;
+    notifications?: Partial<{ enabled: boolean; expiry_days_ahead: number; days_ahead: number[]; notify_hour: number; freezer_enabled: boolean; freezer_hours: number }>;
+    defaults?: Partial<{ default_qty: number; default_unit: string; default_servings: number }>;
   }) =>
     req('/auth/preferences', { method: 'PUT', body: JSON.stringify(data) }),
   recoveryVerify: (username: string, code: string, new_password: string) =>
@@ -106,6 +107,17 @@ export const api = {
 
   exportData: () => req('/export'),
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
+
+  // Notifications center (Pro+)
+  listNotifications: () => req('/notifications'),
+  markNotificationsRead: (ids: string[]) =>
+    req('/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }),
+  markNotificationsUnread: (ids: string[]) =>
+    req('/notifications/unread', { method: 'POST', body: JSON.stringify({ ids }) }),
+  deleteNotifications: (ids: string[]) =>
+    req('/notifications/delete', { method: 'POST', body: JSON.stringify({ ids }) }),
+  markAllNotificationsRead: () =>
+    req('/notifications/mark-all-read', { method: 'POST', body: JSON.stringify({}) }),
 
   // Photo upload/download (Pro feature)
   uploadPhoto: async (uri: string, contentType: string): Promise<string> => {

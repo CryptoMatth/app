@@ -86,7 +86,10 @@ class FridgeItemCreate(BaseModel):
     notes: str = ""
     category_id: Optional[str] = None
     photo_path: Optional[str] = None
-    expiries: List[str] = []  # ISO dates (YYYY-MM-DD)
+    # Accept either legacy list of ISO date strings ("YYYY-MM-DD") OR the new
+    # list of dicts {date: "YYYY-MM-DD", label: str|None}. Server normalizes
+    # to the dict form on write. Kept as `Any` so both shapes validate.
+    expiries: List[Any] = []
 
 
 class FridgeItemUpdate(BaseModel):
@@ -96,7 +99,7 @@ class FridgeItemUpdate(BaseModel):
     notes: Optional[str] = None
     category_id: Optional[str] = None
     photo_path: Optional[str] = None
-    expiries: Optional[List[str]] = None
+    expiries: Optional[List[Any]] = None
 
 
 class ShoppingItemToggle(BaseModel):
@@ -164,9 +167,16 @@ def _default_prefs() -> Dict[str, Any]:
         "ingredient_categories": [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES],
         "notifications": {
             "enabled": False,
-            "expiry_days_ahead": 1,
+            "expiry_days_ahead": 1,          # legacy fallback
+            "days_ahead": [1],                # new multi-day preavviso
             "notify_hour": 9,
             "freezer_enabled": True,
+            "freezer_hours": 24,
+        },
+        "defaults": {
+            "default_qty": 1.0,
+            "default_unit": "pz",
+            "default_servings": 2,
         },
     }
 
@@ -256,9 +266,20 @@ class IngredientCategoryItem(BaseModel):
 
 class NotificationPrefs(BaseModel):
     enabled: Optional[bool] = None
-    expiry_days_ahead: Optional[int] = None  # notify N days before expiration
+    # Legacy single-day preavviso (kept for backward compat)
+    expiry_days_ahead: Optional[int] = None
+    # New multi-day preavviso — e.g. [3, 2, 1, 0]. Overrides expiry_days_ahead when set.
+    days_ahead: Optional[List[int]] = None
     notify_hour: Optional[int] = None  # 0..23
     freezer_enabled: Optional[bool] = None
+    # New: how many hours before a planned freezer dish we should warn.
+    freezer_hours: Optional[int] = None  # 1..168
+
+
+class DefaultsPrefs(BaseModel):
+    default_qty: Optional[float] = None
+    default_unit: Optional[str] = None
+    default_servings: Optional[int] = None
 
 
 class PreferencesBody(BaseModel):
@@ -268,6 +289,7 @@ class PreferencesBody(BaseModel):
     courses: Optional[List[CourseItem]] = None
     ingredient_categories: Optional[List[IngredientCategoryItem]] = None
     notifications: Optional[NotificationPrefs] = None
+    defaults: Optional[DefaultsPrefs] = None
 
 
 # -------------------- Helpers --------------------
@@ -428,7 +450,23 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     if not prefs.get("ingredient_categories"):
         prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
     if not prefs.get("notifications"):
-        prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "notify_hour": 9, "freezer_enabled": True}
+        prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "days_ahead": [1], "notify_hour": 9, "freezer_enabled": True, "freezer_hours": 24}
+    else:
+        n = prefs["notifications"]
+        n.setdefault("expiry_days_ahead", 1)
+        # Backfill days_ahead from the legacy single-value field if missing.
+        if "days_ahead" not in n or n["days_ahead"] is None:
+            n["days_ahead"] = [int(n.get("expiry_days_ahead", 1))]
+        n.setdefault("notify_hour", 9)
+        n.setdefault("freezer_enabled", True)
+        n.setdefault("freezer_hours", 24)
+    if not prefs.get("defaults"):
+        prefs["defaults"] = {"default_qty": 1.0, "default_unit": "pz", "default_servings": 2}
+    else:
+        d = prefs["defaults"]
+        d.setdefault("default_qty", 1.0)
+        d.setdefault("default_unit", "pz")
+        d.setdefault("default_servings", 2)
     # Drop legacy `backups` prefs field if present (Ultra cloud backups
     # feature was removed — the field is ignored from now on).
     if "backups" in prefs:
@@ -774,10 +812,29 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         if n.enabled is not None: cur["enabled"] = bool(n.enabled)
         if n.expiry_days_ahead is not None:
             cur["expiry_days_ahead"] = max(0, min(30, int(n.expiry_days_ahead)))
+        if n.days_ahead is not None:
+            # Dedupe, clamp, sort desc so the "furthest ahead" chip comes first.
+            days = sorted({max(0, min(30, int(x))) for x in n.days_ahead}, reverse=True)
+            cur["days_ahead"] = days
+            # Also mirror the first (largest) into the legacy field for backward compat.
+            if days:
+                cur["expiry_days_ahead"] = days[0]
         if n.notify_hour is not None:
             cur["notify_hour"] = max(0, min(23, int(n.notify_hour)))
         if n.freezer_enabled is not None: cur["freezer_enabled"] = bool(n.freezer_enabled)
+        if n.freezer_hours is not None:
+            cur["freezer_hours"] = max(1, min(168, int(n.freezer_hours)))
         prefs["notifications"] = cur
+    if body.defaults is not None:
+        cur_d = prefs.get("defaults") or {}
+        d = body.defaults
+        if d.default_qty is not None:
+            cur_d["default_qty"] = max(0.0, float(d.default_qty))
+        if d.default_unit is not None:
+            cur_d["default_unit"] = str(d.default_unit)[:16]
+        if d.default_servings is not None:
+            cur_d["default_servings"] = max(1, min(50, int(d.default_servings)))
+        prefs["defaults"] = cur_d
     # Ultra cloud backups feature was removed — silently drop legacy field
     prefs.pop("backups", None)
     await db.users.update_one(
@@ -1451,12 +1508,51 @@ def _fridge_key(name: str, unit: str) -> str:
     return f"{name.strip().lower()}|{unit.strip().lower()}"
 
 
+def _normalize_expiries(raw: Any) -> List[Dict[str, Any]]:
+    """Normalize incoming expiries to a list of {date: str, label: str}.
+
+    Accepts either legacy list of ISO date strings ("YYYY-MM-DD") or dicts
+    with keys `date` (required) and optional `label`. Invalid entries are
+    silently dropped. Result is sorted ascending by date.
+    """
+    out: List[Dict[str, Any]] = []
+    for e in (raw or []):
+        try:
+            if isinstance(e, str):
+                if len(e) == 10:
+                    out.append({"date": e, "label": ""})
+            elif isinstance(e, dict):
+                d = str(e.get("date") or "")
+                if len(d) == 10:
+                    label = str(e.get("label") or "").strip()[:60]
+                    out.append({"date": d, "label": label})
+        except Exception:
+            continue
+    out.sort(key=lambda x: x.get("date", ""))
+    return out
+
+
+def _expiries_dates(raw: Any) -> List[str]:
+    """Return just the date strings from a legacy or normalized expiries list."""
+    if not raw:
+        return []
+    dates: List[str] = []
+    for e in raw:
+        if isinstance(e, str) and len(e) == 10:
+            dates.append(e)
+        elif isinstance(e, dict):
+            d = e.get("date")
+            if isinstance(d, str) and len(d) == 10:
+                dates.append(d)
+    return dates
+
+
 async def _cleanup_expired_fridge(user_id: str) -> int:
     """Auto-remove fridge items whose LATEST expiry is in the past."""
     today = datetime.now(timezone.utc).date().isoformat()
     to_remove: List[str] = []
     async for it in db.fridge_items.find({"user_id": user_id}, {"_id": 0}):
-        exps = [e for e in (it.get("expiries") or []) if isinstance(e, str)]
+        exps = _expiries_dates(it.get("expiries"))
         if not exps:
             continue  # keep items without any date
         latest = max(exps)
@@ -1531,6 +1627,9 @@ async def list_fridge(current_user=Depends(require_pro_plus)):
     await _cleanup_expired_fridge(user_id)
     cursor = db.fridge_items.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
     items = await cursor.to_list(length=None)
+    # Backfill legacy list-of-strings shape into new list-of-dicts for the client
+    for it in items:
+        it["expiries"] = _normalize_expiries(it.get("expiries"))
     return items
 
 
@@ -1548,7 +1647,7 @@ async def add_fridge(body: FridgeItemCreate, current_user=Depends(require_pro_pl
         "category_id": body.category_id or "altro",
         "photo_path": body.photo_path,
         "notes": body.notes,
-        "expiries": sorted([e for e in (body.expiries or []) if isinstance(e, str) and len(e) == 10]),
+        "expiries": _normalize_expiries(body.expiries),
         "created_at": _now(),
     }
     await db.fridge_items.insert_one(doc)
@@ -1567,7 +1666,7 @@ async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depen
     if body.category_id is not None: update_set["category_id"] = body.category_id
     if body.photo_path is not None: update_set["photo_path"] = body.photo_path
     if body.expiries is not None:
-        update_set["expiries"] = sorted([e for e in body.expiries if isinstance(e, str) and len(e) == 10])
+        update_set["expiries"] = _normalize_expiries(body.expiries)
     if body.name is not None or body.unit is not None:
         # rebuild key
         cur = await db.fridge_items.find_one({"user_id": user_id, "id": item_id}, {"_id": 0})
@@ -1585,6 +1684,8 @@ async def update_fridge(item_id: str, body: FridgeItemUpdate, current_user=Depen
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     doc = await db.fridge_items.find_one({"user_id": user_id, "id": item_id}, {"_id": 0})
+    if doc:
+        doc["expiries"] = _normalize_expiries(doc.get("expiries"))
     return doc
 
 
@@ -1595,6 +1696,130 @@ async def delete_fridge(item_id: str, current_user=Depends(require_pro_plus)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"ok": True}
+
+
+# -------------------- Notification center (Pro+) --------------------
+@api_router.get("/notifications")
+async def list_notifications(current_user=Depends(require_pro_plus)):
+    """Compute fridge notifications on-the-fly and merge with per-user read/deleted state.
+
+    Notifications are derived from current fridge state (expiring items) so no
+    background job is needed. We keep only a tiny `notification_states` doc per
+    user with which alerts have been read or deleted.
+    """
+    user_id = current_user["user_id"]
+    prefs = (current_user.get("preferences") or {}).get("notifications") or {}
+    days_ahead = prefs.get("days_ahead") or [int(prefs.get("expiry_days_ahead") or 1)]
+    max_ahead = max(days_ahead) if days_ahead else 3
+
+    today = datetime.now(timezone.utc).date()
+    items = []
+    async for it in db.fridge_items.find({"user_id": user_id}, {"_id": 0}):
+        exps = _normalize_expiries(it.get("expiries"))
+        if not exps:
+            continue
+        for e in exps:
+            try:
+                d = datetime.strptime(e["date"], "%Y-%m-%d").date()
+                delta = (d - today).days
+            except Exception:
+                continue
+            # Emit a notification only if today matches one of the configured
+            # preavviso days OR if the item is already overdue (never miss those).
+            if delta >= 0 and delta not in days_ahead and delta > max_ahead:
+                continue
+            if delta > max_ahead:
+                continue
+            nid = f"exp:{it['id']}:{e['date']}:{e.get('label') or ''}"
+            items.append({
+                "id": nid,
+                "kind": "expiry",
+                "fridge_item_id": it["id"],
+                "item_name": it.get("name", ""),
+                "item_photo_path": it.get("photo_path"),
+                "category_id": it.get("category_id"),
+                "date": e["date"],
+                "label": e.get("label") or "",
+                "days_until": delta,
+                "created_at": _now().isoformat(),
+            })
+
+    # Load per-user state
+    state_doc = await db.notification_states.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    read = set(state_doc.get("read") or [])
+    deleted = set(state_doc.get("deleted") or [])
+
+    out = []
+    for n in items:
+        if n["id"] in deleted:
+            continue
+        n["read"] = n["id"] in read
+        out.append(n)
+
+    # Sort by urgency: overdue first, then closest to expiring.
+    out.sort(key=lambda x: (x["days_until"], x["date"]))
+    unread = sum(1 for n in out if not n["read"])
+    return {"notifications": out, "unread": unread}
+
+
+class NotificationMarkBody(BaseModel):
+    ids: List[str]
+
+
+@api_router.post("/notifications/read")
+async def mark_read(body: NotificationMarkBody, current_user=Depends(require_pro_plus)):
+    """Mark one or more notifications as read/unread by id."""
+    user_id = current_user["user_id"]
+    if not body.ids:
+        return {"ok": True}
+    await db.notification_states.update_one(
+        {"user_id": user_id},
+        {"$addToSet": {"read": {"$each": body.ids}}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/unread")
+async def mark_unread(body: NotificationMarkBody, current_user=Depends(require_pro_plus)):
+    user_id = current_user["user_id"]
+    if not body.ids:
+        return {"ok": True}
+    await db.notification_states.update_one(
+        {"user_id": user_id},
+        {"$pull": {"read": {"$in": body.ids}}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/delete")
+async def delete_notifications(body: NotificationMarkBody, current_user=Depends(require_pro_plus)):
+    """Soft-delete notifications so they won't reappear on the next fetch."""
+    user_id = current_user["user_id"]
+    if not body.ids:
+        return {"ok": True}
+    await db.notification_states.update_one(
+        {"user_id": user_id},
+        {"$addToSet": {"deleted": {"$each": body.ids}}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/mark-all-read")
+async def mark_all_read(current_user=Depends(require_pro_plus)):
+    """Convenience endpoint: mark every currently visible notification as read."""
+    # Reuse list logic to know which ids are visible right now.
+    payload = await list_notifications(current_user)  # type: ignore
+    ids = [n["id"] for n in payload["notifications"]]
+    if ids:
+        await db.notification_states.update_one(
+            {"user_id": current_user["user_id"]},
+            {"$addToSet": {"read": {"$each": ids}}},
+            upsert=True,
+        )
+    return {"ok": True, "count": len(ids)}
 
 
 @api_router.get("/")
@@ -1830,7 +2055,7 @@ async def _apply_snapshot(user_id: str, payload: Dict[str, Any], mode: str) -> D
                 "notes": it.get("notes", ""),
                 "category_id": it.get("category_id"),
                 "photo_path": it.get("photo_path"),
-                "expiries": it.get("expiries") or [],
+                "expiries": _normalize_expiries(it.get("expiries")),
                 "created_at": _now(),
             }
             if not doc["name"]:

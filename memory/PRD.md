@@ -127,7 +127,13 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Modal "Rimuovi presi" ora wrappato in ScrollView con maxHeight 85% così i pulsanti "Sposta nel Frigorifero" / "Elimina" / "Annulla" restano sempre visibili anche con testo lungo (16+ elementi)
 - "Sposta nel Frigorifero" ora gated su `useHasTier('pro_plus')` (Pro+) invece di `useIsPro` — coerente col fatto che il frigo richiede Pro+
 
-## UX polish batch (giu 2026)
+## Fase 2 — Notifiche + Preferenze avanzate + Frigo (giu 2026)
+- **A2 · Calendario mese completo** nel picker scadenze: nuovo `NativeDatePicker` con griglia mensile a 7 colonne, frecce prev/next, oggi evidenziato, giorno selezionato in brand. Su web resta l'input HTML nativo.
+- **A3 · Redesign notifiche**: sezione ristrutturata in cards con headline+icona. Ora custom via TextInput numerico (0-23) + chips rapide. Alert surgelati con custom hours (1-168) + chips rapide (12/24/48/72h).
+- **A4 · Centro notifiche in-app**: icona campanella con badge unread rosso nell'header Frigorifero. Nuova schermata `/notifications` con lista, mark read/unread singolo (tap check-circle), delete (soft-delete server-side), mark all read. Backend `GET/POST /api/notifications*` che calcola le notifiche on-the-fly dallo stato frigo (nessun cron job) + collezione `notification_states` per read/deleted.
+- **A6 · Etichetta facoltativa per scadenza**: `expiries` ora normalizzato a `List[{date, label}]`. Backend accepts sia stringhe legacy che dict. UI editor: TextInput label sotto il date picker. Mostrato in liste come "🏷️ label".
+- **A10 · Multi-select giorni preavviso**: `notifications.days_ahead: List[int]` (es. [3,2,1,0]). Chip multi-select (3g/2g/1g/Oggi) con toggle. Backend mantiene `expiry_days_ahead` come mirror del più grande per backward compat.
+- **A11 · Valori default customizzabili**: nuova sezione "Valori predefiniti" in Preferenze con `default_qty`, `default_unit`, `default_servings`. Applicati quando IngredientEditorForm apre con quantity vuota (nuovo item flow). DishEditor inizializza servings dal default.
 - **A1 · Nuovo ingrediente nel Frigo**: FAB "Nuovo ingrediente" in fondo alla tab Frigorifero → apre `/fridge/new` (stessa form dell'editor, senza pulsante elimina). Backend usa endpoint `POST /api/fridge` esistente
 - **A5 · Rimosso "Zona pericolo"**: la voce Esci è ora direttamente sotto "Backup & Ripristino" senza header di sezione
 - **A7 · Icone categoria come placeholder**: PhotoThumb ora accetta `fallbackEmoji` — negli spesa e frigo, se non c'è foto viene mostrato l'emoji della categoria (🥬 per Verdura, 🥛 per Latticini, ecc.) invece della genericissima 📦
