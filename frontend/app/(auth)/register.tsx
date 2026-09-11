@@ -15,6 +15,7 @@ export default function Register() {
   const [username, setUsername] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const { register } = useAuth();
@@ -27,6 +28,7 @@ export default function Register() {
     if (!username.trim() || !pw) { setErr(t('auth.errors.missing')); return; }
     if (pw.length < 6) { setErr(t('auth.register.pwShort')); return; }
     if (pw !== pw2) { setErr(t('auth.register.pwMismatch')); return; }
+    if (!accepted) { setErr(t('auth.register.mustAcceptPrivacy')); return; }
     setBusy(true);
     try {
       const codes = await register(username.trim(), pw, pw2);
@@ -77,6 +79,25 @@ export default function Register() {
         {err ? <Text style={styles.err} testID="register-error">{err}</Text> : null}
         <Text style={styles.helper}>{t('auth.register.helper')}</Text>
 
+        {/* Privacy Policy acceptance (GDPR) */}
+        <Pressable
+          onPress={() => setAccepted(a => !a)}
+          style={styles.privacyRow}
+          testID="privacy-accept"
+        >
+          <View style={[styles.checkbox, accepted && styles.checkboxOn]}>
+            {accepted && <Feather name="check" size={13} color="#fff" />}
+          </View>
+          <Text style={styles.privacyTxt}>
+            {t('auth.register.privacy.accept1')}
+            <Text
+              style={styles.privacyLink}
+              onPress={() => router.push('/privacy-policy')}
+            > {t('auth.register.privacy.link')}</Text>
+            {t('auth.register.privacy.accept2')}
+          </Text>
+        </Pressable>
+
         <Pressable
           testID="register-submit-button"
           onPress={onSubmit}
@@ -116,4 +137,16 @@ const styles = StyleSheet.create({
   link: { alignItems: 'center', paddingVertical: theme.spacing.lg },
   linkTxt: { color: theme.color.onSurfaceSecondary, fontSize: 14 },
   err: { color: theme.color.error, fontSize: 13, marginBottom: theme.spacing.sm },
+  privacyRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: theme.spacing.sm, marginBottom: theme.spacing.sm,
+  },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 4, borderWidth: 1.5,
+    borderColor: theme.color.borderStrong, alignItems: 'center', justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: theme.color.brandPrimary, borderColor: theme.color.brandPrimary },
+  privacyTxt: { flex: 1, fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },
+  privacyLink: { color: theme.color.brandPrimary, fontWeight: '600', textDecorationLine: 'underline' },
 });

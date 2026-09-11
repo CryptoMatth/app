@@ -113,6 +113,16 @@ export default function SettingsHome() {
           sub: t('settings.contact.sub'),
           testID: 'nav-contact',
         },
+        {
+          key: 'privacy',
+          href: '/privacy-policy',
+          icon: 'shield',
+          bg: '#E5EDDF',
+          color: theme.color.brandSecondary,
+          title: t('settings.privacy.title'),
+          sub: t('settings.privacy.sub'),
+          testID: 'nav-privacy',
+        },
       ],
     },
     {
