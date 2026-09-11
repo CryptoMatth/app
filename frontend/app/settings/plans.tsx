@@ -10,13 +10,18 @@ import { useTier } from '@/src/ProGate';
 type Feature = { icon: any; label: string };
 
 function PlanCard({
-  name, price, accent, features, note, active, badge,
+  name, price, accent, features, note, active, badge, locked,
 }: {
   name: string; price: string; accent: string; features: Feature[];
-  note?: string; active?: boolean; badge?: string;
+  note?: string; active?: boolean; badge?: string; locked?: boolean;
 }) {
   return (
-    <View style={[styles.card, { borderColor: accent }, active && { borderWidth: 2.5 }]}>
+    <View style={[
+      styles.card,
+      { borderColor: accent },
+      active && { borderWidth: 2.5 },
+      locked && !active && { opacity: 0.55 },
+    ]}>
       <View style={styles.head}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -52,6 +57,8 @@ export default function PlansScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const tier = useTier();
+  const tierRank: Record<string, number> = { free: 0, pro: 1, pro_plus: 2 };
+  const cur = tierRank[tier] ?? 0;
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="plans-screen">
       <View style={s.header}>
@@ -74,6 +81,7 @@ export default function PlansScreen() {
         <PlanCard
           name={t('plans.free.name')} price={t('plans.free.price')} accent={theme.color.onSurfaceSecondary}
           active={tier === 'free'}
+          locked={cur >= tierRank.free && tier !== 'free'}
           features={[
             { icon: 'book', label: t('plans.free.f1') },
             { icon: 'calendar', label: t('plans.free.f2') },
@@ -84,12 +92,11 @@ export default function PlansScreen() {
         <PlanCard
           name={t('pro.tier.pro.name')} price={t('pro.tier.pro.price')} accent={theme.color.brand}
           active={tier === 'pro'}
+          locked={cur >= tierRank.pro && tier !== 'pro'}
           features={[
             { icon: 'camera', label: t('pro.feat.photos.t') },
             { icon: 'image', label: t('pro.feat.photos_ing.t') },
-            { icon: 'shopping-cart', label: t('pro.feat.photos_shop.t') },
             { icon: 'award', label: t('pro.feat.symbols.t') },
-            { icon: 'tag', label: t('pro.feat.categories.t') },
           ]}
         />
 
@@ -98,23 +105,16 @@ export default function PlansScreen() {
           name={t('pro.tier.proplus.name')} price={t('pro.tier.proplus.price')} accent={theme.color.brandSecondary}
           active={tier === 'pro_plus'}
           features={[
+            { icon: 'tag', label: t('pro.feat.categories.t') },
             { icon: 'clock', label: t('pro.feat.expiry.t') },
             { icon: 'cloud-snow', label: t('pro.feat.freezer.t') },
             { icon: 'package', label: t('pro.feat.fridge.t') },
           ]}
-          note={t('pro.tier.includes', { plan: t('pro.tier.pro.name') })}
-        />
-
-        {/* Ultra */}
-        <PlanCard
-          name={t('pro.tier.ultra.name')} price={t('pro.tier.ultra.price')} accent="#8B6F47"
-          active={tier === 'ultra'}
-          badge={t('pro.tier.comingSoon')}
-          features={[
-            { icon: 'cloud', label: t('pro.feat.cloud_login.t') },
-            { icon: 'upload-cloud', label: t('pro.feat.backup.t') },
-          ]}
-          note={t('pro.tier.includes', { plan: t('pro.tier.proplus.name') })}
+          note={
+            tier === 'pro'
+              ? t('pro.tier.upgradeFromPro')
+              : t('pro.tier.includes', { plan: t('pro.tier.pro.name') })
+          }
         />
 
         <Text style={styles.footer}>{t('plans.footer')}</Text>

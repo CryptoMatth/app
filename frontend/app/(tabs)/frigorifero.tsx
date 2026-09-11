@@ -11,7 +11,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
-import { useIsPro, ProUpsellModal } from '@/src/ProGate';
+import { useHasTier, ProUpsellModal } from '@/src/ProGate';
 
 type FridgeItem = {
   id: string;
@@ -40,7 +40,7 @@ export default function Frigorifero() {
   const router = useRouter();
   const { t, tCat, locale } = useTranslation();
   const { prefs } = useAuth();
-  const isPro = useIsPro();
+  const isPro = useHasTier('pro_plus');
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<FridgeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +80,9 @@ export default function Frigorifero() {
     } catch {}
   };
 
-  // Group items by status: expired (impossible thanks to auto-cleanup but keep guard), expiring soon, ok, no-date
+  // Group items by status: expired (impossible thanks to auto-cleanup but keep guard), expiring soon, ok, no-date.
+  // Within each section, sort ascending by earliest expiry so items closer to expiring
+  // appear first.
   const sections = useMemo(() => {
     const soon: FridgeItem[] = [];
     const ok: FridgeItem[] = [];
@@ -91,6 +93,14 @@ export default function Frigorifero() {
       if (min <= 3) soon.push(it);
       else ok.push(it);
     }
+    const byEarliestExpiry = (a: FridgeItem, b: FridgeItem) => {
+      const ea = a.expiries && a.expiries.length ? [...a.expiries].sort()[0] : '';
+      const eb = b.expiries && b.expiries.length ? [...b.expiries].sort()[0] : '';
+      return ea.localeCompare(eb);
+    };
+    soon.sort(byEarliestExpiry);
+    ok.sort(byEarliestExpiry);
+    // For no-date items, keep insertion order (by creation).
     return { soon, ok, nodate };
   }, [items]);
 
@@ -113,7 +123,6 @@ export default function Frigorifero() {
             <Feather name="star" size={16} color="#fff" />
             <Text style={styles.lockCtaTxt}>{t('pro.cta')}</Text>
           </Pressable>
-          <Text style={styles.lockPrice}>{t('pro.price')}</Text>
         </ScrollView>
         <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="fridge" />
       </SafeAreaView>
@@ -142,7 +151,7 @@ export default function Frigorifero() {
         style={styles.row}
         testID={`fridge-item-${it.id}`}
       >
-        <PhotoThumb path={it.photo_path} size={44} rounded fallbackIcon="package" />
+        <PhotoThumb path={it.photo_path} size={44} rounded fallbackEmoji={cat?.icon || '📦'} fallbackIcon="package" />
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={styles.rowName}>{it.name}</Text>
           <Text style={styles.rowMeta}>
@@ -212,7 +221,7 @@ export default function Frigorifero() {
           keyExtractor={g => g.key}
           contentContainerStyle={{
             padding: theme.spacing.lg,
-            paddingBottom: 60 + Math.max(insets.bottom, 0),
+            paddingBottom: 100 + Math.max(insets.bottom, 0),
           }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
           renderItem={({ item: group }) => (
@@ -227,6 +236,16 @@ export default function Frigorifero() {
           )}
         />
       )}
+
+      {/* Floating "New ingredient" button (visible only when Pro+) */}
+      <Pressable
+        onPress={() => router.push('/fridge/new')}
+        style={[styles.fab, { bottom: 20 + Math.max(insets.bottom, 0) }]}
+        testID="fridge-add"
+      >
+        <Feather name="plus" size={22} color="#fff" />
+        <Text style={styles.fabTxt}>{t('fridge.newItem')}</Text>
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -245,6 +264,16 @@ const styles = StyleSheet.create({
   emptyH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginTop: theme.spacing.md, textAlign: 'center' },
   emptyP: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginTop: 6, textAlign: 'center', maxWidth: 280 },
   groupLabel: { fontSize: 11, fontWeight: '700', color: theme.color.onSurfaceTertiary, letterSpacing: 0.6 },
+  fab: {
+    position: 'absolute', right: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 18, paddingVertical: 12,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.brandPrimary,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18, shadowRadius: 10, elevation: 6,
+  },
+  fabTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
   row: {
     flexDirection: 'row', alignItems: 'center',
     padding: 12, borderRadius: theme.radius.md,
@@ -266,5 +295,4 @@ const styles = StyleSheet.create({
   lockBody: { fontSize: 14, color: theme.color.onSurfaceSecondary, textAlign: 'center', maxWidth: 300 },
   lockCta: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.color.brand, paddingHorizontal: 24, paddingVertical: 12, borderRadius: theme.radius.pill },
   lockCtaTxt: { color: '#fff', fontWeight: '600' },
-  lockPrice: { fontSize: 12, color: theme.color.onSurfaceTertiary, fontStyle: 'italic', marginTop: -6 },
 });

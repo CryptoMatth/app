@@ -42,8 +42,10 @@ export default function FridgeEditor() {
   const [err, setErr] = useState('');
   const [showDelete, setShowDelete] = useState(false);
   const [datePicking, setDatePicking] = useState<{ index: number | null; value: string } | null>(null);
+  const isNew = !id || id === 'new';
 
   useEffect(() => {
+    if (isNew) { setLoading(false); return; }
     (async () => {
       try {
         const list = await api.listFridge();
@@ -62,7 +64,7 @@ export default function FridgeEditor() {
       } catch {}
       setLoading(false);
     })();
-  }, [id]);
+  }, [id, isNew]);
 
   const save = async () => {
     Keyboard.dismiss();
@@ -72,7 +74,7 @@ export default function FridgeEditor() {
     if (isNaN(q) || q < 0) { setErr(t('spesa.errors.qty')); return; }
     setBusy(true);
     try {
-      await api.editFridge(id, {
+      const payload = {
         name: draft.name.trim(),
         quantity: q,
         unit: draft.unit,
@@ -80,7 +82,12 @@ export default function FridgeEditor() {
         category_id: draft.category_id,
         photo_path: draft.photo_path || null,
         expiries: [...expiries].sort(),
-      });
+      };
+      if (isNew) {
+        await api.addFridge(payload);
+      } else {
+        await api.editFridge(id, payload);
+      }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.back();
     } catch (e: any) {
@@ -131,10 +138,14 @@ export default function FridgeEditor() {
         <Pressable onPress={() => router.back()} style={styles.hBtn} testID="fridge-back">
           <Feather name="x" size={22} color={theme.color.onSurface} />
         </Pressable>
-        <Text style={styles.hTitle}>{t('fridge.editor.title')}</Text>
-        <Pressable onPress={() => setShowDelete(true)} style={styles.hBtn} testID="fridge-delete-btn">
-          <Feather name="trash-2" size={20} color={theme.color.error} />
-        </Pressable>
+        <Text style={styles.hTitle}>{isNew ? t('fridge.editor.newTitle') : t('fridge.editor.title')}</Text>
+        {isNew ? (
+          <View style={styles.hBtn} />
+        ) : (
+          <Pressable onPress={() => setShowDelete(true)} style={styles.hBtn} testID="fridge-delete-btn">
+            <Feather name="trash-2" size={20} color={theme.color.error} />
+          </Pressable>
+        )}
       </View>
 
       <KeyboardAwareScrollView

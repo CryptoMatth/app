@@ -17,6 +17,7 @@ import { theme } from './theme';
 import { useAuth } from './auth';
 import { useTranslation } from './i18n';
 import { PhotoPicker } from './PhotoPicker';
+import { useHasTier } from './ProGate';
 
 export const UNITS = ['g', 'kg', 'ml', 'l', 'pz', 'cucchiaio', 'cucchiaino', 'tazza', 'q.b.'];
 
@@ -51,9 +52,12 @@ export function IngredientEditorForm({
 }: Props) {
   const { prefs } = useAuth();
   const { t, tCat } = useTranslation();
+  const isProPlus = useHasTier('pro_plus');
   const cats = prefs.ingredient_categories;
   const [unitPickerOpen, setUnitPickerOpen] = useState(false);
   const patch = (p: Partial<IngredientDraft>) => onChange({ ...value, ...p });
+  // Ingredient categories are a Pro+ feature — hide the selector for anyone below.
+  const categoryVisible = showCategory && isProPlus;
 
   return (
     <View>
@@ -141,7 +145,7 @@ export function IngredientEditorForm({
         </>
       )}
 
-      {showCategory && (
+      {categoryVisible && (
         <>
           <Text style={styles.label}>{t('spesa.category')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>

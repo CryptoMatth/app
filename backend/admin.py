@@ -149,14 +149,14 @@ def create_admin_router(db) -> APIRouter:
     async def set_tier_entitlement(
         user_id: str, tier: str, body: AdminEntitlementBody, _: None = Depends(require_admin)
     ) -> Dict[str, Any]:
-        """Grant or revoke a specific tier (`pro`, `pro_plus`, `ultra`).
+        """Grant or revoke a specific tier (`pro`, `pro_plus`).
 
         Higher tiers do NOT auto-activate lower ones — the frontend checks a
-        hierarchy at read time (Ultra > Pro+ > Pro > Free). Setting `active`
+        hierarchy at read time (Pro+ > Pro > Free). Setting `active`
         to False on a higher tier will fall the user back to the next lowest
         tier they still hold entitlement for.
         """
-        if tier not in ("pro", "pro_plus", "ultra"):
+        if tier not in ("pro", "pro_plus"):
             raise HTTPException(400, "Unknown tier")
         u = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         if not u:

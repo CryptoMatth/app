@@ -147,6 +147,7 @@ DEFAULT_INGREDIENT_CATEGORIES: List[Dict[str, Any]] = [
 
 # Usernames that automatically get all Pro entitlements without paying (founder).
 FOUNDER_USERNAMES = {"halley"}
+FOUNDER_TIER = "pro_plus"  # tier auto-granted to founder usernames
 
 
 def _course_id(label: str) -> str:
@@ -166,10 +167,6 @@ def _default_prefs() -> Dict[str, Any]:
             "expiry_days_ahead": 1,
             "notify_hour": 9,
             "freezer_enabled": True,
-        },
-        "backups": {
-            "frequency": "off",  # off | daily | weekly | monthly
-            "last_auto_at": None,
         },
     }
 
@@ -264,11 +261,6 @@ class NotificationPrefs(BaseModel):
     freezer_enabled: Optional[bool] = None
 
 
-class BackupPrefs(BaseModel):
-    # 'off' | 'daily' | 'weekly' | 'monthly'
-    frequency: Optional[Literal["off", "daily", "weekly", "monthly"]] = None
-
-
 class PreferencesBody(BaseModel):
     week_start_day: Optional[int] = None  # 0=Mon..6=Sun
     planner_span: Optional[Literal["weekly", "biweekly"]] = None
@@ -276,16 +268,6 @@ class PreferencesBody(BaseModel):
     courses: Optional[List[CourseItem]] = None
     ingredient_categories: Optional[List[IngredientCategoryItem]] = None
     notifications: Optional[NotificationPrefs] = None
-    backups: Optional[BackupPrefs] = None
-
-
-class BackupCreateBody(BaseModel):
-    # 'manual' created explicitly by user; 'auto' created by the scheduled hook.
-    kind: Literal["manual", "auto"] = "manual"
-
-
-class BackupRestoreBody(BaseModel):
-    mode: Literal["merge", "replace"] = "merge"
 
 
 # -------------------- Helpers --------------------
@@ -447,11 +429,10 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
     if not prefs.get("notifications"):
         prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "notify_hour": 9, "freezer_enabled": True}
-    if not prefs.get("backups"):
-        prefs["backups"] = {"frequency": "off", "last_auto_at": None}
-    else:
-        prefs["backups"].setdefault("frequency", "off")
-        prefs["backups"].setdefault("last_auto_at", None)
+    # Drop legacy `backups` prefs field if present (Ultra cloud backups
+    # feature was removed — the field is ignored from now on).
+    if "backups" in prefs:
+        prefs.pop("backups", None)
 
     # Compute pro entitlement (founder whitelist OR explicit DB flag)
     ents = user_doc.get("entitlements") or {}
@@ -491,20 +472,22 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
 
 
 def _tier_rank(tier: str) -> int:
-    return {"free": 0, "pro": 1, "pro_plus": 2, "ultra": 3}.get((tier or "").lower(), 0)
+    return {"free": 0, "pro": 1, "pro_plus": 2}.get((tier or "").lower(), 0)
 
 
 def _get_tier(user_doc: Dict[str, Any]) -> str:
     """Return the highest tier the user currently has entitlement for.
 
-    Ultra > Pro+ > Pro > Free. Founder usernames map to Ultra automatically.
+    Pro+ > Pro > Free. Founder usernames map to Pro+ automatically.
+    Legacy `entitlements.ultra` grants are treated as Pro+.
     """
     ents = user_doc.get("entitlements") or {}
     is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
     if is_founder:
-        return "ultra"
+        return FOUNDER_TIER
+    # Legacy: pre-existing "ultra" grants still map to pro_plus.
     if (ents.get("ultra") or {}).get("active"):
-        return "ultra"
+        return "pro_plus"
     if (ents.get("pro_plus") or {}).get("active"):
         return "pro_plus"
     if (ents.get("pro") or {}).get("active"):
@@ -530,12 +513,6 @@ async def require_pro(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[
 async def require_pro_plus(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     if not _has_tier(user, "pro_plus"):
         raise HTTPException(status_code=402, detail="Pro+ subscription required")
-    return user
-
-
-async def require_ultra(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    if not _has_tier(user, "ultra"):
-        raise HTTPException(status_code=402, detail="Ultra subscription required")
     return user
 
 
@@ -801,11 +778,8 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
             cur["notify_hour"] = max(0, min(23, int(n.notify_hour)))
         if n.freezer_enabled is not None: cur["freezer_enabled"] = bool(n.freezer_enabled)
         prefs["notifications"] = cur
-    if body.backups is not None:
-        cur_b = prefs.get("backups") or {"frequency": "off", "last_auto_at": None}
-        if body.backups.frequency is not None:
-            cur_b["frequency"] = body.backups.frequency
-        prefs["backups"] = cur_b
+    # Ultra cloud backups feature was removed — silently drop legacy field
+    prefs.pop("backups", None)
     await db.users.update_one(
         {"user_id": current_user["user_id"]},
         {"$set": {"preferences": prefs, "updated_at": _now()}},
@@ -1906,192 +1880,7 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
     }
 
 
-# -------------------- Cloud backups (Ultra) --------------------
-MAX_AUTO_BACKUPS = 10  # rolling retention for auto backups
-MAX_MANUAL_BACKUPS = 20  # rolling retention for manual backups
-
-
-def _freq_to_days(freq: str) -> Optional[int]:
-    return {"daily": 1, "weekly": 7, "monthly": 30}.get((freq or "").lower())
-
-
-def _backup_meta(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Shape a backup document for list responses (no heavy payload)."""
-    p = doc.get("payload") or {}
-    counts = {
-        "dishes": len(p.get("dishes") or []),
-        "weekly_plans": len(p.get("weekly_plans") or []),
-        "shopping_items": len(p.get("shopping_items") or []),
-        "fridge_items": len(p.get("fridge_items") or []),
-    }
-    created = doc.get("created_at")
-    if isinstance(created, datetime):
-        created_iso = created.isoformat()
-    else:
-        created_iso = str(created) if created else None
-    return {
-        "id": doc.get("id"),
-        "kind": doc.get("kind") or "manual",
-        "created_at": created_iso,
-        "size_bytes": int(doc.get("size_bytes") or 0),
-        "counts": counts,
-    }
-
-
-async def _prune_backups(user_id: str, kind: str, keep: int) -> int:
-    """Delete the oldest backups of a given kind so that at most `keep` remain."""
-    total = await db.backups.count_documents({"user_id": user_id, "kind": kind})
-    if total <= keep:
-        return 0
-    to_delete = total - keep
-    old = await db.backups.find(
-        {"user_id": user_id, "kind": kind}, {"_id": 0, "id": 1, "created_at": 1}
-    ).sort("created_at", 1).to_list(to_delete)
-    ids = [d.get("id") for d in old if d.get("id")]
-    if not ids:
-        return 0
-    res = await db.backups.delete_many({"user_id": user_id, "id": {"$in": ids}})
-    return res.deleted_count or 0
-
-
-async def _create_backup(user: Dict[str, Any], kind: str) -> Dict[str, Any]:
-    user_id = user["user_id"]
-    payload = await _gather_user_snapshot(user_id, user.get("username"))
-    # Estimate size for user-friendly display (rough JSON byte-length).
-    try:
-        import json as _json
-        size = len(_json.dumps(payload).encode("utf-8"))
-    except Exception:
-        size = 0
-    doc = {
-        "id": _uid(),
-        "user_id": user_id,
-        "kind": kind,
-        "created_at": _now(),
-        "size_bytes": size,
-        "payload": payload,
-    }
-    await db.backups.insert_one(doc)
-
-    # If this is an auto backup, record timestamp on user prefs.
-    if kind == "auto":
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"preferences.backups.last_auto_at": doc["created_at"], "updated_at": _now()}},
-        )
-
-    # Rolling retention.
-    keep = MAX_AUTO_BACKUPS if kind == "auto" else MAX_MANUAL_BACKUPS
-    await _prune_backups(user_id, kind, keep)
-
-    return _backup_meta(doc)
-
-
-@api_router.get("/backups")
-async def list_backups(current_user=Depends(require_ultra)):
-    """List the current user's cloud backups (metadata only)."""
-    user_id = current_user["user_id"]
-    cur = db.backups.find({"user_id": user_id}, {"_id": 0, "payload": 0}).sort("created_at", -1)
-    docs = await cur.to_list(200)
-    prefs = current_user.get("preferences") or {}
-    backup_prefs = prefs.get("backups") or {}
-    freq = backup_prefs.get("frequency") or "off"
-    last_auto = backup_prefs.get("last_auto_at")
-    if isinstance(last_auto, datetime):
-        last_auto = last_auto.isoformat()
-    # Next due for auto (if enabled).
-    next_due = None
-    days = _freq_to_days(freq)
-    if days and last_auto:
-        try:
-            base = datetime.fromisoformat(last_auto)
-            if base.tzinfo is None:
-                base = base.replace(tzinfo=timezone.utc)
-            next_due = (base + timedelta(days=days)).isoformat()
-        except Exception:
-            pass
-    return {
-        "backups": [_backup_meta(d) for d in docs],
-        "frequency": freq,
-        "last_auto_at": last_auto,
-        "next_due_at": next_due,
-        "count": len(docs),
-        "retention": {"auto": MAX_AUTO_BACKUPS, "manual": MAX_MANUAL_BACKUPS},
-    }
-
-
-@api_router.post("/backups")
-async def create_backup(body: BackupCreateBody, current_user=Depends(require_ultra)):
-    """Create a new cloud backup (manual by default)."""
-    meta = await _create_backup(current_user, body.kind)
-    return {"ok": True, "backup": meta}
-
-
-@api_router.post("/backups/auto-check")
-async def auto_check(current_user=Depends(require_ultra)):
-    """Client-triggered scheduler. Creates a new 'auto' backup if the
-    configured frequency has elapsed since the last one. Returns whether
-    a backup was created plus the current status.
-    """
-    prefs = current_user.get("preferences") or {}
-    b = prefs.get("backups") or {}
-    freq = (b.get("frequency") or "off").lower()
-    days = _freq_to_days(freq)
-    if not days:
-        return {"created": False, "reason": "disabled", "frequency": freq}
-    last_auto = b.get("last_auto_at")
-    now = _now()
-    due = True
-    if last_auto:
-        try:
-            base = last_auto if isinstance(last_auto, datetime) else datetime.fromisoformat(last_auto)
-            if base.tzinfo is None:
-                base = base.replace(tzinfo=timezone.utc)
-            due = (now - base) >= timedelta(days=days)
-        except Exception:
-            due = True
-    if not due:
-        return {"created": False, "reason": "not_due", "frequency": freq,
-                "last_auto_at": last_auto if isinstance(last_auto, str) else (last_auto.isoformat() if last_auto else None)}
-    meta = await _create_backup(current_user, "auto")
-    return {"created": True, "backup": meta, "frequency": freq}
-
-
-@api_router.get("/backups/{backup_id}")
-async def get_backup(backup_id: str, current_user=Depends(require_ultra)):
-    """Return the full backup payload (for download)."""
-    user_id = current_user["user_id"]
-    doc = await db.backups.find_one({"user_id": user_id, "id": backup_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Backup non trovato")
-    # Cast created_at
-    if isinstance(doc.get("created_at"), datetime):
-        doc["created_at"] = doc["created_at"].isoformat()
-    return doc
-
-
-@api_router.post("/backups/{backup_id}/restore")
-async def restore_backup(backup_id: str, body: BackupRestoreBody, current_user=Depends(require_ultra)):
-    """Restore a saved backup into the user's data (merge or replace)."""
-    user_id = current_user["user_id"]
-    doc = await db.backups.find_one({"user_id": user_id, "id": backup_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Backup non trovato")
-    payload = doc.get("payload") or {}
-    imported = await _apply_snapshot(user_id, payload, body.mode)
-    return {"ok": True, "imported": imported}
-
-
-@api_router.delete("/backups/{backup_id}")
-async def delete_backup(backup_id: str, current_user=Depends(require_ultra)):
-    """Delete a stored backup."""
-    user_id = current_user["user_id"]
-    res = await db.backups.delete_one({"user_id": user_id, "id": backup_id})
-    if not res.deleted_count:
-        raise HTTPException(status_code=404, detail="Backup non trovato")
-    return {"ok": True}
-
-
+# Cloud backups feature removed. Only manual /export and /import remain.
 
 
 app.include_router(api_router)
@@ -2148,6 +1937,69 @@ async def startup():
         await init_storage()
     except Exception as e:
         logger.warning(f"Object storage init deferred: {e}")
+
+    # Cleanup: drop any legacy `backups` collection (Ultra feature removed)
+    try:
+        if "backups" in await db.list_collection_names():
+            await db.backups.drop()
+    except Exception:
+        pass
+
+    # Cleanup: reset any lingering "ultra" entitlement to pro_plus.
+    try:
+        await db.users.update_many(
+            {"entitlements.ultra.active": True},
+            {"$set": {"entitlements.pro_plus": {"active": True, "source": "migration_from_ultra", "granted_at": _now()}},
+             "$unset": {"entitlements.ultra": ""}},
+        )
+    except Exception:
+        pass
+
+    # Seed / refresh dev accounts so testing agents always have them.
+    await _seed_dev_users()
+
+
+async def _seed_dev_users():
+    """Ensure well-known dev/test users exist with the right entitlements.
+
+    - `testPro` / `testPro123` → Pro
+    - `halley` / `halley1234`  → founder → Pro+ automatically
+    """
+    seeds = [
+        {"username": "testpro", "password": "testPro123", "tier": "pro"},
+    ]
+    for s in seeds:
+        existing = await db.users.find_one({"username": s["username"]})
+        if not existing:
+            plain_codes, code_docs = _generate_recovery_codes()
+            doc = {
+                "user_id": _new_user_id(),
+                "username": s["username"],
+                "password_hash": _hash_password(s["password"]),
+                "created_at": _now(),
+                "provider": "username",
+                "preferences": _default_prefs(),
+                "recovery_codes": code_docs,
+                "entitlements": {
+                    s["tier"]: {
+                        "active": True,
+                        "source": "seed_dev",
+                        "granted_at": _now(),
+                    }
+                },
+            }
+            try:
+                await db.users.insert_one(doc)
+                logger.info(f"Seeded dev user: {s['username']} ({s['tier']})")
+            except Exception as e:
+                logger.warning(f"Seed dev user {s['username']} failed: {e}")
+        else:
+            # Ensure entitlement is active on existing dev user
+            ent_path = f"entitlements.{s['tier']}"
+            await db.users.update_one(
+                {"username": s["username"]},
+                {"$set": {ent_path: {"active": True, "source": "seed_dev", "granted_at": _now()}}},
+            )
 
 
 async def _migrate_email_to_username():

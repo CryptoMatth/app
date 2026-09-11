@@ -11,13 +11,15 @@ export function useIsPro(): boolean {
   return !!(user && (user as any).is_pro);
 }
 
-export type Tier = 'free' | 'pro' | 'pro_plus' | 'ultra';
-const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, pro_plus: 2, ultra: 3 };
+export type Tier = 'free' | 'pro' | 'pro_plus';
+const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, pro_plus: 2 };
 
 /** Return the highest tier active for the current user. */
 export function useTier(): Tier {
   const { user } = useAuth();
-  const t = ((user as any)?.tier || 'free') as Tier;
+  const raw = ((user as any)?.tier || 'free') as string;
+  // Legacy fallback: any historical 'ultra' response is now treated as Pro+
+  const t: Tier = raw === 'ultra' ? 'pro_plus' : (raw as Tier);
   return TIER_RANK[t] === undefined ? 'free' : t;
 }
 
@@ -75,6 +77,7 @@ export function ProUpsellModal({ open, onClose, feature }: {
   open: boolean; onClose: () => void; feature?: string;
 }) {
   const { t } = useTranslation();
+  const currentTier = useTier();
   return (
     <Modal transparent visible={open} animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.mOverlay} onPress={onClose}>
@@ -91,32 +94,34 @@ export function ProUpsellModal({ open, onClose, feature }: {
             <Text style={styles.mSub}>{t('pro.upsell.sub')}</Text>
 
             <TierCard
-              name={t('pro.tier.pro.name')} price={t('pro.tier.pro.price')} accent={theme.color.brand}
+              name={t('pro.tier.pro.name')}
+              price={t('pro.tier.pro.price')}
+              accent={theme.color.brand}
+              active={currentTier === 'pro'}
+              locked={TIER_RANK[currentTier] >= TIER_RANK['pro']}
               features={[
                 { icon: 'camera', label: t('pro.feat.photos.t') },
                 { icon: 'image', label: t('pro.feat.photos_ing.t') },
-                { icon: 'shopping-cart', label: t('pro.feat.photos_shop.t') },
                 { icon: 'award', label: t('pro.feat.symbols.t') },
-                { icon: 'tag', label: t('pro.feat.categories.t') },
               ]}
             />
             <TierCard
-              name={t('pro.tier.proplus.name')} price={t('pro.tier.proplus.price')} accent={theme.color.brandSecondary}
+              name={t('pro.tier.proplus.name')}
+              price={t('pro.tier.proplus.price')}
+              accent={theme.color.brandSecondary}
+              active={currentTier === 'pro_plus'}
+              locked={TIER_RANK[currentTier] >= TIER_RANK['pro_plus']}
               features={[
+                { icon: 'tag', label: t('pro.feat.categories.t') },
                 { icon: 'clock', label: t('pro.feat.expiry.t') },
                 { icon: 'cloud-snow', label: t('pro.feat.freezer.t') },
                 { icon: 'package', label: t('pro.feat.fridge.t') },
               ]}
-              note={t('pro.tier.includes', { plan: t('pro.tier.pro.name') })}
-            />
-            <TierCard
-              name={t('pro.tier.ultra.name')} price={t('pro.tier.ultra.price')} accent="#8B6F47"
-              features={[
-                { icon: 'cloud', label: t('pro.feat.cloud_login.t') },
-                { icon: 'upload-cloud', label: t('pro.feat.backup.t') },
-              ]}
-              note={t('pro.tier.includes', { plan: t('pro.tier.proplus.name') })}
-              badgeLabel={t('pro.tier.comingSoon')}
+              note={
+                currentTier === 'pro'
+                  ? t('pro.tier.upgradeFromPro')
+                  : t('pro.tier.includes', { plan: t('pro.tier.pro.name') })
+              }
             />
 
             <Pressable onPress={onClose} style={styles.mLater} testID="pro-upsell-later">
@@ -130,17 +135,21 @@ export function ProUpsellModal({ open, onClose, feature }: {
 }
 
 function TierCard({
-  name, price, accent, features, note, badgeLabel,
+  name, price, accent, features, note, badgeLabel, active, locked,
 }: {
   name: string; price: string; accent: string; features: { icon: any; label: string }[];
-  note?: string; badgeLabel?: string;
+  note?: string; badgeLabel?: string; active?: boolean; locked?: boolean;
 }) {
   return (
-    <View style={[styles.tierCard, { borderColor: accent }]}>
+    <View style={[styles.tierCard, { borderColor: accent }, active && { borderWidth: 2.5 }, locked && !active && { opacity: 0.55 }]}>
       <View style={styles.tierHead}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={[styles.tierName, { color: accent }]}>{name}</Text>
-          <Text style={styles.tierPrice}>{price}</Text>
+          {active ? (
+            <View style={[styles.tierActive, { backgroundColor: accent }]}>
+              <Feather name="check" size={11} color="#fff" />
+            </View>
+          ) : null}
         </View>
         {badgeLabel ? (
           <View style={[styles.tierBadge, { backgroundColor: accent }]}>
@@ -148,6 +157,7 @@ function TierCard({
           </View>
         ) : null}
       </View>
+      <Text style={styles.tierPrice}>{price}</Text>
       {features.map((f, i) => (
         <View key={i} style={styles.tierFeatRow}>
           <Feather name={f.icon} size={13} color={accent} />
@@ -221,6 +231,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.surface,
   },
   tierHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  tierActive: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   tierName: { fontFamily: theme.font.display, fontSize: 16, fontWeight: '700' },
   tierPrice: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2, fontWeight: '600' },
   tierBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },

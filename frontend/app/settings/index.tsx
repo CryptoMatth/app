@@ -28,16 +28,12 @@ export default function SettingsHome() {
   const { t } = useTranslation();
   const isPro = useIsPro();
   const tier = useTier();
-  const tierLabelKey = tier === 'ultra'
-    ? 'settings.pro.tierUltra'
-    : tier === 'pro_plus'
-      ? 'settings.pro.tierProPlus'
-      : 'settings.pro.tierPro';
-  const tierSubKey = tier === 'ultra'
-    ? 'settings.pro.tierUltra.sub'
-    : tier === 'pro_plus'
-      ? 'settings.pro.tierProPlus.sub'
-      : 'settings.pro.tierPro.sub';
+  const tierLabelKey = tier === 'pro_plus'
+    ? 'settings.pro.tierProPlus'
+    : 'settings.pro.tierPro';
+  const tierSubKey = tier === 'pro_plus'
+    ? 'settings.pro.tierProPlus.sub'
+    : 'settings.pro.tierPro.sub';
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [busy, setBusy] = useState(false);
   const [upsell, setUpsell] = useState(false);
@@ -135,7 +131,7 @@ export default function SettingsHome() {
       ],
     },
     {
-      title: t('settings.section.danger'),
+      title: '',
       rows: [
         {
           key: 'logout',
@@ -185,8 +181,8 @@ export default function SettingsHome() {
         </Pressable>
 
         {sections.map(sec => (
-          <View key={sec.title} style={s.section}>
-            <Text style={s.sectionH}>{sec.title}</Text>
+          <View key={sec.title || 'section-nogap'} style={s.section}>
+            {sec.title ? <Text style={s.sectionH}>{sec.title}</Text> : null}
             {sec.rows.map(r => (
               <Pressable
                 key={r.key}

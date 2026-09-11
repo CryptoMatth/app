@@ -57,7 +57,8 @@
       "expo-sharing",
       "expo-status-bar",
       "expo-web-browser",
-      "@react-native-vector-icons/feather"
+      "@react-native-vector-icons/feather",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

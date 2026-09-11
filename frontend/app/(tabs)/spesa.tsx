@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, RefreshControl,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, RefreshControl, ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
@@ -14,7 +14,7 @@ import { TipBanner } from '@/src/TipBanner';
 import { TutorialKeys } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
-import { useIsPro } from '@/src/ProGate';
+import { useIsPro, useHasTier } from '@/src/ProGate';
 
 type Item = {
   id: string; name: string; unit: string;
@@ -49,6 +49,7 @@ export default function Spesa() {
   const { t, tCat } = useTranslation();
   const { prefs } = useAuth();
   const isPro = useIsPro();
+  const isProPlus = useHasTier('pro_plus');
   const insets = useSafeAreaInsets();
   const cats = prefs.ingredient_categories;
   const catById = useMemo(() => {
@@ -77,6 +78,8 @@ export default function Spesa() {
     arr.sort((a, b) => {
       // Checked items go to the bottom regardless of category
       if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      // Non Pro+ users have no category grouping — sort by `order` only.
+      if (!isProPlus) return (a.order || 0) - (b.order || 0);
       const ac = a.category_id || 'altro';
       const bc = b.category_id || 'altro';
       const ai = catOrderIdx[ac] ?? 999;
@@ -85,11 +88,13 @@ export default function Spesa() {
       return (a.order || 0) - (b.order || 0);
     });
     return arr;
-  }, [items, catOrderIdx]);
+  }, [items, catOrderIdx, isProPlus]);
 
   // Build a Set of the first item id in each category so we know where
   // to render the sticky-ish category header inside renderItem.
   const firstOfCategory = useMemo(() => {
+    // Non Pro+ users don't see category headers at all.
+    if (!isProPlus) return new Set<string>();
     const first: Record<string, string> = {}; // catId -> first item.id (unchecked)
     for (const it of groupedItems) {
       if (it.checked) continue;
@@ -97,7 +102,7 @@ export default function Spesa() {
       if (!first[c]) first[c] = it.id;
     }
     return new Set(Object.values(first));
-  }, [groupedItems]);
+  }, [groupedItems, isProPlus]);
   const firstCheckedId = useMemo(() => {
     return groupedItems.find(i => i.checked)?.id;
   }, [groupedItems]);
@@ -268,7 +273,7 @@ export default function Spesa() {
                       {item.checked && <Feather name="check" size={14} color="#fff" />}
                     </View>
                   </Pressable>
-                  <PhotoThumb path={item.photo_path} size={36} rounded fallbackIcon="shopping-bag" />
+                  <PhotoThumb path={item.photo_path} size={36} rounded fallbackEmoji={catById[item.category_id || 'altro']?.icon || '🛒'} fallbackIcon="shopping-bag" />
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <View style={styles.rowTitleWrap}>
                       {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />}
@@ -328,54 +333,59 @@ export default function Spesa() {
         onRequestClose={() => setConfirmClearBought(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard} testID="confirm-clear-bought-modal">
-            <View style={styles.modalIcon}>
-              <Feather name="trash-2" size={24} color={theme.color.warning} />
-            </View>
-            <Text style={styles.modalH}>{t('spesa.clearConfirm.title', { n: boughtCount })}</Text>
-            <Text style={styles.modalP}>
-              {isPro ? t('spesa.clearConfirm.bodyChoice') : t('spesa.clearConfirm.body')}
-            </Text>
-            <View style={{ gap: 8, marginTop: theme.spacing.md }}>
-              {isPro && (
+          <View style={[styles.modalCard, { maxHeight: '85%' }]} testID="confirm-clear-bought-modal">
+            <ScrollView
+              contentContainerStyle={{ padding: theme.spacing.xl }}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalIcon}>
+                <Feather name="trash-2" size={24} color={theme.color.warning} />
+              </View>
+              <Text style={styles.modalH}>{t('spesa.clearConfirm.title', { n: boughtCount })}</Text>
+              <Text style={styles.modalP}>
+                {isProPlus ? t('spesa.clearConfirm.bodyChoice') : t('spesa.clearConfirm.body')}
+              </Text>
+              <View style={{ gap: 8, marginTop: theme.spacing.md }}>
+                {isProPlus && (
+                  <Pressable
+                    onPress={() => clearBought(true)}
+                    style={styles.btnPrim}
+                    testID="confirm-clear-to-fridge"
+                    disabled={clearing}
+                  >
+                    {clearing ? <ActivityIndicator color="#fff" /> : (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Feather name="package" size={16} color="#fff" />
+                        <Text style={styles.btnDangerTxt}>{t('spesa.clearConfirm.toFridge')}</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                )}
                 <Pressable
-                  onPress={() => clearBought(true)}
-                  style={styles.btnPrim}
-                  testID="confirm-clear-to-fridge"
+                  onPress={() => clearBought(false)}
+                  style={styles.btnDanger}
+                  testID="confirm-clear-delete"
                   disabled={clearing}
                 >
                   {clearing ? <ActivityIndicator color="#fff" /> : (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Feather name="package" size={16} color="#fff" />
-                      <Text style={styles.btnDangerTxt}>{t('spesa.clearConfirm.toFridge')}</Text>
+                      <Feather name="trash-2" size={16} color="#fff" />
+                      <Text style={styles.btnDangerTxt}>
+                        {isProPlus ? t('spesa.clearConfirm.deleteOnly') : t('common.remove')}
+                      </Text>
                     </View>
                   )}
                 </Pressable>
-              )}
-              <Pressable
-                onPress={() => clearBought(false)}
-                style={styles.btnDanger}
-                testID="confirm-clear-delete"
-                disabled={clearing}
-              >
-                {clearing ? <ActivityIndicator color="#fff" /> : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Feather name="trash-2" size={16} color="#fff" />
-                    <Text style={styles.btnDangerTxt}>
-                      {isPro ? t('spesa.clearConfirm.deleteOnly') : t('common.remove')}
-                    </Text>
-                  </View>
-                )}
-              </Pressable>
-              <Pressable
-                onPress={() => setConfirmClearBought(false)}
-                style={styles.btnGhost}
-                testID="confirm-clear-cancel"
-                disabled={clearing}
-              >
-                <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
-              </Pressable>
-            </View>
+                <Pressable
+                  onPress={() => setConfirmClearBought(false)}
+                  style={styles.btnGhost}
+                  testID="confirm-clear-cancel"
+                  disabled={clearing}
+                >
+                  <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -388,32 +398,34 @@ export default function Spesa() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard} testID="confirm-delete-modal">
-            <View style={styles.modalIcon}>
-              <Feather name="alert-triangle" size={24} color={theme.color.warning} />
-            </View>
-            <Text style={styles.modalH}>{t('spesa.deleteConfirm.title', { name: confirmDelete?.name || '' })}</Text>
-            <Text style={styles.modalP}>
-              {confirmDelete?.planner_qty && confirmDelete.planner_qty > 0
-                ? t('spesa.deleteConfirm.bodyPlanner')
-                : t('spesa.deleteConfirm.body')}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
-              <Pressable
-                onPress={() => setConfirmDelete(null)}
-                style={styles.btnGhost}
-                testID="confirm-cancel"
-                disabled={deleting}
-              >
-                <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
-              </Pressable>
-              <Pressable
-                onPress={doDelete}
-                style={styles.btnDanger}
-                testID="confirm-delete"
-                disabled={deleting}
-              >
-                {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('common.delete')}</Text>}
-              </Pressable>
+            <View style={{ padding: theme.spacing.xl }}>
+              <View style={styles.modalIcon}>
+                <Feather name="alert-triangle" size={24} color={theme.color.warning} />
+              </View>
+              <Text style={styles.modalH}>{t('spesa.deleteConfirm.title', { name: confirmDelete?.name || '' })}</Text>
+              <Text style={styles.modalP}>
+                {confirmDelete?.planner_qty && confirmDelete.planner_qty > 0
+                  ? t('spesa.deleteConfirm.bodyPlanner')
+                  : t('spesa.deleteConfirm.body')}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: theme.spacing.md }}>
+                <Pressable
+                  onPress={() => setConfirmDelete(null)}
+                  style={styles.btnGhost}
+                  testID="confirm-cancel"
+                  disabled={deleting}
+                >
+                  <Text style={styles.btnGhostTxt}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={doDelete}
+                  style={styles.btnDanger}
+                  testID="confirm-delete"
+                  disabled={deleting}
+                >
+                  {deleting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnDangerTxt}>{t('common.delete')}</Text>}
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -477,7 +489,7 @@ const styles = StyleSheet.create({
   btnDangerTxt: { color: '#fff', fontWeight: '600' },
   btnPrim: { flex: 1, height: 46, borderRadius: theme.radius.pill, backgroundColor: theme.color.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(44,40,38,0.55)', alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
-  modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border },
+  modalCard: { backgroundColor: theme.color.surface, borderRadius: theme.radius.lg, width: '100%', maxWidth: 360, borderWidth: 1, borderColor: theme.color.border, overflow: 'hidden' },
   modalIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: theme.color.brandTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.md },
   modalH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginBottom: 6 },
   modalP: { fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 18 },

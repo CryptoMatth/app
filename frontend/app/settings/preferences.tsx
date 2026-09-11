@@ -12,7 +12,7 @@ import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { weekStartOptions } from '@/src/week';
 import { useTranslation } from '@/src/i18n';
-import { useIsPro, ProUpsellModal } from '@/src/ProGate';
+import { useHasTier, ProUpsellModal } from '@/src/ProGate';
 import { COURSE_EMOJI_CATALOG } from '@/src/courseIcons';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
@@ -46,7 +46,7 @@ export default function PreferencesSettings() {
   const [courses, setCourses] = useState<Course[]>(prefs.courses);
   const [ingCats, setIngCats] = useState<IngredientCategory[]>(prefs.ingredient_categories);
   const [notif, setNotif] = useState<NotificationPrefs>(prefs.notifications || { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true });
-  const isPro = useIsPro();
+  const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
@@ -288,49 +288,67 @@ export default function PreferencesSettings() {
           </Pressable>
         </View>
 
-        {/* Ingredient categories */}
+        {/* Ingredient categories (Pro+) */}
         <View style={s.section}>
-          <Text style={s.sectionH}>{t('prefs.ingCats.h')}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={s.sectionH}>{t('prefs.ingCats.h')}</Text>
+            {!isProPlus && (
+              <View style={notifStyles.proBadge}>
+                <Feather name="lock" size={9} color="#fff" />
+                <Text style={notifStyles.proBadgeTxt}>PRO+</Text>
+              </View>
+            )}
+          </View>
           <Text style={s.sectionSub}>{t('prefs.ingCats.sub')}</Text>
-          {ingCats.map((c, i) => (
-            <View key={`ic_${c.id || 'new'}_${i}`} style={styles.courseRow} testID={`ing-row-${i}`}>
-              <View style={[styles.courseIcon, { backgroundColor: c.color || theme.color.brandTertiary }]}>
-                <Text style={{ fontSize: 16 }}>{c.icon || '📦'}</Text>
-              </View>
-              <Text style={styles.courseLabel} numberOfLines={1}>{tCat(c)}</Text>
-              <View style={styles.courseActions}>
-                <Pressable onPress={() => moveInList(ingCats, setIngCats, i, -1)} disabled={i === 0}
-                  style={[styles.iconBtn, i === 0 && { opacity: 0.3 }]} testID={`ing-up-${i}`}>
-                  <Feather name="arrow-up" size={16} color={theme.color.onSurface} />
-                </Pressable>
-                <Pressable onPress={() => moveInList(ingCats, setIngCats, i, 1)} disabled={i === ingCats.length - 1}
-                  style={[styles.iconBtn, i === ingCats.length - 1 && { opacity: 0.3 }]} testID={`ing-down-${i}`}>
-                  <Feather name="arrow-down" size={16} color={theme.color.onSurface} />
-                </Pressable>
-                <Pressable onPress={() => setEditing({ kind: 'ing', index: i, label: tCat(c), icon: c.icon || '' })}
-                  style={styles.iconBtn} testID={`ing-edit-${i}`}>
-                  <Feather name="edit-2" size={16} color={theme.color.onSurface} />
-                </Pressable>
-                <Pressable onPress={() => removeFromList(ingCats, setIngCats, i)} style={styles.iconBtn} testID={`ing-remove-${i}`}>
-                  <Feather name="x" size={16} color={theme.color.error} />
-                </Pressable>
-              </View>
-            </View>
-          ))}
-          <Pressable onPress={() => setEditing({ kind: 'ing', index: null, label: '', icon: '' })} style={styles.addBtn} testID="ing-add">
-            <Feather name="plus" size={16} color={theme.color.brandPrimary} />
-            <Text style={styles.addBtnTxt}>{t('prefs.addCategory')}</Text>
-          </Pressable>
+          {!isProPlus ? (
+            <Pressable onPress={() => setUpsell(true)} style={styles.lockedRow} testID="ing-cats-locked">
+              <Feather name="lock" size={16} color={theme.color.brand} />
+              <Text style={styles.lockedTxt}>{t('prefs.ingCats.lockedBody')}</Text>
+              <Feather name="chevron-right" size={16} color={theme.color.onSurfaceTertiary} />
+            </Pressable>
+          ) : (
+            <>
+              {ingCats.map((c, i) => (
+                <View key={`ic_${c.id || 'new'}_${i}`} style={styles.courseRow} testID={`ing-row-${i}`}>
+                  <View style={[styles.courseIcon, { backgroundColor: c.color || theme.color.brandTertiary }]}>
+                    <Text style={{ fontSize: 16 }}>{c.icon || '📦'}</Text>
+                  </View>
+                  <Text style={styles.courseLabel} numberOfLines={1}>{tCat(c)}</Text>
+                  <View style={styles.courseActions}>
+                    <Pressable onPress={() => moveInList(ingCats, setIngCats, i, -1)} disabled={i === 0}
+                      style={[styles.iconBtn, i === 0 && { opacity: 0.3 }]} testID={`ing-up-${i}`}>
+                      <Feather name="arrow-up" size={16} color={theme.color.onSurface} />
+                    </Pressable>
+                    <Pressable onPress={() => moveInList(ingCats, setIngCats, i, 1)} disabled={i === ingCats.length - 1}
+                      style={[styles.iconBtn, i === ingCats.length - 1 && { opacity: 0.3 }]} testID={`ing-down-${i}`}>
+                      <Feather name="arrow-down" size={16} color={theme.color.onSurface} />
+                    </Pressable>
+                    <Pressable onPress={() => setEditing({ kind: 'ing', index: i, label: tCat(c), icon: c.icon || '' })}
+                      style={styles.iconBtn} testID={`ing-edit-${i}`}>
+                      <Feather name="edit-2" size={16} color={theme.color.onSurface} />
+                    </Pressable>
+                    <Pressable onPress={() => removeFromList(ingCats, setIngCats, i)} style={styles.iconBtn} testID={`ing-remove-${i}`}>
+                      <Feather name="x" size={16} color={theme.color.error} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              <Pressable onPress={() => setEditing({ kind: 'ing', index: null, label: '', icon: '' })} style={styles.addBtn} testID="ing-add">
+                <Feather name="plus" size={16} color={theme.color.brandPrimary} />
+                <Text style={styles.addBtnTxt}>{t('prefs.addCategory')}</Text>
+              </Pressable>
+            </>
+          )}
         </View>
 
-        {/* --- Notifications (Pro) --- */}
+        {/* --- Notifications (Pro+) --- */}
         <View style={s.section}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={s.sectionH}>{t('notif.h')}</Text>
-            {!isPro && (
+            {!isProPlus && (
               <View style={notifStyles.proBadge}>
                 <Feather name="lock" size={9} color="#fff" />
-                <Text style={notifStyles.proBadgeTxt}>PRO</Text>
+                <Text style={notifStyles.proBadgeTxt}>PRO+</Text>
               </View>
             )}
           </View>
@@ -340,7 +358,7 @@ export default function PreferencesSettings() {
             <Text style={notifStyles.rowLabel}>{t('notif.enabled')}</Text>
             <Pressable
               onPress={() => {
-                if (!isPro) { setUpsell(true); return; }
+                if (!isProPlus) { setUpsell(true); return; }
                 Haptics.selectionAsync();
                 setNotif(n => ({ ...n, enabled: !n.enabled }));
               }}
@@ -351,7 +369,7 @@ export default function PreferencesSettings() {
             </Pressable>
           </View>
 
-          <View style={{ opacity: (notif.enabled && isPro) ? 1 : 0.45 }} pointerEvents={(notif.enabled && isPro) ? 'auto' : 'none'}>
+          <View style={{ opacity: (notif.enabled && isProPlus) ? 1 : 0.45 }} pointerEvents={(notif.enabled && isProPlus) ? 'auto' : 'none'}>
             <Text style={notifStyles.subLabel}>{t('notif.expiryDays')}</Text>
             <View style={notifStyles.chipsRow}>
               {[0, 1, 2, 3, 7].map(d => {
@@ -535,6 +553,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.pill, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.color.brandPrimary,
   },
   addBtnTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 14 },
+  lockedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.color.border, borderStyle: 'dashed',
+    backgroundColor: theme.color.surfaceSecondary,
+  },
+  lockedTxt: {
+    flex: 1, fontSize: 13, color: theme.color.onSurfaceSecondary, lineHeight: 17,
+  },
   emojiBtn: {
     width: 46, height: 46, borderRadius: 23,
     backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.border,

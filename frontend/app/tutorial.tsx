@@ -179,7 +179,7 @@ export default function Tutorial() {
           </Pressable>
         )}
 
-        <View style={styles.navBtn} />
+        <View style={styles.navBtnSpacer} />
       </View>
     </SafeAreaView>
   );
@@ -230,6 +230,7 @@ const styles = StyleSheet.create({
     width: 46, height: 46, borderRadius: 23, backgroundColor: theme.color.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.color.border,
   },
+  navBtnSpacer: { width: 46, height: 46 },
   navBtnDisabled: { opacity: 0.4 },
   primaryBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

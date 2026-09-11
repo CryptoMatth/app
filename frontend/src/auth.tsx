@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import * as Localization from 'expo-localization';
 import { api, clearToken, setToken, getToken } from './api';
 
 export type Course = { id: string; label: string; icon?: string | null };
@@ -11,11 +12,6 @@ export type NotificationPrefs = {
   notify_hour: number;
   freezer_enabled: boolean;
 };
-export type BackupFrequency = 'off' | 'daily' | 'weekly' | 'monthly';
-export type BackupPrefs = {
-  frequency: BackupFrequency;
-  last_auto_at?: string | null;
-};
 export type UserPreferences = {
   week_start_day: number; // 0=Mon..6=Sun
   planner_span: PlannerSpan;
@@ -23,7 +19,6 @@ export type UserPreferences = {
   courses: Course[];
   ingredient_categories: IngredientCategory[];
   notifications?: NotificationPrefs;
-  backups?: BackupPrefs;
 };
 export type User = {
   user_id: string;
@@ -55,7 +50,6 @@ const DEFAULT_PREFS: UserPreferences = {
     { id: 'altro', label: 'Altro', icon: '📦', color: '#8C8478' },
   ],
   notifications: { enabled: false, expiry_days_ahead: 1, notify_hour: 9, freezer_enabled: true },
-  backups: { frequency: 'off', last_auto_at: null },
 };
 
 type AuthCtx = {
@@ -79,7 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [token, setTokenState] = useState<string | null>(null);
-  const autoBackupTriggered = useRef(false);
 
   const bootstrap = useCallback(async () => {
     try {
@@ -110,6 +103,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setToken(res.session_token);
     setTokenState(res.session_token);
     setUser(res.user);
+    // Auto-detect device language on first registration (user can override later
+    // from Preferences). English if device is English, Italian otherwise.
+    try {
+      const locales = Localization.getLocales?.() || [];
+      const primaryTag = (locales[0]?.languageTag || locales[0]?.languageCode || '').toLowerCase();
+      const detected: Lang = primaryTag.startsWith('en') ? 'en' : 'it';
+      const currentLang = res.user?.preferences?.language;
+      if (detected !== currentLang) {
+        const updated = await api.updatePreferences({ language: detected });
+        setUser(prev => (prev ? { ...prev, preferences: updated } : prev));
+      }
+    } catch {}
     return (res.recovery_codes || []) as string[];
   };
   const logout = async () => {
@@ -117,7 +122,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearToken();
     setTokenState(null);
     setUser(null);
-    autoBackupTriggered.current = false;
   };
   const refresh = async () => {
     try { const u = await api.me(); setUser(u); } catch { setUser(null); }
@@ -142,21 +146,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const prefs: UserPreferences = user?.preferences || DEFAULT_PREFS;
-
-  // Auto-backup trigger: on session start (once per app open), if the user
-  // is Ultra AND has enabled a backup frequency, ping /backups/auto-check
-  // so the server creates a new snapshot when due. Silent — failures are
-  // swallowed to avoid disrupting normal usage.
-  useEffect(() => {
-    if (!user || autoBackupTriggered.current) return;
-    const isUltra = (user as any).tier === 'ultra';
-    const freq = user?.preferences?.backups?.frequency;
-    if (!isUltra || !freq || freq === 'off') return;
-    autoBackupTriggered.current = true;
-    (async () => {
-      try { await (api as any).autoCheckBackup(); } catch {}
-    })();
-  }, [user]);
 
   return (
     <Ctx.Provider

@@ -73,7 +73,6 @@ export const api = {
     courses?: { id?: string; label: string }[];
     ingredient_categories?: { id?: string; label: string; icon?: string | null; color?: string | null }[];
     notifications?: Partial<{ enabled: boolean; expiry_days_ahead: number; notify_hour: number; freezer_enabled: boolean }>;
-    backups?: Partial<{ frequency: 'off' | 'daily' | 'weekly' | 'monthly' }>;
   }) =>
     req('/auth/preferences', { method: 'PUT', body: JSON.stringify(data) }),
   recoveryVerify: (username: string, code: string, new_password: string) =>
@@ -107,16 +106,6 @@ export const api = {
 
   exportData: () => req('/export'),
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
-
-  // Cloud backups (Ultra)
-  listBackups: () => req('/backups'),
-  createBackup: (kind: 'manual' | 'auto' = 'manual') =>
-    req('/backups', { method: 'POST', body: JSON.stringify({ kind }) }),
-  autoCheckBackup: () => req('/backups/auto-check', { method: 'POST', body: JSON.stringify({}) }),
-  getBackup: (id: string) => req(`/backups/${id}`),
-  restoreBackup: (id: string, mode: 'merge' | 'replace') =>
-    req(`/backups/${id}/restore`, { method: 'POST', body: JSON.stringify({ mode }) }),
-  deleteBackup: (id: string) => req(`/backups/${id}`, { method: 'DELETE' }),
 
   // Photo upload/download (Pro feature)
   uploadPhoto: async (uri: string, contentType: string): Promise<string> => {

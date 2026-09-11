@@ -25,7 +25,7 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - `/settings/account` — modifica username (con password), cambia password, codici recupero
 - `/settings/preferences` — inizio settimana (Lun–Dom) + gestione categorie piatti (aggiungi/rinomina/riordina/elimina)
 - `/settings/tutorial` — rivedi introduzione e riattiva tip banner
-- `/settings/backup` — Backup cloud automatici (Ultra) + export/import JSON manuale con modalità merge o replace
+- `/settings/backup` — export/import JSON manuale con modalità merge o replace
 - Logout con conferma direttamente dall'hub
 
 ## Preferenze utente (giu-ago 2026)
@@ -106,12 +106,33 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Feature completamente rimossa: nessun endpoint backend, nessuna schermata, nessuna stringa i18n `ai.*`
 
 ## Tier system + Delete account (giu 2026)
-- **3 tier**: Free (base) / Pro (3€) / Pro+ (5€) / Ultra (2€/mese o 20€/anno)
-- Backend: `_tier_rank`, `_get_tier`, `_has_tier`, `require_pro_plus`, `require_ultra`. `entitlements.{pro,pro_plus,ultra}` con hierarchy Ultra > Pro+ > Pro > Free. Founder→Ultra auto
-- Frontend: `useTier()`, `useHasTier(min)`. `ProUpsellModal` mostra le 3 card con prezzo, feature e badge "IN ARRIVO" per Ultra
-- Frigo + Notifiche ora richiedono Pro+; Photos + symbol picker + custom categorie restano Pro
-- Rimossa slide "PlanEat Pro" dal tutorial → nuova pagina Settings **"Piani PlanEat"** (`/settings/plans`) accessibile via card dedicata
+- **3 tier**: Free (base) / Pro (3€) / Pro+ (5€)
+- **Aggiornamento incrociato Pro → Pro+**: differenziale di 2€, testo mostrato nell'upsell
+- Backend: `_tier_rank`, `_get_tier`, `_has_tier`, `require_pro_plus`. `entitlements.{pro,pro_plus}` con hierarchy Pro+ > Pro > Free. Founder→Pro+ auto (`FOUNDER_TIER`)
+- Legacy `entitlements.ultra` migrato automaticamente in `pro_plus` allo startup
+- Frontend: `useTier()`, `useHasTier(min)`. `ProUpsellModal` mostra 2 card con prezzo, feature e stato attivo/lockato. Piano superiore o già acquistato = card in opacity 55%
+- Frigo + Notifiche = Pro+ (backend + frontend). Categorie ingredienti = Pro+ (spostate da Pro)
+- Foto piatti/ingredienti + Simboli = Pro
+- Rimossa "Foto lista spesa" dal piano Pro
 - **Delete account self-service**: `POST /api/auth/delete-account` (password + digitare ELIMINA). Wipe totale dishes/plans/shopping/fridge/photos/sessions. UI in Danger zone di `settings/account`
+
+## Ultra Tier + Cloud Backup RIMOSSI (giu 2026)
+- Rimossa completamente la feature Ultra e tutti gli endpoint `/api/backups/*` (cloud backup automatico)
+- Backup manuali JSON export/import restano disponibili per tutti i tier
+- Halley migrato da Ultra a Pro+ (founder default)
+- `_seed_dev_users()` all'avvio del backend: crea/aggiorna `testpro` / `testPro123` con tier Pro
+- Cleanup startup: droppa collection `backups` legacy e migra qualsiasi `entitlements.ultra` residuo → `entitlements.pro_plus`
+
+## Bugfix B1 spesa modal (giu 2026)
+- Modal "Rimuovi presi" ora wrappato in ScrollView con maxHeight 85% così i pulsanti "Sposta nel Frigorifero" / "Elimina" / "Annulla" restano sempre visibili anche con testo lungo (16+ elementi)
+- "Sposta nel Frigorifero" ora gated su `useHasTier('pro_plus')` (Pro+) invece di `useIsPro` — coerente col fatto che il frigo richiede Pro+
+
+## UX polish batch (giu 2026)
+- **A1 · Nuovo ingrediente nel Frigo**: FAB "Nuovo ingrediente" in fondo alla tab Frigorifero → apre `/fridge/new` (stessa form dell'editor, senza pulsante elimina). Backend usa endpoint `POST /api/fridge` esistente
+- **A5 · Rimosso "Zona pericolo"**: la voce Esci è ora direttamente sotto "Backup & Ripristino" senza header di sezione
+- **A7 · Icone categoria come placeholder**: PhotoThumb ora accetta `fallbackEmoji` — negli spesa e frigo, se non c'è foto viene mostrato l'emoji della categoria (🥬 per Verdura, 🥛 per Latticini, ecc.) invece della genericissima 📦
+- **A8 · Frigo ordinato per scadenza**: gli item nelle sezioni "In scadenza" e "Freschi" sono ora ordinati dalla scadenza più vicina alla più lontana. "Senza data" resta in ordine di inserimento
+- **A9 · Auto-lingua da device**: alla registrazione di un nuovo account, la lingua dell'app viene impostata automaticamente sulla lingua di sistema del telefono (Italian/English fallback). Modificabile in Preferenze come prima. Usa `expo-localization` (già Expo SDK 57 compatible)
 
 ## Bugfix B1/B2 + A1/A2 (giu 2026)
 - **B1** FormData `Unsupported FormDataPart implementation` fix: `uploadPhoto` ora usa `fetch(uri).blob()` universale invece dell'object literal deprecato in RN 0.86
@@ -128,16 +149,6 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Plugin `@react-native-vector-icons/feather` auto-aggiunto nel plugins array
 - `expo-doctor` 20/20 checks passed
 - Verificato con screenshot: tutte le icone Feather rendono correttamente (Piatti, Frigo, Settings, tab bar)
-
-## Ultra Cloud Backups (giu 2026)
-- **Feature Ultra**: backup cloud automatici periodici in aggiunta all'export/import JSON già esistente
-- Backend: nuova collezione `backups` in MongoDB; endpoint `GET /backups`, `POST /backups`, `POST /backups/auto-check`, `GET /backups/{id}`, `POST /backups/{id}/restore`, `DELETE /backups/{id}`, tutti gated `require_ultra`
-- Payload backup: dishes + weekly_plans + shopping_items + fridge_items (v2 schema, JSON-safe datetimes)
-- Frequenza configurabile via `preferences.backups.frequency`: `off` | `daily` | `weekly` | `monthly`
-- Retention rolling: max 10 backup automatici + 20 manuali per utente
-- Trigger automatico: `AuthProvider` chiama `/backups/auto-check` una volta per sessione se utente Ultra + freq != off
-- UI in `/settings/backup`: sezione Ultra in alto (chip frequenza + status + "Fai backup adesso" + lista backup con actions modal per Restore Merge / Replace / Delete). Sotto rimane la sezione "Backup manuali su file" (funziona per tutti i tier)
-- Utenti non-Ultra vedono card "Locked" con CTA "Scopri Ultra" che apre ProUpsellModal
 
 
 ## Bugfix Batch (giu 2026)
