@@ -2,7 +2,7 @@
   "expo": {
     "name": "PlanEat",
     "slug": "frontend",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
@@ -21,6 +21,7 @@
         "backgroundColor": "#C66241"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
+      "versionCode": 125,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
