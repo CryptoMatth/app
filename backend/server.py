@@ -2108,6 +2108,22 @@ async def import_data(body: ImportBody, current_user=Depends(get_current_user)):
 # Cloud backups feature removed. Only manual /export and /import remain.
 
 
+# ---- RevenueCat purchases + webhook ----
+from purchases import (  # noqa: E402
+    create_purchases_router,
+    create_revenuecat_webhook_router,
+    ensure_revenuecat_indexes,
+)
+
+api_router.include_router(create_purchases_router(db, get_current_user))
+api_router.include_router(create_revenuecat_webhook_router(db))
+
+
+@app.on_event("startup")
+async def _ensure_purchase_indexes():
+    await ensure_revenuecat_indexes(db)
+
+
 app.include_router(api_router)
 
 # Admin router (protected by ADMIN_PASSWORD header)

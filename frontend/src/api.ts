@@ -108,6 +108,10 @@ export const api = {
   exportData: () => req('/export'),
   importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
 
+  // Purchases (RevenueCat sync)
+  syncPurchases: (data: { revenuecat_app_user_id?: string; entitlements?: string[] }) =>
+    req('/purchases/sync', { method: 'POST', body: JSON.stringify(data) }),
+
   // Notifications center (Pro+)
   listNotifications: () => req('/notifications'),
   markNotificationsRead: (ids: string[]) =>

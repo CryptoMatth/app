@@ -175,6 +175,30 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 - Tutorial ora 7 slide: benvenuto, piatti, planner, spesa, **Frigorifero (marcato Pro €2)**, ultimo consiglio recovery, **PlanEat Pro (elenco completo funzionalità sbloccabili)**
 - Ogni slide del tutorial ora ha `ScrollView` interno per gestire contenuti lunghi su schermi piccoli
 
+## RevenueCat integration (Sept 2026 — placeholder mode)
+Implementata l'integrazione client + server per Google Play Billing tramite RevenueCat.
+
+**Frontend** (`/app/frontend/src/purchases/revenueCat.ts` + `RevenueCatBridge.tsx`)
+- Wrapper con guard `isRevenueCatConfigured()`: attivo solo se `Platform.OS === 'android'` AND `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY` inizia con `goog_`.
+- `RevenueCatBridge` (montato dentro AuthProvider) chiama `Purchases.configure()` una sola volta e `Purchases.logIn(user.user_id)` a ogni cambio utente.
+- 3 product ID: `pro_lifetime` (→pro), `pro_plus_lifetime` (→pro_plus), `pro_to_pro_plus_upgrade` (→pro_plus).
+- `settings/plans.tsx` mostra CTA reali: `Acquista Pro`, `Acquista Pro+`, `Aggiorna a Pro+` (solo per utenti già Pro), + bottone `Ripristina acquisti`. Su web/iOS o senza chiave RC: banner informativo, nessun bottone.
+- Dopo acquisto, chiama `POST /api/purchases/sync` con gli entitlements riportati e poi `refresh()` sull'auth store.
+
+**Backend** (`/app/backend/purchases.py`)
+- `POST /api/purchases/sync` (authenticated): assegna optimisticamente gli entitlement al MongoDB user (source="client_sync"). NON è l'authority — serve solo a sbloccare l'UI subito.
+- `POST /api/integrations/revenuecat/webhook` (server-to-server): verifica `Authorization` header (RC_WEBHOOK_AUTH) + firma HMAC (RC_WEBHOOK_HMAC_SECRET). Idempotente via unique index su `revenuecat_events.event_id`. Gestisce `INITIAL_PURCHASE`, `NON_RENEWING_PURCHASE`, `UNCANCELLATION`, `TRANSFER`, `PRODUCT_CHANGE` (grant) e `REFUND`/`CANCELLATION` (revoke).
+- Se le env vars sono vuote (default), il webhook risponde `503 webhook not configured` — safe default.
+
+**Config Android**
+- `com.android.vending.BILLING` aggiunto in `app.json` → `android.permissions`.
+- `versionCode` bumpato 125 → 126.
+- `expo-dev-client` installato per abilitare la native build.
+
+**Env vars aggiunte**
+- `frontend/.env`: `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY=` (vuoto — da riempire con chiave `goog_...` da RevenueCat dashboard).
+- `backend/.env`: `RC_WEBHOOK_AUTH=` + `RC_WEBHOOK_HMAC_SECRET=` (vuoti — da riempire quando si configura il webhook su RevenueCat).
+
 ## Icon
 Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta sage top-right, calendario+check bottom-left. Adaptive icon con safe area 66%.
 

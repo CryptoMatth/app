@@ -8,6 +8,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
+import { RevenueCatBridge } from "@/src/RevenueCatBridge";
 
 
 LogBox.ignoreAllLogs(true)
@@ -34,6 +35,7 @@ export default function RootLayout() {
       <KeyboardProvider>
         <SafeAreaProvider>
           <AuthProvider>
+            <RevenueCatBridge />
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
           </AuthProvider>
         </SafeAreaProvider>
