@@ -166,7 +166,7 @@ export function IngredientEditorForm({
       {categoryVisible && (
         <>
           <Text style={styles.label}>{t('spesa.category')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
+          <View style={styles.catGrid}>
             {cats.map(c => {
               const active = (value.category_id || 'altro') === c.id;
               return (
@@ -174,14 +174,19 @@ export function IngredientEditorForm({
                   key={c.id}
                   testID={`${testIDPrefix}-cat-${c.id}`}
                   onPress={() => { Haptics.selectionAsync(); patch({ category_id: c.id }); }}
-                  style={[styles.catChip, active && styles.catChipActive]}
+                  style={[styles.catCell, active && styles.catCellActive]}
                 >
-                  <Text style={{ fontSize: 16 }}>{c.icon || '📦'}</Text>
-                  <Text style={[styles.catChipTxt, active && { color: theme.color.brandPrimary, fontWeight: '600' }]}>{tCat(c)}</Text>
+                  <Text style={{ fontSize: 18 }}>{c.icon || '📦'}</Text>
+                  <Text
+                    style={[styles.catCellTxt, active && { color: theme.color.brandPrimary, fontWeight: '700' }]}
+                    numberOfLines={1}
+                  >
+                    {tCat(c)}
+                  </Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
         </>
       )}
     </View>
@@ -317,6 +322,23 @@ const styles = StyleSheet.create({
   unitOptionTxt: { fontSize: 16, color: theme.color.onSurface },
   unitOptionTxtOn: { color: theme.color.brandPrimary, fontWeight: '700' },
   catRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  catGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4,
+  },
+  catCell: {
+    // 3 columns with gap ~8 -> width ~ (100% - 2*8) / 3
+    width: '31.7%',
+    minHeight: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 6, paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  catCellActive: { backgroundColor: theme.color.brandTertiary, borderColor: theme.color.brandPrimary },
+  catCellTxt: { fontSize: 12, color: theme.color.onSurfaceSecondary, textAlign: 'center' },
   catChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 12, paddingVertical: 8,

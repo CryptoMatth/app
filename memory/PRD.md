@@ -177,3 +177,15 @@ Mobile app Expo per pianificare i pasti settimanali, gestire ricette e la lista 
 
 ## Icon
 Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta sage top-right, calendario+check bottom-left. Adaptive icon con safe area 66%.
+
+## Redesign UI Sept 2026 (M1–M3)
+- **M1 · Griglia categorie ingredienti**: nel selettore categoria dell'IngredientEditorForm (Spesa + ingredienti piatti + Frigo) le categorie sono ora in griglia responsive a 3 colonne (`31.7%` width con `flex-wrap`) invece dello scroll orizzontale. Ogni cella mostra emoji grande (18pt) + label (12pt centrato).
+- **M2 · Settings hub compattato**: la sezione "Piani PlanEat" è stata rimossa come sezione autonoma; il tab "Piani PlanEat" è ora la seconda riga sotto "Account". Struttura finale: Account (Il tuo account, Piani PlanEat) → Personalizzazione → Guida → Dati.
+- **M3 · Preferenze riorganizzate a hub**: la pagina `/settings/preferences.tsx` monolitica è stata sostituita da una cartella `preferences/` con 8 file. Nuovo hub `preferences/index.tsx` con 3 sezioni:
+  - **Generale** → Lingua, Inizio settimana, Durata del Planner, Valori predefiniti
+  - **Categorie** → Categorie dei piatti, Categorie ingredienti (Pro+, gated)
+  - **Notifiche** (toggle master nell'header sezione, Pro+ gated) → Scadenza, Surgelati
+  - Ogni sotto-schermata usa il nuovo componente `PrefsScreenShell` (header + Save button + toast) e salva solo la propria porzione di prefs via `updatePreferences(partial)`.
+  - Le liste di categorie (courses + ingredient categories) riutilizzano il nuovo `CategoryListEditor.tsx` (aggiungi/rinomina/riordina/elimina + modal emoji-picker).
+- i18n: nuove chiavi `prefs.section.*`, `prefs.hub.*`, `notif.expiry.*`, `notif.freezer.*`, `prefs.notif.masterOn/Off` in IT + EN.
+

@@ -58,6 +58,16 @@ export default function SettingsHome() {
           sub: t('settings.account.sub', { username: user?.username || '—' }),
           testID: 'nav-account',
         },
+        {
+          key: 'plans',
+          href: '/settings/plans',
+          icon: 'award',
+          bg: '#F5E8D8',
+          color: theme.color.brand,
+          title: t('settings.plans.title'),
+          sub: t('settings.plans.sub'),
+          testID: 'nav-plans',
+        },
       ],
     },
     {
@@ -72,21 +82,6 @@ export default function SettingsHome() {
           title: t('settings.prefs.title'),
           sub: t('settings.prefs.sub'),
           testID: 'nav-preferences',
-        },
-      ],
-    },
-    {
-      title: t('settings.section.plans'),
-      rows: [
-        {
-          key: 'plans',
-          href: '/settings/plans',
-          icon: 'award',
-          bg: '#F5E8D8',
-          color: theme.color.brand,
-          title: t('settings.plans.title'),
-          sub: t('settings.plans.sub'),
-          testID: 'nav-plans',
         },
       ],
     },
