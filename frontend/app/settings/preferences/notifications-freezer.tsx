@@ -7,6 +7,7 @@ import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
 import { PrefsScreenShell } from '@/src/PrefsScreenShell';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
+import { readNotifPrefs } from '@/src/notifications';
 
 const DEFAULT: NotificationPrefs = {
   enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9,
@@ -18,9 +19,22 @@ export default function NotificationsFreezerPreference() {
   const { prefs, updatePreferences } = useAuth();
   const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
-  const initial = prefs.notifications || DEFAULT;
+
+  // Seed the local state with the *effective* freezer value from
+  // readNotifPrefs so the toggle matches what the scheduler sees.
+  const buildInitial = (): NotificationPrefs => {
+    const effective = readNotifPrefs(prefs);
+    const raw = (prefs.notifications || {}) as NotificationPrefs;
+    return {
+      ...DEFAULT,
+      ...raw,
+      freezer_enabled: effective.freezer_enabled,
+      freezer_hours: (raw.freezer_hours ?? DEFAULT.freezer_hours) as number,
+    };
+  };
+  const initial = buildInitial();
   const [notif, setNotif] = useState<NotificationPrefs>(initial);
-  useEffect(() => setNotif(prefs.notifications || DEFAULT), [prefs.notifications]);
+  useEffect(() => setNotif(buildInitial()), [prefs.notifications]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = useMemo(() => {
     const a = { freezer_enabled: notif.freezer_enabled, freezer_hours: notif.freezer_hours };
@@ -34,13 +48,22 @@ export default function NotificationsFreezerPreference() {
     <PrefsScreenShell
       title={t('notif.freezer.h')}
       dirty={dirty && isProPlus}
-      onSave={() => updatePreferences({
-        notifications: {
-          ...notif,
-          // Preserve the OR-mask on the legacy master field.
-          enabled: (typeof notif.expiry_enabled === 'boolean' ? notif.expiry_enabled : !!notif.enabled) || !!notif.freezer_enabled,
-        },
-      })}
+      onSave={() => {
+        // Read effective expiry state via readNotifPrefs so we preserve
+        // whatever the scheduler currently sees (legacy migration included).
+        const expiryOn = readNotifPrefs(prefs).expiry_enabled;
+        return updatePreferences({
+          notifications: {
+            ...notif,
+            // Persist BOTH toggles explicitly. This decouples expiry and
+            // freezer definitively — otherwise turning ON one accidentally
+            // turned ON the other via the legacy `enabled` fallback.
+            expiry_enabled: expiryOn,
+            freezer_enabled: !!notif.freezer_enabled,
+            enabled: expiryOn || !!notif.freezer_enabled,
+          },
+        });
+      }}
       testID="prefs-notif-freezer"
     >
       <View style={s.section}>

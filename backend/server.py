@@ -266,6 +266,9 @@ class IngredientCategoryItem(BaseModel):
 
 class NotificationPrefs(BaseModel):
     enabled: Optional[bool] = None
+    # New per-feature toggles (independent). If either is set on read, we no
+    # longer fall back to the legacy `enabled` master.
+    expiry_enabled: Optional[bool] = None
     # Legacy single-day preavviso (kept for backward compat)
     expiry_days_ahead: Optional[int] = None
     # New multi-day preavviso — e.g. [3, 2, 1, 0]. Overrides expiry_days_ahead when set.
@@ -810,6 +813,7 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         cur = prefs.get("notifications") or {}
         n = body.notifications
         if n.enabled is not None: cur["enabled"] = bool(n.enabled)
+        if n.expiry_enabled is not None: cur["expiry_enabled"] = bool(n.expiry_enabled)
         if n.expiry_days_ahead is not None:
             cur["expiry_days_ahead"] = max(0, min(30, int(n.expiry_days_ahead)))
         if n.days_ahead is not None:

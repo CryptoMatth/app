@@ -10,7 +10,7 @@ import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
 import { PrefsScreenShell } from '@/src/PrefsScreenShell';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
-import { fireTestNotification } from '@/src/notifications';
+import { fireTestNotification, readNotifPrefs } from '@/src/notifications';
 
 const DEFAULT: NotificationPrefs = {
   enabled: false, expiry_enabled: false,
@@ -18,18 +18,39 @@ const DEFAULT: NotificationPrefs = {
   freezer_enabled: false, freezer_hours: 24,
 };
 
-// Resolve current expiry_enabled with backward-compat fallback to legacy `enabled`.
-const isExpiryOn = (n: NotificationPrefs) =>
-  typeof n.expiry_enabled === 'boolean' ? n.expiry_enabled : !!n.enabled;
+// Resolve current expiry_enabled with backward-compat fallback via readNotifPrefs.
+const isExpiryOn = (n: NotificationPrefs) => {
+  if (typeof n.expiry_enabled === 'boolean') return n.expiry_enabled;
+  // If freezer_enabled is a boolean but expiry_enabled isn't, we're already
+  // on the new schema and missing means false. Only fall back to `enabled`
+  // when neither new field is set (fresh legacy user).
+  if (typeof n.freezer_enabled === 'boolean') return false;
+  return !!n.enabled;
+};
 
 export default function NotificationsExpiryPreference() {
   const { t } = useTranslation();
   const { prefs, updatePreferences } = useAuth();
   const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
-  const initial = prefs.notifications || DEFAULT;
+
+  // Seed with the *effective* expiry value so the toggle mirrors what the
+  // scheduler sees. This avoids visual/behavior desync for legacy users.
+  const buildInitial = (): NotificationPrefs => {
+    const effective = readNotifPrefs(prefs);
+    const raw = (prefs.notifications || {}) as NotificationPrefs;
+    return {
+      ...DEFAULT,
+      ...raw,
+      expiry_enabled: effective.expiry_enabled,
+      days_ahead: effective.days_ahead,
+      expiry_days_ahead: effective.expiry_days_ahead,
+      notify_hour: effective.notify_hour,
+    };
+  };
+  const initial = buildInitial();
   const [notif, setNotif] = useState<NotificationPrefs>(initial);
-  useEffect(() => setNotif(prefs.notifications || DEFAULT), [prefs.notifications]);
+  useEffect(() => setNotif(buildInitial()), [prefs.notifications]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty = useMemo(() => {
     const a = { expiry_enabled: isExpiryOn(notif), days_ahead: notif.days_ahead || [], expiry_days_ahead: notif.expiry_days_ahead, notify_hour: notif.notify_hour };
@@ -46,10 +67,12 @@ export default function NotificationsExpiryPreference() {
       onSave={() => updatePreferences({
         notifications: {
           ...notif,
-          // Keep the legacy master `enabled` as OR of both sub-switches so
-          // older clients still see notifications as "on" if either is on.
-          enabled: isExpiryOn(notif) || !!notif.freezer_enabled,
+          // Persist BOTH toggles explicitly so subsequent reads don't fall
+          // back to the legacy `enabled` field. This decouples expiry and
+          // freezer definitively.
           expiry_enabled: isExpiryOn(notif),
+          freezer_enabled: !!notif.freezer_enabled,
+          enabled: isExpiryOn(notif) || !!notif.freezer_enabled,
         },
       })}
       testID="prefs-notif-expiry"

@@ -21,7 +21,7 @@
         "backgroundColor": "#C66241"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 130,
+      "versionCode": 131,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",

@@ -97,16 +97,27 @@ async function cancelAllPlanEat() {
 }
 
 function parseIso(s?: string | null): Date | null {
-  if (!s) return null;
+  if (!s || typeof s !== 'string') return null;
   const [y, m, d] = s.split('-').map(Number);
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
 }
 
+/** Normalize expiry entry to an ISO date string. Backend supports both legacy
+ *  string entries ("2025-09-26") and new object form ({date, label}). */
+function expiryDate(entry: unknown): Date | null {
+  if (!entry) return null;
+  if (typeof entry === 'string') return parseIso(entry);
+  if (typeof entry === 'object' && entry !== null && 'date' in entry) {
+    return parseIso((entry as any).date);
+  }
+  return null;
+}
+
 export type FridgeLite = {
   id: string;
   name: string;
-  expiries?: string[];
+  expiries?: (string | { date: string; label?: string })[];
   category_id?: string;
 };
 
@@ -167,8 +178,8 @@ export async function reschedule(
       : [prefs.expiry_days_ahead];
 
     for (const it of fridge) {
-      for (const iso of (it.expiries || [])) {
-        const d = parseIso(iso);
+      for (const entry of (it.expiries || [])) {
+        const d = expiryDate(entry);
         if (!d) continue;
         for (const daysBefore of dayOffsets) {
           const warn = new Date(d);
@@ -246,9 +257,14 @@ export async function reschedule(
  */
 export function readNotifPrefs(prefs: UserPreferences | any): NotifPrefs {
   const n = (prefs && (prefs as any).notifications) || {};
-  const legacyEnabled = !!n.enabled;
-  const expiry_enabled = typeof n.expiry_enabled === 'boolean' ? n.expiry_enabled : legacyEnabled;
-  const freezer_enabled = typeof n.freezer_enabled === 'boolean' ? n.freezer_enabled : legacyEnabled;
+  // Detect whether the record has the new per-feature schema. If EITHER
+  // `expiry_enabled` or `freezer_enabled` is explicitly a boolean, we're on
+  // the new schema and treat missing fields as `false`. Otherwise fall back
+  // to the legacy master `enabled` field (one-time migration).
+  const hasNewSchema = typeof n.expiry_enabled === 'boolean' || typeof n.freezer_enabled === 'boolean';
+  const legacyOn = !!n.enabled;
+  const expiry_enabled = hasNewSchema ? !!n.expiry_enabled : legacyOn;
+  const freezer_enabled = hasNewSchema ? !!n.freezer_enabled : legacyOn;
   const daysAhead = Array.isArray(n.days_ahead) && n.days_ahead.length > 0
     ? n.days_ahead.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
     : [Number.isFinite(n.expiry_days_ahead) ? n.expiry_days_ahead : DEFAULT_NOTIF.expiry_days_ahead];

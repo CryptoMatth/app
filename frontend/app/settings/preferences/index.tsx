@@ -13,6 +13,7 @@ import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
+import { readNotifPrefs } from '@/src/notifications';
 
 type Row = {
   key: string;
@@ -35,11 +36,11 @@ export default function PreferencesHub() {
   const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
 
-  const notif = prefs.notifications || { enabled: false };
-  const expiryOn = typeof (notif as any).expiry_enabled === 'boolean'
-    ? !!(notif as any).expiry_enabled
-    : !!notif.enabled;
-  const freezerOn = !!(notif as any).freezer_enabled;
+  // Read effective on/off state through the shared readNotifPrefs helper so
+  // the UI matches what the scheduler actually sees.
+  const effective = readNotifPrefs(prefs);
+  const expiryOn = effective.expiry_enabled;
+  const freezerOn = effective.freezer_enabled;
   const languageLabel = prefs.language === 'en' ? '🇬🇧  English' : '🇮🇹  Italiano';  const weekLabels = lang === 'it'
     ? ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato']
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
