@@ -9,7 +9,32 @@ import { PrefsScreenShell } from '@/src/PrefsScreenShell';
 import { CategoryListEditor } from '@/src/CategoryListEditor';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
 
-const EMOJI = ['🥬', '🍎', '🥩', '🥛', '🍞', '❄️', '🥤', '🫙', '📦', '🍫', '🌶️', '🫒', '🥫', '🐟', '🥚', '🌰', '🧀'];
+const EMOJI = [
+  // Cibo — freschi
+  '🥬', '🍎', '🍌', '🥕', '🌶️', '🌰', '🫒', '🥑', '🥦', '🍅',
+  // Cibo — proteine
+  '🥩', '🐟', '🦐', '🥚', '🧀', '🥓',
+  // Cibo — dispensa e conserve
+  '🍞', '🥨', '🫘', '🍚', '🍝', '🍯', '🫙', '🥫', '🧂', '🌾',
+  // Cibo — surgelati e freddi
+  '❄️', '🍦', '🥶',
+  // Cibo — snack e dolci
+  '🍫', '🍪', '🧁', '🍰', '🍩', '🍬',
+  // Bevande
+  '🥤', '☕', '🍵', '🍷', '🍺', '🧃', '💧',
+  // Pulizia casa
+  '🧽', '🧴', '🧼', '🧹', '🧺', '🪣',
+  // Igiene personale
+  '🧻', '🪒', '🪥', '💄', '🧴',
+  // Farmaci e cura
+  '💊', '🩹', '🌡️', '🌿',
+  // Bambini
+  '🍼', '👶',
+  // Animali
+  '🐾', '🐕', '🐈',
+  // Casa e vari
+  '🕯️', '🔋', '💡', '📦', '🎁',
+];
 
 export default function IngredientCategoriesPreference() {
   const { t, tCat } = useTranslation();

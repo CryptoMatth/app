@@ -8,7 +8,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
@@ -32,13 +31,12 @@ type Row = {
 export default function PreferencesHub() {
   const router = useRouter();
   const { t, lang } = useTranslation();
-  const { prefs, updatePreferences } = useAuth();
+  const { prefs } = useAuth();
   const isProPlus = useHasTier('pro_plus');
   const [upsell, setUpsell] = useState(false);
 
   const notif = prefs.notifications || { enabled: false };
-  const languageLabel = prefs.language === 'en' ? '🇬🇧  English' : '🇮🇹  Italiano';
-  const weekLabels = lang === 'it'
+  const languageLabel = prefs.language === 'en' ? '🇬🇧  English' : '🇮🇹  Italiano';  const weekLabels = lang === 'it'
     ? ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato']
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const weekStartLabel = weekLabels[prefs.week_start_day] || weekLabels[1];
@@ -48,16 +46,13 @@ export default function PreferencesHub() {
   const defaults = prefs.defaults || { default_qty: 1, default_unit: 'pz', default_servings: 2 };
   const defaultsLabel = `${defaults.default_qty} ${defaults.default_unit} · ${defaults.default_servings} ${lang === 'it' ? 'coperti' : 'servings'}`;
 
-  const toggleNotifications = async () => {
-    if (!isProPlus) { setUpsell(true); return; }
-    Haptics.selectionAsync();
-    const next = !notif.enabled;
-    await updatePreferences({
-      notifications: { ...(prefs.notifications as any), enabled: next },
-    });
+  const toggleNotifications = () => {
+    if (!isProPlus) { setUpsell(true); }
   };
+  void toggleNotifications;
 
-  const sections: { title: string; rows: Row[]; toggle?: { on: boolean; onPress: () => void; testID?: string } }[] = [
+
+  const sections: { title: string; rows: Row[] }[] = [
     {
       title: t('prefs.section.general'),
       rows: [
@@ -133,11 +128,6 @@ export default function PreferencesHub() {
     },
     {
       title: t('prefs.section.notifications'),
-      toggle: {
-        on: !!notif.enabled && isProPlus,
-        onPress: toggleNotifications,
-        testID: 'notif-master-toggle',
-      },
       rows: [
         {
           key: 'expiry',
@@ -146,7 +136,7 @@ export default function PreferencesHub() {
           bg: theme.color.brandTertiary,
           color: theme.color.brandPrimary,
           title: t('notif.expiry.h'),
-          sub: t('notif.expiry.sub'),
+          sub: notif.enabled ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
           locked: !isProPlus,
           testID: 'nav-prefs-notif-expiry',
         },
@@ -157,7 +147,7 @@ export default function PreferencesHub() {
           bg: '#E5EDDF',
           color: theme.color.brandSecondary,
           title: t('notif.freezer.h'),
-          sub: t('notif.freezer.sub'),
+          sub: (notif as any).freezer_enabled ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
           locked: !isProPlus,
           testID: 'nav-prefs-notif-freezer',
         },
@@ -180,26 +170,6 @@ export default function PreferencesHub() {
           <View key={sec.title} style={s.section}>
             <View style={hubStyles.secHead}>
               <Text style={s.sectionH}>{sec.title}</Text>
-              {sec.toggle && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {!isProPlus && (
-                    <View style={hubStyles.proBadge}>
-                      <Feather name="lock" size={9} color="#fff" />
-                      <Text style={hubStyles.proBadgeTxt}>PRO+</Text>
-                    </View>
-                  )}
-                  <Text style={hubStyles.masterTxt}>
-                    {sec.toggle.on ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff')}
-                  </Text>
-                  <Pressable
-                    onPress={sec.toggle.onPress}
-                    style={[hubStyles.switch, sec.toggle.on && hubStyles.switchOn]}
-                    testID={sec.toggle.testID}
-                  >
-                    <View style={[hubStyles.thumb, sec.toggle.on && hubStyles.thumbOn]} />
-                  </Pressable>
-                </View>
-              )}
             </View>
             {sec.rows.map(r => (
               <Pressable

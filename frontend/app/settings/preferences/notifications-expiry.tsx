@@ -26,8 +26,8 @@ export default function NotificationsExpiryPreference() {
   useEffect(() => setNotif(prefs.notifications || DEFAULT), [prefs.notifications]);
 
   const dirty = useMemo(() => {
-    const a = { days_ahead: notif.days_ahead || [], expiry_days_ahead: notif.expiry_days_ahead, notify_hour: notif.notify_hour };
-    const b = { days_ahead: initial.days_ahead || [], expiry_days_ahead: initial.expiry_days_ahead, notify_hour: initial.notify_hour };
+    const a = { enabled: notif.enabled, days_ahead: notif.days_ahead || [], expiry_days_ahead: notif.expiry_days_ahead, notify_hour: notif.notify_hour };
+    const b = { enabled: initial.enabled, days_ahead: initial.days_ahead || [], expiry_days_ahead: initial.expiry_days_ahead, notify_hour: initial.notify_hour };
     return JSON.stringify(a) !== JSON.stringify(b);
   }, [notif, initial]);
 
@@ -42,12 +42,25 @@ export default function NotificationsExpiryPreference() {
     >
       <View style={s.section}>
         <Text style={s.sectionSub}>{t('notif.expiry.sub')}</Text>
-        {!notif.enabled && isProPlus && (
-          <View style={styles.warn}>
-            <Feather name="alert-circle" size={12} color={theme.color.brand} />
-            <Text style={styles.warnTxt}>{t('prefs.notif.masterOff')}. {t('notif.enabledSub')}</Text>
+
+        {/* Master enable toggle for expiry alerts */}
+        <View style={styles.masterCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.masterH}>{t('notif.expiry.enableH')}</Text>
+            <Text style={styles.masterSub}>{t('notif.expiry.enableSub')}</Text>
           </View>
-        )}
+          <Pressable
+            onPress={() => {
+              if (!isProPlus) { setUpsell(true); return; }
+              Haptics.selectionAsync();
+              setNotif(n => ({ ...n, enabled: !n.enabled }));
+            }}
+            style={[styles.switch, notif.enabled && isProPlus && styles.switchOn]}
+            testID="notif-expiry-master"
+          >
+            <View style={[styles.thumb, notif.enabled && isProPlus && styles.thumbOn]} />
+          </Pressable>
+        </View>
 
         <View style={{ opacity: canEdit ? 1 : 0.45 }} pointerEvents={canEdit ? 'auto' : 'none'}>
           <View style={styles.card}>
@@ -135,6 +148,19 @@ export default function NotificationsExpiryPreference() {
 }
 
 const styles = StyleSheet.create({
+  masterCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    backgroundColor: theme.color.brandTertiary,
+    borderWidth: 1, borderColor: theme.color.brandPrimary,
+    marginTop: theme.spacing.sm, marginBottom: theme.spacing.sm,
+  },
+  masterH: { fontSize: 14, fontWeight: '700', color: theme.color.brandPrimary },
+  masterSub: { fontSize: 11, color: theme.color.onSurfaceSecondary, marginTop: 2, lineHeight: 15 },
+  switch: { width: 44, height: 26, borderRadius: 13, backgroundColor: theme.color.borderStrong, padding: 3, justifyContent: 'center' },
+  switchOn: { backgroundColor: theme.color.brandPrimary },
+  thumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
+  thumbOn: { alignSelf: 'flex-end' },
   card: {
     padding: theme.spacing.md, borderRadius: theme.radius.md,
     backgroundColor: theme.color.surfaceSecondary,
