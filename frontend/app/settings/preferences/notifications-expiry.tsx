@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, TextInput, Platform,
+  View, Text, StyleSheet, Pressable, TextInput, Platform, Alert,
 } from 'react-native';
 import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
@@ -10,11 +10,17 @@ import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
 import { PrefsScreenShell } from '@/src/PrefsScreenShell';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
+import { fireTestNotification } from '@/src/notifications';
 
 const DEFAULT: NotificationPrefs = {
-  enabled: false, expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9,
-  freezer_enabled: true, freezer_hours: 24,
+  enabled: false, expiry_enabled: false,
+  expiry_days_ahead: 1, days_ahead: [1], notify_hour: 9,
+  freezer_enabled: false, freezer_hours: 24,
 };
+
+// Resolve current expiry_enabled with backward-compat fallback to legacy `enabled`.
+const isExpiryOn = (n: NotificationPrefs) =>
+  typeof n.expiry_enabled === 'boolean' ? n.expiry_enabled : !!n.enabled;
 
 export default function NotificationsExpiryPreference() {
   const { t } = useTranslation();
@@ -26,24 +32,32 @@ export default function NotificationsExpiryPreference() {
   useEffect(() => setNotif(prefs.notifications || DEFAULT), [prefs.notifications]);
 
   const dirty = useMemo(() => {
-    const a = { enabled: notif.enabled, days_ahead: notif.days_ahead || [], expiry_days_ahead: notif.expiry_days_ahead, notify_hour: notif.notify_hour };
-    const b = { enabled: initial.enabled, days_ahead: initial.days_ahead || [], expiry_days_ahead: initial.expiry_days_ahead, notify_hour: initial.notify_hour };
+    const a = { expiry_enabled: isExpiryOn(notif), days_ahead: notif.days_ahead || [], expiry_days_ahead: notif.expiry_days_ahead, notify_hour: notif.notify_hour };
+    const b = { expiry_enabled: isExpiryOn(initial), days_ahead: initial.days_ahead || [], expiry_days_ahead: initial.expiry_days_ahead, notify_hour: initial.notify_hour };
     return JSON.stringify(a) !== JSON.stringify(b);
   }, [notif, initial]);
 
-  const canEdit = isProPlus && notif.enabled;
+  const canEdit = isProPlus && isExpiryOn(notif);
 
   return (
     <PrefsScreenShell
       title={t('notif.expiry.h')}
       dirty={dirty && isProPlus}
-      onSave={() => updatePreferences({ notifications: notif })}
+      onSave={() => updatePreferences({
+        notifications: {
+          ...notif,
+          // Keep the legacy master `enabled` as OR of both sub-switches so
+          // older clients still see notifications as "on" if either is on.
+          enabled: isExpiryOn(notif) || !!notif.freezer_enabled,
+          expiry_enabled: isExpiryOn(notif),
+        },
+      })}
       testID="prefs-notif-expiry"
     >
       <View style={s.section}>
         <Text style={s.sectionSub}>{t('notif.expiry.sub')}</Text>
 
-        {/* Master enable toggle for expiry alerts */}
+        {/* Independent enable toggle for EXPIRY alerts */}
         <View style={styles.masterCard}>
           <View style={{ flex: 1 }}>
             <Text style={styles.masterH}>{t('notif.expiry.enableH')}</Text>
@@ -53,12 +67,12 @@ export default function NotificationsExpiryPreference() {
             onPress={() => {
               if (!isProPlus) { setUpsell(true); return; }
               Haptics.selectionAsync();
-              setNotif(n => ({ ...n, enabled: !n.enabled }));
+              setNotif(n => ({ ...n, expiry_enabled: !isExpiryOn(n) }));
             }}
-            style={[styles.switch, notif.enabled && isProPlus && styles.switchOn]}
+            style={[styles.switch, isExpiryOn(notif) && isProPlus && styles.switchOn]}
             testID="notif-expiry-master"
           >
-            <View style={[styles.thumb, notif.enabled && isProPlus && styles.thumbOn]} />
+            <View style={[styles.thumb, isExpiryOn(notif) && isProPlus && styles.thumbOn]} />
           </Pressable>
         </View>
 
@@ -135,11 +149,29 @@ export default function NotificationsExpiryPreference() {
           </View>
         </View>
 
-        {Platform.OS === 'web' && notif.enabled && (
+        {Platform.OS === 'web' && isExpiryOn(notif) && (
           <View style={styles.warn}>
             <Feather name="info" size={12} color={theme.color.brand} />
             <Text style={styles.warnTxt}>{t('notif.nativeOnly')}</Text>
           </View>
+        )}
+
+        {/* Test-notification button — helps user verify permissions/channel work */}
+        {Platform.OS !== 'web' && isProPlus && (
+          <Pressable
+            onPress={async () => {
+              Haptics.selectionAsync();
+              const ok = await fireTestNotification();
+              if (!ok) {
+                Alert.alert(t('notif.test.failTitle'), t('notif.test.failBody'));
+              }
+            }}
+            style={styles.testBtn}
+            testID="notif-test-btn"
+          >
+            <Feather name="bell" size={14} color={theme.color.brandPrimary} />
+            <Text style={styles.testBtnTxt}>{t('notif.test.cta')}</Text>
+          </Pressable>
         )}
       </View>
       <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="notifications" />
@@ -182,4 +214,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDE2CE', borderRadius: theme.radius.md,
   },
   warnTxt: { flex: 1, fontSize: 11, color: theme.color.brand, fontStyle: 'italic' },
+  testBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, marginTop: theme.spacing.lg, paddingVertical: 12,
+    borderRadius: theme.radius.md, borderWidth: 1, borderStyle: 'dashed',
+    borderColor: theme.color.brandPrimary,
+    alignSelf: 'center', paddingHorizontal: 20,
+  },
+  testBtnTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 13 },
 });

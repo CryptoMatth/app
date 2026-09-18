@@ -4,15 +4,12 @@ import {
   ActivityIndicator, Keyboard,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Link } from 'expo-router';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { PasswordInput } from '@/src/PasswordInput';
 import { useTranslation } from '@/src/i18n';
-
-const HERO_URL = 'https://images.unsplash.com/photo-1528712306091-ed0763094c98?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxjb3p5JTIwaG9tZSUyMGNvb2tpbmclMjBraXRjaGVufGVufDB8fHx8MTc4NzMxNTg1NHww&ixlib=rb-4.1.0&q=85';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -40,9 +37,16 @@ export default function Login() {
 
   return (
     <View style={styles.root} testID="login-screen">
-      <Image source={{ uri: HERO_URL }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+      {/* Warm brand gradient — always renders instantly, no image loading needed */}
       <LinearGradient
-        colors={['rgba(44,40,38,0.25)', 'rgba(44,40,38,0.55)', 'rgba(44,40,38,0.92)']}
+        colors={['#E58867', '#C66241', '#8B3E23']}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {/* Soft radial-ish darken at the top to keep the tagline readable */}
+      <LinearGradient
+        colors={['rgba(44,40,38,0.28)', 'rgba(44,40,38,0)']}
+        locations={[0, 0.6]}
         style={StyleSheet.absoluteFillObject}
       />
       <KeyboardAwareScrollView
@@ -107,7 +111,7 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.color.surfaceInverse },
+  root: { flex: 1, backgroundColor: theme.color.brand },
   scroll: { flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: theme.spacing.xl, paddingTop: 80, paddingBottom: theme.spacing.xl },
   top: { alignItems: 'flex-start' },
   brand: { fontFamily: theme.font.display, fontSize: 38, color: '#FDFBF7', letterSpacing: 0.5 },

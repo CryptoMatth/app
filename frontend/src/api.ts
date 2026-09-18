@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { bumpNotifications } from '@/src/notificationsBus';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 export const BACKEND_URL = API_URL;
@@ -200,9 +201,19 @@ export const api = {
 
   // Frigorifero (Pro feature)
   listFridge: () => req('/fridge'),
-  addFridge: (data: { name: string; quantity: number; unit: string; notes?: string; category_id?: string; photo_path?: string | null; expiries?: string[] }) =>
-    req('/fridge', { method: 'POST', body: JSON.stringify(data) }),
-  editFridge: (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expiries: string[] }>) =>
-    req(`/fridge/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  deleteFridge: (id: string) => req(`/fridge/${id}`, { method: 'DELETE' }),
+  addFridge: async (data: { name: string; quantity: number; unit: string; notes?: string; category_id?: string; photo_path?: string | null; expiries?: string[] }) => {
+    const r = await req('/fridge', { method: 'POST', body: JSON.stringify(data) });
+    bumpNotifications();
+    return r;
+  },
+  editFridge: async (id: string, data: Partial<{ name: string; quantity: number; unit: string; notes: string; category_id: string; photo_path: string | null; expiries: string[] }>) => {
+    const r = await req(`/fridge/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    bumpNotifications();
+    return r;
+  },
+  deleteFridge: async (id: string) => {
+    const r = await req(`/fridge/${id}`, { method: 'DELETE' });
+    bumpNotifications();
+    return r;
+  },
 };

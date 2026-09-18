@@ -1,6 +1,7 @@
 import { Tabs, useRouter } from 'expo-router';
 import Feather from '@react-native-vector-icons/feather';
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { hasSeenOnboarding } from '@/src/tutorial';
@@ -8,12 +9,22 @@ import { useTranslation } from '@/src/i18n';
 import { api } from '@/src/api';
 import { reschedule, readNotifPrefs, type PlannedMeal, type FridgeLite } from '@/src/notifications';
 import { parseIso, addDays } from '@/src/week';
+import { useNotificationBumpValue, bumpNotifications } from '@/src/notificationsBus';
 
 export default function TabsLayout() {
   const { user, loading, prefs } = useAuth();
   const { t } = useTranslation();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  const bump = useNotificationBumpValue();
+
+  // Bump on foreground so the schedule refreshes when user comes back.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') bumpNotifications();
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/(auth)/login');
@@ -31,19 +42,21 @@ export default function TabsLayout() {
   }, [loading, user, checked, router]);
 
   // Re-schedule local notifications whenever notif prefs change (or on login).
-  // We refetch shopping + planner + dishes once and let the notifications
-  // module cancel & re-create everything.
+  // We refetch fridge + planner + dishes and let the notifications module
+  // cancel & re-create everything. If BOTH expiry and freezer are disabled,
+  // reschedule() itself will cancel-all and bail — so we no longer need a
+  // guard here (the old `if (!np.enabled) return` was broken after moving to
+  // per-feature switches).
   useEffect(() => {
     if (loading || !user || !user.is_pro) return;
     const np = readNotifPrefs(prefs);
-    if (!np.enabled) { void reschedule([], [], np); return; }
     let cancelled = false;
     (async () => {
       try {
         const [fridge, weeks, dishes] = await Promise.all([
           api.listFridge().catch(() => []),
-          api.listPlannerWeeks(),
-          api.listDishes(),
+          api.listPlannerWeeks().catch(() => []),
+          api.listDishes().catch(() => []),
         ]);
         if (cancelled) return;
         const dishById: Record<string, any> = {};
@@ -82,7 +95,7 @@ export default function TabsLayout() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [loading, user, prefs]);
+  }, [loading, user, prefs, bump]);
 
   if (loading || !user) return null;
 

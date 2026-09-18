@@ -1,44 +1,76 @@
 /**
  * Local notification scheduling for expiration + freezer alerts.
  *
- * We use LOCAL scheduled notifications (expo-notifications) — no push server
- * needed. This works out of the box on native builds; in Expo Go on iOS SDK
- * 53+ it's degraded but silent scheduling still succeeds (the OS may not
- * actually fire), so we always store the schedule intent server-side too.
+ * Uses expo-notifications' *local scheduled* notifications — no server push.
+ * Works out of the box on native builds (APK / Play Store); Expo Go on iOS
+ * SDK 53+ silently drops the scheduling call so we always try to write the
+ * state and fail gracefully.
  *
- * Scheduling flow:
- *   1. When shopping list or planner changes, call `reschedule(items, prefs, plan)`
- *   2. We cancel all previously-scheduled PlanEat notifications
- *   3. We schedule fresh ones based on current state
+ * IMPORTANT (Android 8+, 2017+): every notification MUST be delivered on a
+ * registered NotificationChannel. Without a channel the OS silently discards
+ * the notification. `ensureAndroidChannel()` creates the "planeat-alerts"
+ * channel on first call.
+ *
+ * Two independent switches:
+ *   - `expiry_enabled` controls scadenza notifications
+ *   - `freezer_enabled` controls surgelati notifications
+ * Legacy `enabled` field is kept for backwards compat and is treated as an
+ * OR-mask when the new fields are undefined.
  */
 import * as Notifications from 'expo-notifications';
+import { AndroidImportance, SchedulableTriggerInputTypes } from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { UserPreferences } from './auth';
 
 export type NotifPrefs = {
-  enabled: boolean;
-  expiry_days_ahead: number;   // e.g. 1 = notify 1 day before
-  notify_hour: number;         // 0..23, local time
-  freezer_enabled: boolean;    // 24h before a planned meal with frozen ingredients
+  enabled: boolean;               // OR of the two below — kept for legacy checks
+  expiry_enabled: boolean;
+  freezer_enabled: boolean;
+  expiry_days_ahead: number;      // fallback / legacy
+  days_ahead: number[];           // multi-select (e.g., [3, 2, 1, 0])
+  notify_hour: number;
 };
 
 export const DEFAULT_NOTIF: NotifPrefs = {
   enabled: false,
+  expiry_enabled: false,
+  freezer_enabled: false,
   expiry_days_ahead: 1,
+  days_ahead: [1],
   notify_hour: 9,
-  freezer_enabled: true,
 };
 
 const TAG = 'planeat';
+const CHANNEL_ID = 'planeat-alerts';
+
+// Android 8+ requires a notification channel. Silently no-ops on iOS/web.
+async function ensureAndroidChannel() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: 'PlanEat',
+      description: 'Avvisi scadenze e surgelati',
+      importance: AndroidImportance.HIGH,
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: false,
+    });
+  } catch (err) {
+    // If channel setup fails we still try to schedule — some Android forks
+    // (Xiaomi/MIUI) sometimes refuse channels for background apps but still
+    // deliver via the default channel.
+    console.warn('[notifications] channel setup failed', err);
+  }
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
+    // Modern API (SDK 51+)
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    shouldShowAlert: true,
-  } as any),
+  }),
 });
 
 export async function ensurePermission(): Promise<boolean> {
@@ -46,7 +78,10 @@ export async function ensurePermission(): Promise<boolean> {
   const cur = await Notifications.getPermissionsAsync();
   if (cur.granted) return true;
   if (!cur.canAskAgain) return false;
-  const req = await Notifications.requestPermissionsAsync();
+  const req = await Notifications.requestPermissionsAsync({
+    android: {},
+    ios: { allowAlert: true, allowBadge: false, allowSound: true },
+  });
   return !!req.granted;
 }
 
@@ -78,13 +113,13 @@ export type FridgeLite = {
 export type ShoppingItemLite = {
   id: string;
   name: string;
-  expires_at?: string | null;  // deprecated (kept for compat)
+  expires_at?: string | null;
   category_id?: string;
   checked?: boolean;
 };
 
 export type PlannedMeal = {
-  date: Date;                   // day of the meal
+  date: Date;
   meal: 'pranzo' | 'cena';
   dishes: { name: string; ingredients: { name: string; category_id?: string }[] }[];
 };
@@ -95,20 +130,27 @@ function hasFrozen(m: PlannedMeal): boolean {
   return m.dishes.some(d => d.ingredients.some(i => FROZEN_CATEGORY_IDS.has(i.category_id || '')));
 }
 
-/** Cancel & re-schedule everything based on the given state. */
+/**
+ * Cancel & re-schedule everything based on the current state.
+ * Expiry and freezer are scheduled INDEPENDENTLY.
+ */
 export async function reschedule(
   fridge: FridgeLite[],
   plans: PlannedMeal[],
   prefs: NotifPrefs,
 ): Promise<{ scheduled: number; skipped: number }> {
   if (Platform.OS === 'web') return { scheduled: 0, skipped: 0 };
-  if (!prefs.enabled) {
+
+  // If BOTH channels are off we can just cancel everything and bail.
+  if (!prefs.expiry_enabled && !prefs.freezer_enabled) {
     await cancelAllPlanEat();
     return { scheduled: 0, skipped: 0 };
   }
+
   const ok = await ensurePermission();
   if (!ok) return { scheduled: 0, skipped: 0 };
 
+  await ensureAndroidChannel();
   await cancelAllPlanEat();
 
   const now = new Date();
@@ -116,30 +158,53 @@ export async function reschedule(
   let scheduled = 0;
   let skipped = 0;
 
-  // Expiry notifications — one per (fridge item, expiry date)
-  for (const it of fridge) {
-    for (const iso of (it.expiries || [])) {
-      const d = parseIso(iso);
-      if (!d) continue;
-      const warn = new Date(d);
-      warn.setDate(warn.getDate() - prefs.expiry_days_ahead);
-      warn.setHours(notifyHour, 0, 0, 0);
-      if (warn.getTime() <= now.getTime()) { skipped++; continue; }
-      try {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: '🕐 In scadenza',
-            body: `${it.name} scade tra ${prefs.expiry_days_ahead} giorn${prefs.expiry_days_ahead === 1 ? 'o' : 'i'}.`,
-            data: { tag: TAG, kind: 'expiry', item_id: it.id },
-          },
-          trigger: { type: 'date' as any, date: warn } as any,
-        });
-        scheduled++;
-      } catch { skipped++; }
+  // ---- Expiry notifications ----
+  if (prefs.expiry_enabled) {
+    // Multi-select: schedule ONE notification per (item, day-offset).
+    // If days_ahead is empty (legacy), fall back to [expiry_days_ahead].
+    const dayOffsets = (prefs.days_ahead && prefs.days_ahead.length > 0)
+      ? prefs.days_ahead
+      : [prefs.expiry_days_ahead];
+
+    for (const it of fridge) {
+      for (const iso of (it.expiries || [])) {
+        const d = parseIso(iso);
+        if (!d) continue;
+        for (const daysBefore of dayOffsets) {
+          const warn = new Date(d);
+          warn.setDate(warn.getDate() - daysBefore);
+          warn.setHours(notifyHour, 0, 0, 0);
+          if (warn.getTime() <= now.getTime()) { skipped++; continue; }
+          const label = daysBefore === 0
+            ? `${it.name} scade oggi.`
+            : daysBefore === 1
+              ? `${it.name} scade domani.`
+              : `${it.name} scade tra ${daysBefore} giorni.`;
+          try {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🕐 In scadenza',
+                body: label,
+                data: { tag: TAG, kind: 'expiry', item_id: it.id, days_before: daysBefore },
+                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+              },
+              trigger: {
+                type: SchedulableTriggerInputTypes.DATE,
+                date: warn,
+                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+              },
+            });
+            scheduled++;
+          } catch (err) {
+            console.warn('[notifications] expiry schedule failed', err);
+            skipped++;
+          }
+        }
+      }
     }
   }
 
-  // Freezer alerts (24h before planned meals)
+  // ---- Freezer alerts (24h before a planned meal with frozen ingredients) ----
   if (prefs.freezer_enabled) {
     for (const m of plans) {
       if (!hasFrozen(m)) continue;
@@ -155,23 +220,62 @@ export async function reschedule(
             title: '❄️ Ricordati di scongelare',
             body: `Domani a ${mealLabel}: ${dishNames}`,
             data: { tag: TAG, kind: 'freezer' },
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
           },
-          trigger: { type: 'date' as any, date: warn } as any,
+          trigger: {
+            type: SchedulableTriggerInputTypes.DATE,
+            date: warn,
+            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+          },
         });
         scheduled++;
-      } catch { skipped++; }
+      } catch (err) {
+        console.warn('[notifications] freezer schedule failed', err);
+        skipped++;
+      }
     }
   }
+
   return { scheduled, skipped };
 }
 
-/** Handy helper: read notif prefs off the user preferences (with defaults). */
+/**
+ * Parse notification prefs, supporting the legacy `enabled` field:
+ *  - If `expiry_enabled` is undefined, fall back to `enabled`
+ *  - `freezer_enabled` was always independent
+ */
 export function readNotifPrefs(prefs: UserPreferences | any): NotifPrefs {
   const n = (prefs && (prefs as any).notifications) || {};
+  const legacyEnabled = !!n.enabled;
+  const expiry_enabled = typeof n.expiry_enabled === 'boolean' ? n.expiry_enabled : legacyEnabled;
+  const freezer_enabled = typeof n.freezer_enabled === 'boolean' ? n.freezer_enabled : legacyEnabled;
+  const daysAhead = Array.isArray(n.days_ahead) && n.days_ahead.length > 0
+    ? n.days_ahead.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v))
+    : [Number.isFinite(n.expiry_days_ahead) ? n.expiry_days_ahead : DEFAULT_NOTIF.expiry_days_ahead];
   return {
-    enabled: !!n.enabled,
-    expiry_days_ahead: Number.isFinite(n.expiry_days_ahead) ? n.expiry_days_ahead : DEFAULT_NOTIF.expiry_days_ahead,
+    enabled: expiry_enabled || freezer_enabled,
+    expiry_enabled,
+    freezer_enabled,
+    expiry_days_ahead: Number.isFinite(n.expiry_days_ahead) ? n.expiry_days_ahead : daysAhead[0] ?? DEFAULT_NOTIF.expiry_days_ahead,
+    days_ahead: daysAhead,
     notify_hour: Number.isFinite(n.notify_hour) ? n.notify_hour : DEFAULT_NOTIF.notify_hour,
-    freezer_enabled: n.freezer_enabled ?? DEFAULT_NOTIF.freezer_enabled,
   };
+}
+
+/** Small helper to fire a "test now" alert — useful to prove permissions/channel work. */
+export async function fireTestNotification(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  const ok = await ensurePermission();
+  if (!ok) return false;
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '🔔 Test PlanEat',
+      body: 'Le notifiche funzionano correttamente!',
+      data: { tag: TAG, kind: 'test' },
+      ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+    },
+    trigger: null,
+  });
+  return true;
 }

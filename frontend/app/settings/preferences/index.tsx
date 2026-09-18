@@ -36,6 +36,10 @@ export default function PreferencesHub() {
   const [upsell, setUpsell] = useState(false);
 
   const notif = prefs.notifications || { enabled: false };
+  const expiryOn = typeof (notif as any).expiry_enabled === 'boolean'
+    ? !!(notif as any).expiry_enabled
+    : !!notif.enabled;
+  const freezerOn = !!(notif as any).freezer_enabled;
   const languageLabel = prefs.language === 'en' ? '🇬🇧  English' : '🇮🇹  Italiano';  const weekLabels = lang === 'it'
     ? ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato']
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -136,7 +140,7 @@ export default function PreferencesHub() {
           bg: theme.color.brandTertiary,
           color: theme.color.brandPrimary,
           title: t('notif.expiry.h'),
-          sub: notif.enabled ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
+          sub: expiryOn ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
           locked: !isProPlus,
           testID: 'nav-prefs-notif-expiry',
         },
@@ -147,7 +151,7 @@ export default function PreferencesHub() {
           bg: '#E5EDDF',
           color: theme.color.brandSecondary,
           title: t('notif.freezer.h'),
-          sub: (notif as any).freezer_enabled ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
+          sub: freezerOn ? t('prefs.notif.masterOn') : t('prefs.notif.masterOff'),
           locked: !isProPlus,
           testID: 'nav-prefs-notif-freezer',
         },

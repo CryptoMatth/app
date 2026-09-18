@@ -7,7 +7,8 @@ export type IngredientCategory = { id: string; label: string; icon?: string | nu
 export type PlannerSpan = 'weekly' | 'biweekly';
 export type Lang = 'it' | 'en';
 export type NotificationPrefs = {
-  enabled: boolean;
+  enabled: boolean;               // legacy master (kept for backward compat)
+  expiry_enabled?: boolean;       // new: independent switch for expiry alerts
   expiry_days_ahead: number;      // legacy fallback (largest of days_ahead)
   days_ahead?: number[];          // new: multi-day preavviso
   notify_hour: number;

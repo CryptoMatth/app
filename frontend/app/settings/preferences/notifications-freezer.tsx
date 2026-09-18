@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput } from 'react-native';
-import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
 import { useAuth, NotificationPrefs } from '@/src/auth';
 import { theme } from '@/src/theme';
@@ -29,39 +28,45 @@ export default function NotificationsFreezerPreference() {
     return JSON.stringify(a) !== JSON.stringify(b);
   }, [notif, initial]);
 
-  const canEdit = isProPlus && notif.enabled;
+  const canEdit = isProPlus && !!notif.freezer_enabled;
 
   return (
     <PrefsScreenShell
       title={t('notif.freezer.h')}
       dirty={dirty && isProPlus}
-      onSave={() => updatePreferences({ notifications: notif })}
+      onSave={() => updatePreferences({
+        notifications: {
+          ...notif,
+          // Preserve the OR-mask on the legacy master field.
+          enabled: (typeof notif.expiry_enabled === 'boolean' ? notif.expiry_enabled : !!notif.enabled) || !!notif.freezer_enabled,
+        },
+      })}
       testID="prefs-notif-freezer"
     >
       <View style={s.section}>
         <Text style={s.sectionSub}>{t('notif.freezer.sub')}</Text>
-        {!notif.enabled && isProPlus && (
-          <View style={styles.warn}>
-            <Feather name="alert-circle" size={12} color={theme.color.brand} />
-            <Text style={styles.warnTxt}>{t('prefs.notif.masterOff')}. {t('notif.enabledSub')}</Text>
+
+        {/* Independent enable toggle for FREEZER alerts — always tappable for Pro+ */}
+        <View style={styles.masterCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.masterH}>{t('notif.freezer.enableH')}</Text>
+            <Text style={styles.masterSub}>{t('notif.freezer.enableSub')}</Text>
           </View>
-        )}
+          <Pressable
+            onPress={() => {
+              if (!isProPlus) { setUpsell(true); return; }
+              Haptics.selectionAsync();
+              setNotif(n => ({ ...n, freezer_enabled: !n.freezer_enabled }));
+            }}
+            style={[styles.switch, notif.freezer_enabled && isProPlus && styles.switchOn]}
+            testID="notif-freezer"
+          >
+            <View style={[styles.thumb, notif.freezer_enabled && isProPlus && styles.thumbOn]} />
+          </Pressable>
+        </View>
 
         <View style={{ opacity: canEdit ? 1 : 0.45 }} pointerEvents={canEdit ? 'auto' : 'none'}>
           <View style={styles.card}>
-            <View style={styles.row}>
-              <View style={styles.cardHead}>
-                <Feather name="cloud-snow" size={14} color={theme.color.brand} />
-                <Text style={styles.cardH}>{t('notif.freezer')}</Text>
-              </View>
-              <Pressable
-                onPress={() => { Haptics.selectionAsync(); setNotif(n => ({ ...n, freezer_enabled: !n.freezer_enabled })); }}
-                style={[styles.switch, notif.freezer_enabled && styles.switchOn]}
-                testID="notif-freezer"
-              >
-                <View style={[styles.thumb, notif.freezer_enabled && styles.thumbOn]} />
-              </Pressable>
-            </View>
             {notif.freezer_enabled && (
               <>
                 <Text style={styles.rowSub}>{t('notif.freezerHoursSub')}</Text>
@@ -105,6 +110,15 @@ export default function NotificationsFreezerPreference() {
 }
 
 const styles = StyleSheet.create({
+  masterCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    backgroundColor: '#E5EDDF',
+    borderWidth: 1, borderColor: theme.color.brandSecondary,
+    marginTop: theme.spacing.sm, marginBottom: theme.spacing.sm,
+  },
+  masterH: { fontSize: 14, fontWeight: '700', color: theme.color.brandSecondary },
+  masterSub: { fontSize: 11, color: theme.color.onSurfaceSecondary, marginTop: 2, lineHeight: 15 },
   card: {
     padding: theme.spacing.md, borderRadius: theme.radius.md,
     backgroundColor: theme.color.surfaceSecondary,
