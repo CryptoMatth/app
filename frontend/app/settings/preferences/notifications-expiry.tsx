@@ -10,7 +10,7 @@ import { settingsStyles as s } from '@/src/settingsStyles';
 import { useTranslation } from '@/src/i18n';
 import { PrefsScreenShell } from '@/src/PrefsScreenShell';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
-import { fireTestNotification, readNotifPrefs } from '@/src/notifications';
+import { fireTestNotification, readNotifPrefs, listPendingPlaneatNotifications } from '@/src/notifications';
 
 const DEFAULT: NotificationPrefs = {
   enabled: false, expiry_enabled: false,
@@ -196,6 +196,11 @@ export default function NotificationsExpiryPreference() {
             <Text style={styles.testBtnTxt}>{t('notif.test.cta')}</Text>
           </Pressable>
         )}
+
+        {/* Diagnostic: shows what's currently in the OS scheduler queue. */}
+        {Platform.OS !== 'web' && isProPlus && (
+          <PendingNotificationsPanel />
+        )}
       </View>
       <ProUpsellModal open={upsell} onClose={() => setUpsell(false)} feature="notifications" />
     </PrefsScreenShell>
@@ -245,4 +250,101 @@ const styles = StyleSheet.create({
     alignSelf: 'center', paddingHorizontal: 20,
   },
   testBtnTxt: { color: theme.color.brandPrimary, fontWeight: '600', fontSize: 13 },
+});
+
+
+type PendingRow = Awaited<ReturnType<typeof listPendingPlaneatNotifications>>[number];
+
+function PendingNotificationsPanel() {
+  const [rows, setRows] = useState<PendingRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
+
+  const refresh = async () => {
+    setLoading(true);
+    try { setRows(await listPendingPlaneatNotifications()); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    if (open) refresh();
+  }, [open]);
+
+  const fmt = (iso: string | null) => {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return iso; }
+  };
+
+  return (
+    <View style={panelStyles.wrap}>
+      <Pressable
+        onPress={() => { Haptics.selectionAsync(); setOpen(o => !o); }}
+        style={panelStyles.head}
+        testID="notif-pending-toggle"
+      >
+        <Feather name={open ? 'chevron-down' : 'chevron-right'} size={14} color={theme.color.onSurfaceSecondary} />
+        <Text style={panelStyles.headTxt}>
+          {t('notif.pending.title') || 'Notifiche programmate'}{rows.length ? ` (${rows.length})` : ''}
+        </Text>
+        {open && (
+          <Pressable onPress={refresh} hitSlop={8} style={{ marginLeft: 'auto' }}>
+            <Feather name="refresh-cw" size={13} color={theme.color.brandPrimary} />
+          </Pressable>
+        )}
+      </Pressable>
+      {open && (
+        <View style={panelStyles.body}>
+          {loading ? (
+            <Text style={panelStyles.empty}>…</Text>
+          ) : rows.length === 0 ? (
+            <Text style={panelStyles.empty}>
+              {t('notif.pending.empty') || 'Nessuna notifica in coda. Aggiungi scadenze in Frigorifero.'}
+            </Text>
+          ) : (
+            rows.map(r => (
+              <View key={r.id} style={panelStyles.row}>
+                <Feather
+                  name={r.kind === 'freezer' ? 'wind' : 'clock'}
+                  size={12}
+                  color={r.kind === 'freezer' ? '#7BB0C8' : theme.color.brandPrimary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={panelStyles.rowTitle} numberOfLines={1}>{r.title || ''}</Text>
+                  <Text style={panelStyles.rowSub} numberOfLines={2}>{r.body || ''}</Text>
+                </View>
+                <Text style={panelStyles.when}>{fmt(r.when)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const panelStyles = StyleSheet.create({
+  wrap: {
+    marginTop: theme.spacing.lg,
+    padding: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headTxt: { fontSize: 12, fontWeight: '600', color: theme.color.onSurfaceSecondary },
+  body: { marginTop: 8, gap: 8 },
+  empty: { fontSize: 11, color: theme.color.onSurfaceTertiary, fontStyle: 'italic' },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 4, paddingHorizontal: 4,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.color.border,
+  },
+  rowTitle: { fontSize: 12, fontWeight: '600', color: theme.color.onSurface },
+  rowSub: { fontSize: 11, color: theme.color.onSurfaceSecondary, marginTop: 1 },
+  when: { fontSize: 11, color: theme.color.onSurfaceTertiary, fontVariant: ['tabular-nums'] },
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
@@ -53,6 +53,15 @@ export default function Frigorifero() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [upsell, setUpsell] = useState(false);
+  const [query, setQuery] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const loadUnread = useCallback(async () => {
+    try {
+      const r = await api.listNotifications();
+      setUnreadCount(r?.unread || 0);
+    } catch {}
+  }, []);
+  useFocusEffect(useCallback(() => { loadUnread(); }, [loadUnread]));
 
   const catById = useMemo(() => {
     const m: Record<string, any> = {};
@@ -79,22 +88,45 @@ export default function Frigorifero() {
     Haptics.selectionAsync();
   }, [load]);
 
-  const del = async (id: string) => {
-    try {
-      await api.deleteFridge(id);
-      setItems(prev => prev.filter(x => x.id !== id));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } catch {}
+  const del = async (id: string, name?: string) => {
+    Alert.alert(
+      t('fridge.delete.title'),
+      t('fridge.delete.body', { name: name || '' }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteFridge(id);
+              setItems(prev => prev.filter(x => x.id !== id));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            } catch {}
+          },
+        },
+      ],
+    );
   };
 
   // Group items by status: expired (impossible thanks to auto-cleanup but keep guard), expiring soon, ok, no-date.
   // Within each section, sort ascending by earliest expiry so items closer to expiring
   // appear first.
+  // Filter items by the search query (case/accent-insensitive, matches name or notes).
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(it => {
+      const hay = `${it.name || ''} ${it.notes || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [items, query]);
+
   const sections = useMemo(() => {
     const soon: FridgeItem[] = [];
     const ok: FridgeItem[] = [];
     const nodate: FridgeItem[] = [];
-    for (const it of items) {
+    for (const it of filteredItems) {
       if (!it.expiries || it.expiries.length === 0) { nodate.push(it); continue; }
       const min = Math.min(...it.expiries.map(e => daysUntil(expDate(e))).filter(Number.isFinite));
       if (min <= 3) soon.push(it);
@@ -109,7 +141,7 @@ export default function Frigorifero() {
     ok.sort(byEarliestExpiry);
     // For no-date items, keep insertion order (by creation).
     return { soon, ok, nodate };
-  }, [items]);
+  }, [filteredItems]);
 
   if (!isPro) {
     return (
@@ -145,7 +177,13 @@ export default function Frigorifero() {
     let badgeBg = '#E5EDDF', badgeFg = theme.color.brandSecondary, badgeLbl = '';
     if (nextExp) {
       const dt = parseIso(nextExp);
-      const shortDate = dt ? dt.toLocaleDateString(locale, { day: '2-digit', month: 'short' }) : '';
+      const now = new Date();
+      const sameYear = dt ? dt.getFullYear() === now.getFullYear() : true;
+      const shortDate = dt
+        ? dt.toLocaleDateString(locale, sameYear
+            ? { day: '2-digit', month: 'short' }
+            : { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
       if (d < 0) { badgeBg = '#F5E0DC'; badgeFg = theme.color.error; badgeLbl = t('expiry.expired', { n: -d }); }
       else if (d === 0) { badgeBg = '#F5E0DC'; badgeFg = theme.color.error; badgeLbl = t('expiry.today'); }
       else if (d === 1) { badgeBg = '#FDE2CE'; badgeFg = theme.color.brand; badgeLbl = t('expiry.tomorrow'); }
@@ -178,7 +216,7 @@ export default function Frigorifero() {
           )}
         </View>
         <Pressable
-          onPress={(e) => { e.stopPropagation?.(); del(it.id); }}
+          onPress={(e) => { e.stopPropagation?.(); del(it.id, it.name); }}
           style={styles.delBtn}
           hitSlop={12}
           testID={`fridge-delete-${it.id}`}
@@ -194,15 +232,6 @@ export default function Frigorifero() {
     { key: 'ok', label: t('fridge.group.ok'), data: sections.ok },
     { key: 'nodate', label: t('fridge.group.nodate'), data: sections.nodate },
   ].filter(g => g.data.length > 0);
-
-  const [unreadCount, setUnreadCount] = useState(0);
-  const loadUnread = useCallback(async () => {
-    try {
-      const r = await api.listNotifications();
-      setUnreadCount(r?.unread || 0);
-    } catch {}
-  }, []);
-  useFocusEffect(useCallback(() => { loadUnread(); }, [loadUnread]));
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="fridge-tab">
@@ -236,6 +265,28 @@ export default function Frigorifero() {
         </Pressable>
       </View>
 
+      {/* Search bar — visible only when there are items. */}
+      {!loading && items.length > 0 && (
+        <View style={styles.searchWrap}>
+          <Feather name="search" size={16} color={theme.color.onSurfaceTertiary} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t('fridge.search.ph')}
+            placeholderTextColor={theme.color.onSurfaceTertiary}
+            style={styles.searchInput}
+            testID="fridge-search"
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery('')} hitSlop={8} testID="fridge-search-clear">
+              <Feather name="x-circle" size={16} color={theme.color.onSurfaceTertiary} />
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.color.brandPrimary} /></View>
       ) : items.length === 0 ? (
@@ -243,6 +294,11 @@ export default function Frigorifero() {
           <Feather name="package" size={44} color={theme.color.borderStrong} />
           <Text style={styles.emptyH}>{t('fridge.empty.title')}</Text>
           <Text style={styles.emptyP}>{t('fridge.empty.sub')}</Text>
+        </View>
+      ) : groups.length === 0 ? (
+        <View style={styles.center}>
+          <Feather name="search" size={44} color={theme.color.borderStrong} />
+          <Text style={styles.emptyH}>{t('fridge.search.noResults')}</Text>
         </View>
       ) : (
         <FlatList
@@ -287,6 +343,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: theme.color.divider, backgroundColor: theme.color.surface, gap: 8,
   },
   h1: { fontFamily: theme.font.display, fontSize: 26, color: theme.color.onSurface },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: 0, marginBottom: theme.spacing.sm,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+  },
+  searchInput: {
+    flex: 1, paddingVertical: 4, fontSize: 14,
+    color: theme.color.onSurface,
+  },
   sub: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.color.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
   badgeBell: {

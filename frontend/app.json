@@ -21,11 +21,12 @@
         "backgroundColor": "#C66241"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 131,
+      "versionCode": 133,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
         "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
         "com.android.vending.BILLING"
       ]
     },

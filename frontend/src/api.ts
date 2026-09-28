@@ -73,7 +73,7 @@ export const api = {
     language?: 'it' | 'en';
     courses?: { id?: string; label: string }[];
     ingredient_categories?: { id?: string; label: string; icon?: string | null; color?: string | null }[];
-    notifications?: Partial<{ enabled: boolean; expiry_days_ahead: number; days_ahead: number[]; notify_hour: number; freezer_enabled: boolean; freezer_hours: number }>;
+    notifications?: Partial<{ enabled: boolean; expiry_enabled: boolean; expiry_days_ahead: number; days_ahead: number[]; notify_hour: number; freezer_enabled: boolean; freezer_hours: number }>;
     defaults?: Partial<{ default_qty: number; default_unit: string; default_servings: number }>;
   }) =>
     req('/auth/preferences', { method: 'PUT', body: JSON.stringify(data) }),

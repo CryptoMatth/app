@@ -213,3 +213,45 @@ Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta s
   - Le liste di categorie (courses + ingredient categories) riutilizzano il nuovo `CategoryListEditor.tsx` (aggiungi/rinomina/riordina/elimina + modal emoji-picker).
 - i18n: nuove chiavi `prefs.section.*`, `prefs.hub.*`, `notif.expiry.*`, `notif.freezer.*`, `prefs.notif.masterOn/Off` in IT + EN.
 
+
+## Iteration 20 — Notifiche Fix + Pro+ Subscription + Tutorial polish (giu 2026)
+
+### M1 — Notifiche locali (Pro+): fix definitivo dei tre bug ricorrenti
+- **Freezer honor `freezer_hours`**: il vecchio scheduler ignorava la preferenza e usava sempre 24h fissi. Ora `reschedule()` legge `freezer_hours` (1..168) e sottrae le ore dal pranzo/cena (anchor 13:00/20:00).
+- **`freezer_hours` esposto in `readNotifPrefs`**: prima mancava nel NotifPrefs type e non arrivava allo scheduler. Aggiunto default 24h con clamp.
+- **Race condition rimossa**: il `reschedulingRef` guardia rilasciava un secondo bump silenziosamente, perdendo modifiche prefs. Sostituito con pattern queue "dirty flag": se una richiesta arriva durante uno scheduling, il running loop rifà con i dati più recenti.
+- **AppState foreground throttle**: bump ogni volta che l'app torna in primo piano generava race → throttle 30s.
+- **Effetto solo su fingerprint notifiche**: `useEffect` prima dipendeva dall'oggetto `prefs` intero e sparava a ogni cambio non-notifiche → ora dipende solo dal fingerprint dei campi notifiche + user id + bump.
+- **Debug diagnostica**: nuovo `listPendingPlaneatNotifications()` + pannello UI "Notifiche programmate" (native-only) nelle Impostazioni scadenza — mostra title, body, orario di ogni notifica in coda con refresh manuale.
+- **Log verbosi `[notifications]`**: ogni ramo dello scheduler emette console.log per triage.
+- **`RECEIVE_BOOT_COMPLETED`** aggiunto ai permessi Android per far sopravvivere gli alarm dopo reboot.
+
+### Pro+ ora è abbonamento (2€/mese oppure 20€/anno)
+- **Modello acquisti aggiornato**:
+  - **Pro** — one-time non-consumable, `pro_lifetime` = **3€ una tantum**.
+  - **Pro+** — subscription, subscription id `pro_plus_subscription` con due base plan:
+    - `monthly` = **2€/mese**
+    - `annual` = **20€/anno** (≈1,67€/mese, badge "MIGLIORE" nell'UI)
+- **`revenueCat.ts`**: nuovi helper `findProPackage()` e `findProPlusPackage(interval)` che matchano per `PackageType.LIFETIME`, `PackageType.MONTHLY`, `PackageType.ANNUAL`.
+- **`plans.tsx` rewrite**: Pro card mostra una CTA singola one-time. Pro+ card mostra due carte affiancate (Mensile / Annuale) con prezzo live dal Play Store + fallback business.
+- **i18n**: `pro.tier.proplus.price` = "2€/mese o 20€/anno", nuove chiavi `plans.subscribe`, `plans.bestValue`, `plans.proPlus.monthly/annual/pricingSummary/annualEquivalent/activeInfo`, `plans.subFooter` (managed via Google Play).
+- **Setup Play Console richiesto dall'utente** (verrà istruito separatamente):
+  1. Creare "Abbonamento" `pro_plus_subscription` con due base plan:
+     - `monthly` (1 mese, auto-renew, 2€)
+     - `annual` (1 anno, auto-renew, 20€)
+  2. In RevenueCat → Products: importare la subscription, quindi Offering → aggiungere due package: `$rc_monthly` e `$rc_annual` mappati sui base plan.
+  3. Aggiungere il `pro_plus` entitlement a entrambi i package.
+
+### M8 — Tutorial in italiano polished
+- Riscritto le 6 slide (`tut.s1..s6`) con grammatica corretta, punteggiatura pulita, «guillemets» italiane, tono di voce coerente.
+- Aggiornato `tut.s7.*` per riflettere il nuovo modello di prezzo (Pro one-time + Pro+ subscription).
+- Simmetria EN mantenuta.
+
+### app.json
+- `versionCode` 132 → **133** (nuovo .aab per il Play Store richiesto per queste modifiche).
+- Nuovo permesso `RECEIVE_BOOT_COMPLETED` per persistenza notifiche.
+
+### Test (iteration 20)
+- Backend: 8/8 pytest passed (`test_iteration20_notif_prefs_and_pro_plus.py`) — round-trip NotificationPrefs, legacy `enabled`, /purchases/sync con pro/pro_plus.
+- Frontend web preview: Plans screen, tutorial, notifications-expiry tutti renderizzano senza errori né chiavi i18n mancanti.
+- ⚠️ Consegna reale delle notifiche locali **non validabile in Expo Go / web preview** — richiede build nativa .aab.

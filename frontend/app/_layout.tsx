@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { LogBox } from "react-native";
@@ -36,6 +37,8 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <AuthProvider>
             <RevenueCatBridge />
+            {/* Dark icons on the cream background so orario/batteria/wifi are readable. */}
+            <StatusBar style="dark" translucent backgroundColor="transparent" />
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
           </AuthProvider>
         </SafeAreaProvider>

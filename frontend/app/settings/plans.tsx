@@ -3,9 +3,9 @@
  *
  * Behaviour matrix:
  *   - Web / iOS / RC not configured → hide CTA buttons, show info banner.
- *   - user is free → show "Acquista Pro" + "Acquista Pro+" CTAs.
- *   - user is pro  → show "Aggiorna a Pro+ (€2)" CTA on the Pro+ card.
- *   - user is pro_plus → no CTAs, only badges.
+ *   - user is free       → show "Acquista Pro" + "Pro+ mensile" + "Pro+ annuale".
+ *   - user is pro        → show only Pro+ subscription CTAs (both intervals).
+ *   - user is pro_plus   → no CTAs, only badges.
  *   - always visible: "Ripristina acquisti" (unless RC not configured).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -24,14 +24,23 @@ import { api } from '@/src/api';
 import {
   PRODUCT_IDS,
   buyPackage,
-  findPackageByProductId,
+  findProPackage,
+  findProPlusPackage,
   getAvailablePackages,
   isRevenueCatConfigured,
   restorePurchases,
+  type ProPlusInterval,
 } from '@/src/purchases/revenueCat';
 
 type Feature = { icon: any; label: string };
 type Msg = { kind: 'ok' | 'err' | 'info'; text: string } | null;
+
+// Business-defined fallback prices (used when RevenueCat isn't reachable yet).
+const FALLBACK_PRICE = {
+  pro: '3€ una tantum',
+  proPlusMonthly: '2€ / mese',
+  proPlusAnnual: '20€ / anno',
+} as const;
 
 export default function PlansScreen() {
   const router = useRouter();
@@ -44,7 +53,7 @@ export default function PlansScreen() {
   const rcConfigured = isRevenueCatConfigured();
 
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
-  const [busyProduct, setBusyProduct] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
 
@@ -76,17 +85,19 @@ export default function PlansScreen() {
     }
   }, [refresh]);
 
-  const handleBuy = useCallback(async (productId: string) => {
+  const purchase = useCallback(async (
+    key: string,
+    pkg: PurchasesPackage | undefined,
+  ) => {
     if (!rcConfigured) {
       setMsg({ kind: 'info', text: t('plans.notConfigured') });
       return;
     }
-    const pkg = findPackageByProductId(packages, productId);
     if (!pkg) {
       setMsg({ kind: 'err', text: t('plans.notConfigured') });
       return;
     }
-    setBusyProduct(productId);
+    setBusyKey(key);
     setMsg(null);
     try {
       Haptics.selectionAsync();
@@ -101,8 +112,8 @@ export default function PlansScreen() {
         setMsg({ kind: 'err', text: e?.message || t('plans.purchaseFailed') });
       }
     }
-    setBusyProduct(null);
-  }, [rcConfigured, packages, t, syncBackend]);
+    setBusyKey(null);
+  }, [rcConfigured, t, syncBackend]);
 
   const handleRestore = useCallback(async () => {
     if (!rcConfigured) {
@@ -126,15 +137,33 @@ export default function PlansScreen() {
     setRestoring(false);
   }, [rcConfigured, t, syncBackend]);
 
-  // Compute which CTAs to expose. All hidden when RC not configured.
-  const canBuyPro = rcConfigured && tier === 'free';
-  const canBuyProPlus = rcConfigured && tier === 'free';
-  const canUpgrade = rcConfigured && tier === 'pro';
+  // Package lookups
+  const proPkg = findProPackage(packages);
+  const proPlusMonthlyPkg = findProPlusPackage(packages, 'monthly');
+  const proPlusAnnualPkg = findProPlusPackage(packages, 'annual');
 
-  // Optional: display live prices returned by Play. Fallback to i18n copy.
-  const priceFor = (productId: string): string | null => {
-    const pkg = findPackageByProductId(packages, productId);
-    return pkg?.product?.priceString || null;
+  // Compute which CTAs to expose. Hidden when RC not configured.
+  const canBuyPro = rcConfigured && tier === 'free';
+  const canSubscribeProPlus = rcConfigured && (tier === 'free' || tier === 'pro');
+
+  // Display prices returned by Play (falls back to i18n copy).
+  const priceOr = (pkg: PurchasesPackage | undefined, fallback: string) =>
+    pkg?.product?.priceString || fallback;
+
+  // Estimated per-month equivalent for the annual plan (business copy — computed
+  // from the localized Play price if we can parse it; falls back to "1,67 €/mese").
+  const perMonthFromAnnual = (annual: PurchasesPackage | undefined): string | null => {
+    const num = annual?.product?.price;
+    const cur = annual?.product?.currencyCode || 'EUR';
+    if (typeof num === 'number' && num > 0) {
+      const per = num / 12;
+      try {
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(per) + ' / mese';
+      } catch {
+        return `${per.toFixed(2)} ${cur} / mese`;
+      }
+    }
+    return t('plans.proPlus.annualEquivalent'); // "≈ 1,67 € / mese"
   };
 
   return (
@@ -177,10 +206,10 @@ export default function PlansScreen() {
           ]}
         />
 
-        {/* Pro */}
+        {/* Pro — ONE-TIME */}
         <PlanCard
           name={t('pro.tier.pro.name')}
-          price={priceFor(PRODUCT_IDS.pro) || t('pro.tier.pro.price')}
+          price={priceOr(proPkg, FALLBACK_PRICE.pro)}
           accent={theme.color.brand}
           active={tier === 'pro'}
           locked={cur >= tierRank.pro && tier !== 'pro'}
@@ -191,43 +220,113 @@ export default function PlansScreen() {
           ]}
           cta={canBuyPro ? {
             label: t('plans.buyPro'),
-            busy: busyProduct === PRODUCT_IDS.pro,
-            onPress: () => handleBuy(PRODUCT_IDS.pro),
+            busy: busyKey === 'pro',
+            onPress: () => purchase('pro', proPkg),
             testID: 'buy-pro',
           } : undefined}
         />
 
-        {/* Pro+ */}
-        <PlanCard
-          name={t('pro.tier.proplus.name')}
-          price={priceFor(canUpgrade ? PRODUCT_IDS.upgrade : PRODUCT_IDS.proPlus) || t('pro.tier.proplus.price')}
-          accent={theme.color.brandSecondary}
-          active={tier === 'pro_plus'}
-          features={[
+        {/* Pro+ — SUBSCRIPTION with TWO intervals */}
+        <View style={[
+          styles.card,
+          { borderColor: theme.color.brandSecondary },
+          tier === 'pro_plus' && { borderWidth: 2.5 },
+          cur > tierRank.pro_plus && { opacity: 0.55 },
+        ]}>
+          <View style={styles.head}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.name, { color: theme.color.brandSecondary }]}>
+                  {t('pro.tier.proplus.name')}
+                </Text>
+                {tier === 'pro_plus' ? (
+                  <View style={[styles.activeBadge, { backgroundColor: theme.color.brandSecondary }]}>
+                    <Feather name="check" size={11} color="#fff" />
+                  </View>
+                ) : null}
+              </View>
+              <Text style={styles.price}>{t('plans.proPlus.pricingSummary')}</Text>
+            </View>
+          </View>
+
+          {[
             { icon: 'tag', label: t('pro.feat.categories.t') },
             { icon: 'clock', label: t('pro.feat.expiry.t') },
             { icon: 'cloud-snow', label: t('pro.feat.freezer.t') },
             { icon: 'package', label: t('pro.feat.fridge.t') },
-          ]}
-          note={
-            tier === 'pro'
-              ? t('pro.tier.upgradeFromPro')
-              : t('pro.tier.includes', { plan: t('pro.tier.pro.name') })
-          }
-          cta={
-            canUpgrade ? {
-              label: t('plans.upgradeToProPlus'),
-              busy: busyProduct === PRODUCT_IDS.upgrade,
-              onPress: () => handleBuy(PRODUCT_IDS.upgrade),
-              testID: 'upgrade-pro-plus',
-            } : canBuyProPlus ? {
-              label: t('plans.buyProPlus'),
-              busy: busyProduct === PRODUCT_IDS.proPlus,
-              onPress: () => handleBuy(PRODUCT_IDS.proPlus),
-              testID: 'buy-pro-plus',
-            } : undefined
-          }
-        />
+          ].map((f, i) => (
+            <View key={i} style={styles.row}>
+              <View style={[styles.rowIcon, { backgroundColor: `${theme.color.brandSecondary}22` }]}>
+                <Feather name={f.icon as any} size={13} color={theme.color.brandSecondary} />
+              </View>
+              <Text style={styles.rowTxt}>{f.label}</Text>
+            </View>
+          ))}
+
+          {tier === 'pro' && (
+            <Text style={styles.note}>{t('pro.tier.upgradeFromPro')}</Text>
+          )}
+
+          {/* Two subscription CTAs side by side */}
+          {canSubscribeProPlus && (
+            <View style={styles.subsRow}>
+              {/* Monthly */}
+              <Pressable
+                onPress={() => purchase('proplus_monthly', proPlusMonthlyPkg)}
+                disabled={busyKey === 'proplus_monthly'}
+                style={[
+                  styles.subCard,
+                  { borderColor: theme.color.brandSecondary },
+                  busyKey === 'proplus_monthly' && { opacity: 0.6 },
+                ]}
+                testID="buy-pro-plus-monthly"
+              >
+                <Text style={styles.subLabel}>{t('plans.proPlus.monthly')}</Text>
+                <Text style={[styles.subPrice, { color: theme.color.brandSecondary }]}>
+                  {priceOr(proPlusMonthlyPkg, FALLBACK_PRICE.proPlusMonthly)}
+                </Text>
+                <View style={[styles.subCta, { backgroundColor: theme.color.brandSecondary }]}>
+                  {busyKey === 'proplus_monthly'
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.subCtaTxt}>{t('plans.subscribe')}</Text>}
+                </View>
+              </Pressable>
+
+              {/* Annual — highlighted as "Best value" */}
+              <Pressable
+                onPress={() => purchase('proplus_annual', proPlusAnnualPkg)}
+                disabled={busyKey === 'proplus_annual'}
+                style={[
+                  styles.subCard,
+                  styles.subCardBest,
+                  busyKey === 'proplus_annual' && { opacity: 0.6 },
+                ]}
+                testID="buy-pro-plus-annual"
+              >
+                <View style={styles.bestPill}>
+                  <Text style={styles.bestPillTxt}>{t('plans.bestValue')}</Text>
+                </View>
+                <Text style={styles.subLabel}>{t('plans.proPlus.annual')}</Text>
+                <Text style={[styles.subPrice, { color: theme.color.brandSecondary }]}>
+                  {priceOr(proPlusAnnualPkg, FALLBACK_PRICE.proPlusAnnual)}
+                </Text>
+                <Text style={styles.subEquiv}>{perMonthFromAnnual(proPlusAnnualPkg)}</Text>
+                <View style={[styles.subCta, { backgroundColor: theme.color.brandSecondary }]}>
+                  {busyKey === 'proplus_annual'
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.subCtaTxt}>{t('plans.subscribe')}</Text>}
+                </View>
+              </Pressable>
+            </View>
+          )}
+
+          {tier === 'pro_plus' && (
+            <View style={styles.activeInfo}>
+              <Feather name="check-circle" size={14} color={theme.color.success} />
+              <Text style={styles.activeInfoTxt}>{t('plans.proPlus.activeInfo')}</Text>
+            </View>
+          )}
+        </View>
 
         {/* Restore purchases */}
         {rcConfigured && (
@@ -275,12 +374,13 @@ export default function PlansScreen() {
         )}
 
         <Text style={styles.footer}>{t('plans.footer')}</Text>
+        <Text style={styles.footerSmall}>{t('plans.subFooter')}</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ---------------- Plan Card ----------------
+// ---------------- Plan Card (used for Free & Pro one-time) ----------------
 type CTA = { label: string; busy: boolean; onPress: () => void; testID?: string };
 
 function PlanCard({
@@ -401,4 +501,43 @@ const styles = StyleSheet.create({
     fontSize: 11, color: theme.color.onSurfaceTertiary, textAlign: 'center',
     marginTop: theme.spacing.md, fontStyle: 'italic', lineHeight: 16,
   },
+  footerSmall: {
+    fontSize: 10, color: theme.color.onSurfaceTertiary, textAlign: 'center',
+    marginTop: 6, lineHeight: 14,
+  },
+
+  // Subscription two-card row
+  subsRow: {
+    flexDirection: 'row', gap: 10, marginTop: 12,
+  },
+  subCard: {
+    flex: 1, borderRadius: theme.radius.md, borderWidth: 1.5,
+    padding: 12, backgroundColor: theme.color.surface,
+    alignItems: 'center', gap: 4,
+    position: 'relative',
+  },
+  subCardBest: {
+    borderColor: theme.color.brandSecondary,
+    backgroundColor: '#F1F5EB',
+  },
+  subLabel: { fontSize: 12, fontWeight: '600', color: theme.color.onSurfaceSecondary },
+  subPrice: { fontSize: 16, fontWeight: '800' },
+  subEquiv: { fontSize: 10, color: theme.color.onSurfaceTertiary, fontStyle: 'italic' },
+  subCta: {
+    marginTop: 8, alignSelf: 'stretch', height: 36, borderRadius: theme.radius.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  subCtaTxt: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  bestPill: {
+    position: 'absolute', top: -9, right: 8,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8,
+    backgroundColor: theme.color.brandSecondary,
+  },
+  bestPillTxt: { color: '#fff', fontSize: 9, fontWeight: '700', letterSpacing: 0.4 },
+  activeInfo: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 12, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: theme.color.divider,
+  },
+  activeInfoTxt: { fontSize: 12, color: theme.color.success, fontWeight: '600', flex: 1 },
 });

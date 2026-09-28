@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, StyleSheet, Modal, Keyboard, Platform, ScrollView, TextInput } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, StyleSheet, Modal, Keyboard, Platform, ScrollView, TextInput, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import Feather from '@react-native-vector-icons/feather';
@@ -216,7 +216,11 @@ export default function FridgeEditor() {
 
       {/* Date picker modal with optional label */}
       <Modal transparent visible={!!datePicking} animationType="fade" onRequestClose={() => setDatePicking(null)}>
-        <Pressable style={styles.overlay} onPress={() => setDatePicking(null)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.overlay}
+        >
+          <Pressable style={{ flex: 1, width: '100%' }} onPress={() => setDatePicking(null)} />
           <Pressable style={styles.dateCard} onPress={e => e.stopPropagation?.()}>
             <Text style={styles.modalH}>{t('expiry.set')}</Text>
             {Platform.OS === 'web' ? (
@@ -258,7 +262,8 @@ export default function FridgeEditor() {
               </Pressable>
             </View>
           </Pressable>
-        </Pressable>
+          <Pressable style={{ flex: 1, width: '100%' }} onPress={() => setDatePicking(null)} />
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Delete confirmation */}

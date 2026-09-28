@@ -5,29 +5,59 @@
  *   1. Platform.OS === 'android'  (web/iOS silently no-op)
  *   2. isRevenueCatConfigured()   (missing/empty API key → no-op)
  *
- * All product IDs match the ones set up in Google Play Console and mapped to
- * RevenueCat entitlements in the dashboard:
+ * PRICING MODEL (Play Store & RevenueCat setup):
  *
- *   pro_lifetime           → entitlement "pro"
- *   pro_plus_lifetime      → entitlement "pro_plus"
- *   pro_to_pro_plus_upgrade → entitlement "pro_plus"
+ *   Pro (one-time / non-consumable in-app product):
+ *     Google Play product id:  pro_lifetime          €3
+ *     RevenueCat entitlement:  "pro"
+ *     Attached package type:   LIFETIME
+ *
+ *   Pro+ (subscription — one subscription with TWO base plans):
+ *     Google Play subscription id: pro_plus_subscription
+ *       ├── monthly base plan  €2/mese
+ *       └── annual  base plan  €20/anno
+ *     RevenueCat entitlement:  "pro_plus"
+ *     Attached packages:
+ *       - $rc_monthly (PackageType.MONTHLY)
+ *       - $rc_annual  (PackageType.ANNUAL)
+ *
+ * Users on Pro who want to move to Pro+ simply subscribe to Pro+; both
+ * entitlements can be granted (webhook handles that). The one-time
+ * "pro_to_pro_plus_upgrade" product from the previous model is no longer
+ * used — kept only as a legacy id so old purchases still restore.
  */
 import { Platform } from 'react-native';
 import Purchases, {
   CustomerInfo,
   LOG_LEVEL,
+  PACKAGE_TYPE,
   PurchasesPackage,
 } from 'react-native-purchases';
 
 export const REVENUECAT_KEY = process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY?.trim() || '';
 
+/**
+ * Google Play product identifiers.
+ *
+ * Note: for subscriptions we identify PACKAGES by PackageType (MONTHLY/ANNUAL)
+ * — Google Play subscriptions expose one subscription ID with multiple base
+ * plans, and RevenueCat normalises them into packages.
+ */
 export const PRODUCT_IDS = {
   pro: 'pro_lifetime',
-  proPlus: 'pro_plus_lifetime',
-  upgrade: 'pro_to_pro_plus_upgrade',
+  proPlusSubscriptionId: 'pro_plus_subscription',   // Google Play SUBSCRIPTION id (both base plans)
+  legacyProPlusLifetime: 'pro_plus_lifetime',        // legacy one-time, still restorable
+  legacyUpgrade: 'pro_to_pro_plus_upgrade',          // legacy one-time, still restorable
 } as const;
 
 export type EntitlementKey = 'pro' | 'pro_plus';
+
+/**
+ * Frontend Pro+ package selection key.
+ *   'monthly' → 2€/mese
+ *   'annual'  → 20€/anno
+ */
+export type ProPlusInterval = 'monthly' | 'annual';
 
 export function isRevenueCatConfigured(): boolean {
   return Platform.OS === 'android' && REVENUECAT_KEY.startsWith('goog_');
@@ -76,6 +106,31 @@ export function findPackageByProductId(
   productId: string,
 ): PurchasesPackage | undefined {
   return packages.find(pkg => pkg.product.identifier === productId);
+}
+
+/** Look up the Pro (one-time) package. */
+export function findProPackage(packages: PurchasesPackage[]): PurchasesPackage | undefined {
+  // The Pro one-time can be exposed as a LIFETIME package OR simply by product id.
+  return packages.find(pkg => pkg.product.identifier === PRODUCT_IDS.pro)
+      || packages.find(pkg => pkg.packageType === PACKAGE_TYPE.LIFETIME);
+}
+
+/** Look up the Pro+ subscription package for the given interval. */
+export function findProPlusPackage(
+  packages: PurchasesPackage[],
+  interval: ProPlusInterval,
+): PurchasesPackage | undefined {
+  const wanted = interval === 'annual' ? PACKAGE_TYPE.ANNUAL : PACKAGE_TYPE.MONTHLY;
+  // First try package type match (standard RC convention).
+  const byType = packages.find(pkg => pkg.packageType === wanted);
+  if (byType) return byType;
+  // Fallback: some setups expose subscription base plans as distinct product ids
+  // like "pro_plus_subscription:monthly" — do a soft match.
+  const needle = interval;
+  return packages.find(pkg => {
+    const id = pkg.product.identifier.toLowerCase();
+    return id.includes('pro_plus') && id.includes(needle);
+  });
 }
 
 /** True if the customer has the given entitlement currently active. */

@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 20 — Tested notification prefs round-trip, purchases/sync Pro+ grant, Plans screen rendering, tutorial IT copy, and diagnostic notifications panel. Backend 8/8 pytest passed (round-trip of new NotificationPrefs shape including expiry_enabled, freezer_enabled, freezer_hours [clamped 1..168], days_ahead [sorted desc + deduped], notify_hour, plus legacy `enabled` backward compat, plus /api/purchases/sync granting pro/pro_plus tiers). Frontend UI: Plans screen renders Free/Pro/Pro+ cards with correct pricing (3€ una tantum for Pro, '2€/mese oppure 20€/anno' summary for Pro+); however purchase CTAs are hidden on web by design (rcConfigured=false) so buy-pro / buy-pro-plus-monthly / buy-pro-plus-annual testIDs cannot be exercised in web preview — code inspection confirms they are wired correctly with the correct labels and 'MIGLIORE' badge on the annual card. Tutorial renders all 6 slides (s1..s4, s6, s5 order) with polished IT copy, no ${...} placeholders, no missing keys; Skip / Next / Finish buttons all functional. Diagnostic 'Notifiche programmate' panel is HIDDEN on web (gated by Platform.OS !== 'web'), so the 'empty state on web' expectation from the task cannot be observed in the web preview — the panel is only mounted on native. Copy inconsistency detected: `plans.subtitle` still says «Un pagamento una tantum, niente abbonamento» in IT (and equivalent in EN) even though Pro+ is now a subscription.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "plans.tsx / i18n.ts",
+        "issue": "Hero subtitle still says «Un pagamento una tantum, niente abbonamento» — misleading now that Pro+ is a monthly/annual subscription. Both IT ('plans.subtitle', i18n.ts:334) and EN (i18n.ts:958) copies need updating.",
+        "testID": "plans-screen",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Plans screen purchase CTAs on web preview",
+        "issue": "buy-pro, buy-pro-plus-monthly, buy-pro-plus-annual buttons are not rendered on web because rcConfigured=false (RevenueCat is Android-only). Only the info banner («Gli acquisti in-app sono disponibili solo su Android (Google Play).») is shown. This is expected but means the CTA labels/behaviour must be validated on a native build.",
+        "affected_testIDs": ["buy-pro", "buy-pro-plus-monthly", "buy-pro-plus-annual"]
+      },
+      {
+        "flow": "Notifications-expiry diagnostic panel",
+        "issue": "PendingNotificationsPanel is gated by `Platform.OS !== 'web' && isProPlus` in notifications-expiry.tsx:201, so on web it does not render at all. Task description expected it to show a 0-item empty state on web. If web visibility is desired, drop the Platform.OS guard and let the platform-guarded listPendingPlaneatNotifications() return []; otherwise this is by-design and expectation should be relaxed.",
+        "affected_testIDs": ["notif-pending-toggle"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_notif_prefs_and_pro_plus.py",
+    "/app/test_reports/pytest/iteration20.xml"
+  ],
+  "action_items": [
+    "Update `plans.subtitle` in /app/frontend/src/i18n.ts (IT line 334 and EN line 958) to reflect that Pro+ is now a monthly/annual subscription while Pro stays one-time. Something like «Pro è un acquisto una tantum, Pro+ è un abbonamento mensile o annuale.»",
+    "Decide whether the 'Notifiche programmate' diagnostic panel should render on web with an empty state — if yes, remove the `Platform.OS !== 'web'` guard on notifications-expiry.tsx:201; if no (current behaviour), consider this task item fulfilled and update the spec.",
+    "Native-build validation still required for: (a) actual local-notification delivery for multi-day expiries and freezer_hours, (b) Pro+ subscription CTAs in the Play Store sandbox (Monthly 2€, Annual 20€ + 'MIGLIORE' badge)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: `_user_public` correctly backfills notifications with expiry_days_ahead, days_ahead, notify_hour, freezer_enabled, freezer_hours — no legacy schema issues observed.",
+    "server.py:812-831 update_preferences.notifications block correctly clamps freezer_hours to [1,168], notify_hour to [0,23], sorts+dedupes days_ahead descending, and mirrors max(days_ahead) into legacy expiry_days_ahead for BC.",
+    "purchases.py: /purchases/sync grants pro_plus optimistically with source='client_sync' — matches spec. Webhook path remains authoritative.",
+    "plans.tsx: Pro+ CTAs correctly wired with testIDs buy-pro-plus-monthly & buy-pro-plus-annual; annual has 'MIGLIORE' bestPill.",
+    "tutorial.tsx: SLIDES array order is s1, s2, s3, s4, s6, s5 as spec. All 6 render; no missing keys."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration20_notif_prefs_and_pro_plus.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "80%"},
+  "seed_data_creation": "Created ephemeral test users testXXX / pass1234 during pytest run for isolation (round-trip prefs & purchases/sync). No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Local notification delivery (multi-day expiry + freezer_hours) cannot be validated in web/Expo Go and needs a native .aab build. Purchase CTA behaviour (Monthly/Annual) also needs Play Store sandbox on Android. Web-side, all deterministic parts (prefs persistence, screen rendering, i18n) pass.",
+  "rca_of_issue": "No new bugs introduced by the three refactors — backend round-trip is clean, plans screen renders correctly on web (CTAs hidden by rcConfigured gate as intended), tutorial has all 6 slides with polished Italian and no missing i18n keys. Two minor items: (1) plans.subtitle copy still refers to 'una tantum, niente abbonamento' — inconsistent with new Pro+ subscription; (2) diagnostic pending-notifications panel does not appear on web because it is gated behind Platform.OS !== 'web'. Neither prevents the feature from working on a native build."
+}

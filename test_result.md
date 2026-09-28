@@ -101,3 +101,118 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  PlanEat: Italian meal-planning + grocery mobile app (Expo + FastAPI + MongoDB).
+  Continuing user report of two hot issues:
+  1. Local notifications (M1) — expiry alerts and freezer alerts are unreliable.
+     Multi-day selection only fires the first day; freezer never fires; expiry
+     stops mid-day. Notifications are LOCAL only (expo-notifications), no push.
+  2. Payment model — user wants Pro+ to switch from one-time (5€) to a
+     subscription: 2€/month or 20€/year. Pro remains one-time at 3€.
+  Also polish the Italian onboarding/tutorial copy (M8).
+
+backend:
+  - task: "Notification preferences save (expiry_enabled, freezer_enabled, freezer_hours, days_ahead, notify_hour)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "PUT /api/auth/preferences already accepts the new NotificationPrefs shape. Need to verify each field round-trips correctly and legacy `enabled` fallback still works."
+
+  - task: "RevenueCat sync endpoint accepts Pro+ subscription entitlement"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, backend/purchases.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Frontend now purchases Pro+ as a SUBSCRIPTION (monthly/annual) via RevenueCat. Backend /purchases/sync should still map the 'pro_plus' entitlement correctly regardless of whether it comes from a lifetime or subscription product."
+
+frontend:
+  - task: "Local notification scheduler — multi-day expiries, freezer honoring freezer_hours"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/notifications.ts, frontend/app/(tabs)/_layout.tsx"
+    stuck_count: 3
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "Multiple days selected → only first fires. Freezer never fires. Expiry stops at some point during the day. Recurring issue across 3 sessions."
+      - working: "NA"
+        agent: "main"
+        comment: "Fixed several bugs: (1) freezer_hours pref was ignored; scheduler now honors 1..168h with per-meal anchor at 13:00/20:00. (2) readNotifPrefs now includes freezer_hours. (3) Concurrent reschedule race: replaced ref-based guard with dirty-flag queue so prefs saves during an in-flight reschedule always trigger a fresh run with latest data. (4) AppState foreground bump throttled to 30s. (5) Verbose console logs added for debug ([notifications] prefix). (6) Effect deps limited to notification fingerprint. (7) Added listPendingPlaneatNotifications() + a diagnostic panel in notifications-expiry screen showing pending notifications. Added RECEIVE_BOOT_COMPLETED to android permissions. NOTE: Local notifications only work on native builds, NOT in Expo Go or web preview — user must test on the deployed .aab."
+
+  - task: "Pro+ subscription pricing UI (monthly 2€ / annual 20€) + Pro one-time 3€"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/settings/plans.tsx, frontend/src/purchases/revenueCat.ts, frontend/src/i18n.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Rewrote plans.tsx: Pro card shows 3€ one-time CTA; Pro+ card shows TWO subscription CTAs side-by-side (Monthly + Annual with 'MIGLIORE' badge) using PackageType.MONTHLY/ANNUAL from RevenueCat. Fallback prices baked in (2€/mese, 20€/anno). Added per-month equivalent for annual. i18n updated in IT + EN. versionCode bumped 132→133."
+
+  - task: "Onboarding tutorial Italian copy polish"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/i18n.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Rewrote all 6 tutorial slides with cleaner Italian grammar and consistent tone («guillemets», full sentences, first-person plural voice for CTAs, updated pricing mentions to reflect the subscription model)."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Notification preferences save (expiry_enabled, freezer_enabled, freezer_hours, days_ahead, notify_hour)"
+    - "Local notification scheduler — multi-day expiries, freezer honoring freezer_hours"
+    - "Pro+ subscription pricing UI (monthly 2€ / annual 20€) + Pro one-time 3€"
+  stuck_tasks:
+    - "Local notification scheduler — multi-day expiries, freezer honoring freezer_hours"
+  test_all: false
+  test_priority: "stuck_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Delegating to testing_agent after implementing three related changes:
+      1) Notification scheduler rewrite (see status_history for details).
+      2) New subscription-based Pro+ pricing in plans.tsx.
+      3) Tutorial Italian copy polish.
+
+      Backend needs to verify preferences round-trip (both legacy + new schema).
+      Frontend needs to verify Plans screen renders correctly (Pro card + Pro+
+      two-CTA subscription card), tutorial text renders without any missing
+      i18n keys.
+
+      NOTE ON NOTIFICATIONS: The scheduler cannot be end-to-end validated in
+      web/Expo Go — actual delivery requires a native build. Testing agent
+      should verify (a) prefs save/load correctly, (b) the diagnostic panel
+      renders and returns 0 pending on web (expected), (c) settings toggles
+      wire through to backend, (d) no runtime crashes.
+
+      Credentials in /app/memory/test_credentials.md.
+      - Pro+ founder: halley / halley1234
+      - Pro: testpro / testPro123
+      - Free: create test<timestamp> / pass1234
