@@ -1,6 +1,6 @@
 /**
  * Week utilities. The start-of-week day is configurable per user
- * (0 = Monday, 6 = Sunday). Historically PlanEat started on Saturday (5).
+ * (0 = Monday, 6 = Sunday). Historically Planibble started on Saturday (5).
  */
 import { tStatic, localeOf, type Lang } from './i18n';
 

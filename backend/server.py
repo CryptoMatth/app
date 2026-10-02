@@ -33,13 +33,13 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="PlanEat API")
+app = FastAPI(title="Planibble API")
 api_router = APIRouter(prefix="/api")
 
 # Email (Emergent managed Resend)
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
-EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "PlanEat")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Planibble")
 
 
 # -------------------- Models --------------------
@@ -121,7 +121,7 @@ DEFAULT_COURSES: List[Dict[str, Any]] = [
     {"id": "dolce", "label": "Dolce"},
 ]
 # 0 = Monday, 6 = Sunday (Python weekday convention).
-# Historically PlanEat starts weeks on Saturday (=5).
+# Historically Planibble starts weeks on Saturday (=5).
 DEFAULT_WEEK_START_DAY = 5
 DEFAULT_PLANNER_SPAN = "weekly"  # "weekly" (7d) or "biweekly" (14d)
 DEFAULT_LANGUAGE = "it"  # "it" | "en"
@@ -482,6 +482,18 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     tier = _get_tier(user_doc)
     is_pro = _tier_rank(tier) >= _tier_rank("pro")
 
+    # M5 — expose registration date so clients (and admin dashboards) can show
+    # account age. Fall back to legacy `created_at` for old accounts that
+    # predate the explicit field.
+    registered_at = user_doc.get("registered_at") or user_doc.get("created_at")
+
+    # D1/D2 — surface the Pro+ subscription expiry date so the client can
+    # show "Rinnovo il DD/MM" / "Scade il DD/MM" and the "Gestisci
+    # abbonamento" CTA. `None` means not an active subscription.
+    pp_ent = ents.get("pro_plus") or {}
+    pro_plus_expires_at = pp_ent.get("expires_at") if pp_ent.get("active") else None
+    pro_plus_will_renew = bool(pp_ent.get("will_renew")) if pp_ent.get("active") else None
+
     return {
         "user_id": user_doc["user_id"],
         "username": user_doc.get("username") or (user_doc.get("email") or "").split("@")[0],
@@ -489,6 +501,9 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         "is_pro": is_pro,
         "tier": tier,
         "pro_source": "founder" if is_founder else ("admin_grant" if pro_ent.get("active") else None),
+        "registered_at": registered_at,
+        "pro_plus_expires_at": pro_plus_expires_at,
+        "pro_plus_will_renew": pro_plus_will_renew,
     }
 
 
@@ -521,6 +536,11 @@ def _get_tier(user_doc: Dict[str, Any]) -> str:
 
     Pro+ > Pro > Free. Founder usernames map to Pro+ automatically.
     Legacy `entitlements.ultra` grants are treated as Pro+.
+
+    D1/D2 safety net: a Pro+ entitlement is treated as inactive once
+    `expires_at` has passed, even if nobody has yet flipped `active=False`
+    in Mongo. The periodic `_revoke_expired_subscriptions()` eventually
+    writes the flip back to the DB.
     """
     ents = user_doc.get("entitlements") or {}
     is_founder = (user_doc.get("username") or "").lower() in FOUNDER_USERNAMES
@@ -529,11 +549,30 @@ def _get_tier(user_doc: Dict[str, Any]) -> str:
     # Legacy: pre-existing "ultra" grants still map to pro_plus.
     if (ents.get("ultra") or {}).get("active"):
         return "pro_plus"
-    if (ents.get("pro_plus") or {}).get("active"):
+    pp = ents.get("pro_plus") or {}
+    if pp.get("active") and not _is_entitlement_expired(pp):
         return "pro_plus"
-    if (ents.get("pro") or {}).get("active"):
+    pro = ents.get("pro") or {}
+    if pro.get("active") and not _is_entitlement_expired(pro):
         return "pro"
     return "free"
+
+
+def _is_entitlement_expired(ent: Dict[str, Any]) -> bool:
+    """True iff `ent.expires_at` is set and already in the past."""
+    exp = ent.get("expires_at")
+    if not exp:
+        return False  # lifetime / undefined → never expires
+    try:
+        if isinstance(exp, str):
+            exp_dt = datetime.fromisoformat(exp.replace("Z", "+00:00"))
+        else:
+            exp_dt = exp
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        return exp_dt < datetime.now(timezone.utc)
+    except Exception:
+        return False
 
 
 def _has_tier(user_doc: Dict[str, Any], min_tier: str) -> bool:
@@ -573,6 +612,7 @@ async def register(body: RegisterBody):
         "username": username,
         "password_hash": _hash_password(body.password),
         "created_at": _now(),
+        "registered_at": _now(),      # M5 — explicit registration timestamp
         "provider": "username",
         "preferences": _default_prefs(),
     }
@@ -1552,7 +1592,14 @@ def _expiries_dates(raw: Any) -> List[str]:
 
 
 async def _cleanup_expired_fridge(user_id: str) -> int:
-    """Auto-remove fridge items whose LATEST expiry is in the past."""
+    """Legacy auto-removal of expired fridge items.
+
+    Kept for optional future re-enable but NO LONGER CALLED automatically.
+    Users requested that expired items stay in the Dispensa (ex-Frigorifero)
+    marked as "SCADUTI" so they can confirm what to discard — the previous
+    behaviour silently deleted the row the first time the user re-opened
+    the tab, which lost information.
+    """
     today = datetime.now(timezone.utc).date().isoformat()
     to_remove: List[str] = []
     async for it in db.fridge_items.find({"user_id": user_id}, {"_id": 0}):
@@ -1615,8 +1662,8 @@ async def clear_checked(
                     "created_at": _now(),
                 })
             moved += 1
-        # Also cleanup any freshly-expired items while we're here
-        await _cleanup_expired_fridge(user_id)
+        # M7 — no longer auto-cleanup expired items here; they stay visible
+        # in the Dispensa marked as "SCADUTI" until the user removes them.
         await db.shopping_items.delete_many({"user_id": user_id, "checked": True})
         return {"ok": True, "moved_to_fridge": moved}
     # Delete-only path (Free tier OR Pro user chose "delete only"):
@@ -1628,7 +1675,8 @@ async def clear_checked(
 @api_router.get("/fridge")
 async def list_fridge(current_user=Depends(require_pro_plus)):
     user_id = current_user["user_id"]
-    await _cleanup_expired_fridge(user_id)
+    # M7 — do NOT auto-remove expired items; the client surfaces them as
+    # "SCADUTI" so the user explicitly decides what to discard.
     cursor = db.fridge_items.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1)
     items = await cursor.to_list(length=None)
     # Backfill legacy list-of-strings shape into new list-of-dicts for the client
@@ -1828,7 +1876,7 @@ async def mark_all_read(current_user=Depends(require_pro_plus)):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Cucina di Casa API"}
+    return {"message": "Planibble API"}
 
 
 # -------------------- Photo upload (Pro feature) --------------------
@@ -1941,7 +1989,7 @@ async def _gather_user_snapshot(user_id: str, username: Optional[str] = None) ->
         return out
 
     return {
-        "app": "PlanEat",
+        "app": "Planibble",
         "version": 2,
         "exported_at": _now().isoformat(),
         "user": {"username": username},
@@ -2200,8 +2248,52 @@ async def startup():
     except Exception:
         pass
 
+    # M5 — backfill `registered_at` on legacy accounts that only have
+    # `created_at`. One-shot, idempotent.
+    try:
+        await db.users.update_many(
+            {"registered_at": {"$exists": False}},
+            [{"$set": {"registered_at": {"$ifNull": ["$created_at", _now()]}}}],
+        )
+    except Exception as e:
+        logger.warning(f"registered_at backfill skipped: {e}")
+
+    # D1/D2 — on each boot, revoke pro_plus entitlements whose
+    # `expires_at` has already passed. This is also enforced per-request
+    # in `_get_tier` as a safety net.
+    try:
+        await _revoke_expired_subscriptions()
+    except Exception as e:
+        logger.warning(f"expired subscription revoke skipped: {e}")
+
     # Seed / refresh dev accounts so testing agents always have them.
     await _seed_dev_users()
+
+
+async def _revoke_expired_subscriptions() -> int:
+    """Revoke pro_plus for every user whose `entitlements.pro_plus.expires_at`
+    is in the past AND the entitlement is still marked active.
+
+    `expires_at` is persisted by the RevenueCat webhook (purchases.py). We
+    don't flip `active=False` immediately on CANCELLATION — the user keeps
+    access until the end of the paid period, as per Play Store policy.
+    Returns the number of docs updated.
+    """
+    now_iso = _now()
+    res = await db.users.update_many(
+        {
+            "entitlements.pro_plus.active": True,
+            "entitlements.pro_plus.expires_at": {"$exists": True, "$ne": None, "$lt": now_iso},
+            # Never auto-revoke the founder — their Pro+ is granted by whitelist.
+            "username": {"$nin": list(FOUNDER_USERNAMES)},
+        },
+        {"$set": {
+            "entitlements.pro_plus.active": False,
+            "entitlements.pro_plus.revoked_at": now_iso,
+            "entitlements.pro_plus.revoke_reason": "subscription_expired",
+        }},
+    )
+    return getattr(res, "modified_count", 0)
 
 
 async def _seed_dev_users():

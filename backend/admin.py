@@ -1,4 +1,4 @@
-"""Admin router for PlanEat.
+"""Admin router for Planibble.
 
 All endpoints are protected by a single admin password sent via the
 `X-Admin-Password` HTTP header, matching ADMIN_PASSWORD in the environment.
@@ -341,7 +341,7 @@ def create_admin_router(db) -> APIRouter:
             if it.get("created_at"):
                 it["created_at"] = it["created_at"].isoformat()
         return {
-            "app": "PlanEat",
+            "app": "Planibble",
             "kind": "admin-export",
             "version": 2,
             "exported_at": _now().isoformat(),

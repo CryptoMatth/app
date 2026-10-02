@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView, Alert, TextInput,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, FlatList, RefreshControl, ScrollView, TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
@@ -12,6 +12,7 @@ import { theme } from '@/src/theme';
 import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
+import { ConfirmSheet } from '@/src/ConfirmSheet';
 import type { ExpiryEntry } from '@/src/auth';
 
 type FridgeItem = {
@@ -55,6 +56,8 @@ export default function Frigorifero() {
   const [upsell, setUpsell] = useState(false);
   const [query, setQuery] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
+  // Confirmation sheet state for delete action — replaces the OS Alert.alert.
+  const [confirmDel, setConfirmDel] = useState<{ id: string; name: string } | null>(null);
   const loadUnread = useCallback(async () => {
     try {
       const r = await api.listNotifications();
@@ -88,25 +91,16 @@ export default function Frigorifero() {
     Haptics.selectionAsync();
   }, [load]);
 
-  const del = async (id: string, name?: string) => {
-    Alert.alert(
-      t('fridge.delete.title'),
-      t('fridge.delete.body', { name: name || '' }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.deleteFridge(id);
-              setItems(prev => prev.filter(x => x.id !== id));
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            } catch {}
-          },
-        },
-      ],
-    );
+  const del = (id: string, name?: string) => {
+    setConfirmDel({ id, name: name || '' });
+  };
+
+  const doDelete = async () => {
+    if (!confirmDel) return;
+    try {
+      await api.deleteFridge(confirmDel.id);
+      setItems(prev => prev.filter(x => x.id !== confirmDel.id));
+    } catch {}
   };
 
   // Group items by status: expired (impossible thanks to auto-cleanup but keep guard), expiring soon, ok, no-date.
@@ -123,13 +117,22 @@ export default function Frigorifero() {
   }, [items, query]);
 
   const sections = useMemo(() => {
+    const expired: FridgeItem[] = [];
     const soon: FridgeItem[] = [];
     const ok: FridgeItem[] = [];
     const nodate: FridgeItem[] = [];
     for (const it of filteredItems) {
       if (!it.expiries || it.expiries.length === 0) { nodate.push(it); continue; }
-      const min = Math.min(...it.expiries.map(e => daysUntil(expDate(e))).filter(Number.isFinite));
-      if (min <= 3) soon.push(it);
+      const offsets = it.expiries.map(e => daysUntil(expDate(e))).filter(Number.isFinite);
+      if (offsets.length === 0) { nodate.push(it); continue; }
+      const min = Math.min(...offsets);
+      // M7: expired bucket = EVERY date in the past. We also treat an item
+      // as "expired" when all of its expiry dates have passed — the min
+      // offset is the most-recent still-valid one, so if max < 0 everything
+      // is expired.
+      const max = Math.max(...offsets);
+      if (max < 0) expired.push(it);
+      else if (min <= 3) soon.push(it);
       else ok.push(it);
     }
     const byEarliestExpiry = (a: FridgeItem, b: FridgeItem) => {
@@ -137,10 +140,11 @@ export default function Frigorifero() {
       const eb = b.expiries && b.expiries.length ? [...b.expiries.map(expDate)].sort()[0] : '';
       return ea.localeCompare(eb);
     };
+    expired.sort(byEarliestExpiry);
     soon.sort(byEarliestExpiry);
     ok.sort(byEarliestExpiry);
     // For no-date items, keep insertion order (by creation).
-    return { soon, ok, nodate };
+    return { expired, soon, ok, nodate };
   }, [filteredItems]);
 
   if (!isPro) {
@@ -228,6 +232,7 @@ export default function Frigorifero() {
   };
 
   const groups: { key: string; label: string; data: FridgeItem[] }[] = [
+    { key: 'expired', label: t('fridge.group.expired'), data: sections.expired },
     { key: 'soon', label: t('fridge.group.soon'), data: sections.soon },
     { key: 'ok', label: t('fridge.group.ok'), data: sections.ok },
     { key: 'nodate', label: t('fridge.group.nodate'), data: sections.nodate },
@@ -311,7 +316,10 @@ export default function Frigorifero() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
           renderItem={({ item: group }) => (
             <View style={{ marginBottom: theme.spacing.md }}>
-              <Text style={styles.groupLabel}>{group.label.toUpperCase()}</Text>
+              <Text style={[
+                styles.groupLabel,
+                group.key === 'expired' && { color: theme.color.error },
+              ]}>{group.label.toUpperCase()}</Text>
               {group.data.map(it => (
                 <View key={it.id} style={{ marginTop: 8 }}>
                   {renderItem(it)}
@@ -331,6 +339,20 @@ export default function Frigorifero() {
         <Feather name="plus" size={22} color="#fff" />
         <Text style={styles.fabTxt}>{t('fridge.newItem')}</Text>
       </Pressable>
+
+      {/* Styled delete confirmation (replaces the OS Alert) */}
+      <ConfirmSheet
+        visible={!!confirmDel}
+        title={t('fridge.delete.title')}
+        body={t('fridge.delete.body', { name: confirmDel?.name || '' })}
+        icon="trash-2"
+        tone="danger"
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={doDelete}
+        onClose={() => setConfirmDel(null)}
+        testID="fridge-delete-sheet"
+      />
     </SafeAreaView>
   );
 }

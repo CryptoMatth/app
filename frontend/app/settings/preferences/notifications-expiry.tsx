@@ -303,7 +303,7 @@ function PendingNotificationsPanel() {
             <Text style={panelStyles.empty}>…</Text>
           ) : rows.length === 0 ? (
             <Text style={panelStyles.empty}>
-              {t('notif.pending.empty') || 'Nessuna notifica in coda. Aggiungi scadenze in Frigorifero.'}
+              {t('notif.pending.empty') || 'Nessuna notifica in coda. Aggiungi scadenze alla Dispensa.'}
             </Text>
           ) : (
             rows.map(r => (

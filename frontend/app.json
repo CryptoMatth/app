@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "PlanEat",
+    "name": "Planibble",
     "slug": "frontend",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "planibble",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.mealprepmaster.op32ei",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Add photos to your dishes and shopping items",
-        "NSCameraUsageDescription": "Take photos of dishes and ingredients"
+        "NSPhotoLibraryUsageDescription": "Aggiungi foto a piatti e ingredienti",
+        "NSCameraUsageDescription": "Scatta foto di piatti e ingredienti"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#C66241"
+        "backgroundColor": "#1D8EA2"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 144,
+      "versionCode": 147,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
@@ -40,8 +40,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
-          "imageWidth": 180,
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#FDFBF7"
         }
@@ -49,8 +49,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Add photos to your dishes and shopping items",
-          "cameraPermission": "Take photos of dishes and ingredients"
+          "photosPermission": "Aggiungi foto a piatti e ingredienti",
+          "cameraPermission": "Scatta foto di piatti e ingredienti"
         }
       ],
       "expo-notifications",

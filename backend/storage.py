@@ -1,4 +1,4 @@
-"""Emergent Object Storage integration for PlanEat.
+"""Emergent Object Storage integration for Planibble.
 
 Photos of dishes, ingredients, and shopping items are uploaded through
 the FastAPI backend (never directly from the app) so the storage key

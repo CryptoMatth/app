@@ -10,7 +10,7 @@ export default function PrivacyPolicy() {
   const { t, lang } = useTranslation();
   const OWNER_NAME = 'Mattia Ruo';
   const OWNER_EMAIL = 'crypto.matth719@gmail.com';
-  const APP_NAME = 'PlanEat';
+  const APP_NAME = 'Planibble';
   const LAST_UPDATED = '2026-06-11';
 
   return (

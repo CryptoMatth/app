@@ -1,3 +1,6 @@
+# Note: file content below is kept in sync with the Oct 2026 rebrand + UX pack.
+# See `/app/memory/PRD.md` for high-level feature list.
+
 #====================================================================================================
 # START - Testing Protocol - DO NOT EDIT OR REMOVE THIS SECTION
 #====================================================================================================

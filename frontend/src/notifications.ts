@@ -55,7 +55,7 @@ async function ensureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: 'PlanEat',
+      name: 'Planibble',
       description: 'Avvisi scadenze e surgelati',
       importance: AndroidImportance.HIGH,
       sound: 'default',
@@ -89,7 +89,7 @@ export async function ensurePermission(): Promise<boolean> {
   return !!req.granted;
 }
 
-async function cancelAllPlanEat() {
+async function cancelAllPlanibble() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     let cancelled = 0;
@@ -186,7 +186,7 @@ export async function reschedule(
   // If BOTH channels are off we can just cancel everything and bail.
   if (!prefs.expiry_enabled && !prefs.freezer_enabled) {
     log('both switches off — cancelling all and bailing');
-    await cancelAllPlanEat();
+    await cancelAllPlanibble();
     return { scheduled: 0, skipped: 0 };
   }
 
@@ -194,7 +194,7 @@ export async function reschedule(
   if (!ok) { warn('permission not granted — nothing scheduled'); return { scheduled: 0, skipped: 0 }; }
 
   await ensureAndroidChannel();
-  await cancelAllPlanEat();
+  await cancelAllPlanibble();
 
   const now = new Date();
   const notifyHour = Math.max(0, Math.min(23, prefs.notify_hour));
@@ -358,7 +358,7 @@ export async function fireTestNotification(): Promise<boolean> {
   await ensureAndroidChannel();
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: '🔔 Test PlanEat',
+      title: '🔔 Test Planibble',
       body: 'Le notifiche funzionano correttamente!',
       data: { tag: TAG, kind: 'test' },
       ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),

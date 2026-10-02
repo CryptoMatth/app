@@ -213,7 +213,14 @@ export default function DishEditor({ id, initialCourse }: Props) {
                 style={styles.ingRow}
                 testID={`ing-row-${i}`}
               >
-                <PhotoLightboxThumb path={ing.photo_path} size={40} rounded fallbackIcon="package" testID={`ing-thumb-${i}`} />
+                <PhotoLightboxThumb
+                  path={ing.photo_path}
+                  size={40}
+                  rounded
+                  fallbackEmoji={cat?.icon || '📦'}
+                  fallbackIcon="package"
+                  testID={`ing-thumb-${i}`}
+                />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.ingName} numberOfLines={1}>
                     {ing.name || t('piatti.ingredientNamePlaceholder')}

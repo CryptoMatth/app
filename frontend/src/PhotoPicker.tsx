@@ -62,11 +62,25 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
   const [busy, setBusy] = useState(false);
   const [upsellOpen, setUpsellOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // "camera vs library" chooser visibility
+  const [sourceChooser, setSourceChooser] = useState(false);
   const { uri, headers } = usePhotoUrl(value);
 
-  const pick = useCallback(async () => {
+  // Shared post-pick upload step — both `pickFromLibrary` and `takePhoto` funnel here.
+  const uploadAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
+    setBusy(true);
+    try {
+      const path = await api.uploadPhoto(asset.uri, asset.mimeType || 'image/jpeg');
+      onChange(path);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [onChange, t]);
+
+  const pickFromLibrary = useCallback(async () => {
     if (!isPro) { setUpsellOpen(true); return; }
-    // Ask for permission with in-context explainer
     const { status, canAskAgain } = await ImagePicker.getMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -92,18 +106,44 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
       aspect: [1, 1],
     });
     if (result.canceled || !result.assets?.length) return;
-    const asset = result.assets[0];
+    await uploadAsset(result.assets[0]);
+  }, [isPro, t, uploadAsset]);
 
-    setBusy(true);
-    try {
-      const path = await api.uploadPhoto(asset.uri, asset.mimeType || 'image/jpeg');
-      onChange(path);
-    } catch (e: any) {
-      Alert.alert(t('common.error'), e?.message || 'Upload failed');
-    } finally {
-      setBusy(false);
+  // M6 — lazy camera permission: ask only when the user explicitly taps
+  // "Scatta foto" (clear user intent) per Play Store best practice.
+  const takePhoto = useCallback(async () => {
+    if (!isPro) { setUpsellOpen(true); return; }
+    const { status, canAskAgain } = await ImagePicker.getCameraPermissionsAsync();
+    if (status !== 'granted') {
+      const req = await ImagePicker.requestCameraPermissionsAsync();
+      if (req.status !== 'granted') {
+        if (!canAskAgain) {
+          Alert.alert(
+            t('photo.cameraPermTitle'),
+            t('photo.cameraPermBody'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              { text: t('photo.openSettings'), onPress: () => Linking.openSettings() },
+            ],
+          );
+        }
+        return;
+      }
     }
-  }, [isPro, onChange, t]);
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (result.canceled || !result.assets?.length) return;
+    await uploadAsset(result.assets[0]);
+  }, [isPro, t, uploadAsset]);
+
+  // Entry point from thumb tap / lightbox "change": show chooser.
+  const pick = useCallback(() => {
+    if (!isPro) { setUpsellOpen(true); return; }
+    setSourceChooser(true);
+  }, [isPro]);
 
   const remove = useCallback(() => {
     onChange(null);
@@ -162,6 +202,60 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
       ) : null}
       <ProUpsellModal open={upsellOpen} onClose={() => setUpsellOpen(false)} feature="photos" />
 
+      {/* Source chooser (M6) — appears when user taps the empty thumb or "Change" in lightbox. */}
+      <Modal
+        visible={sourceChooser}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSourceChooser(false)}
+      >
+        <Pressable style={chooserStyles.overlay} onPress={() => setSourceChooser(false)}>
+          <Pressable onPress={e => e.stopPropagation?.()} style={chooserStyles.sheet}>
+            <View style={chooserStyles.handle} />
+            <Text style={chooserStyles.title}>{t('photo.sourceTitle')}</Text>
+            <Text style={chooserStyles.sub}>{t('photo.sourceSub')}</Text>
+
+            <Pressable
+              style={chooserStyles.row}
+              onPress={() => { setSourceChooser(false); setTimeout(takePhoto, 150); }}
+              testID={`${testID}-source-camera`}
+            >
+              <View style={chooserStyles.rowIcon}>
+                <Feather name="camera" size={20} color={theme.color.brandPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={chooserStyles.rowH}>{t('photo.takePhoto')}</Text>
+                <Text style={chooserStyles.rowS}>{t('photo.takePhotoSub')}</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={theme.color.onSurfaceTertiary} />
+            </Pressable>
+
+            <Pressable
+              style={chooserStyles.row}
+              onPress={() => { setSourceChooser(false); setTimeout(pickFromLibrary, 150); }}
+              testID={`${testID}-source-library`}
+            >
+              <View style={chooserStyles.rowIcon}>
+                <Feather name="image" size={20} color={theme.color.brandPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={chooserStyles.rowH}>{t('photo.fromLibrary')}</Text>
+                <Text style={chooserStyles.rowS}>{t('photo.fromLibrarySub')}</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={theme.color.onSurfaceTertiary} />
+            </Pressable>
+
+            <Pressable
+              style={chooserStyles.cancel}
+              onPress={() => setSourceChooser(false)}
+              testID={`${testID}-source-cancel`}
+            >
+              <Text style={chooserStyles.cancelTxt}>{t('common.cancel')}</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Lightbox */}
       <Modal
         visible={lightboxOpen && !!uri}
@@ -208,8 +302,8 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
 
 /** Enlarge a read-only thumbnail on tap (used inside DishEditor ingredient rows). */
 export function PhotoLightboxThumb({
-  path, size = 44, rounded = false, fallbackIcon = 'image', testID,
-}: { path?: string | null; size?: number; rounded?: boolean; fallbackIcon?: any; testID?: string }) {
+  path, size = 44, rounded = false, fallbackIcon = 'image', fallbackEmoji, testID,
+}: { path?: string | null; size?: number; rounded?: boolean; fallbackIcon?: any; fallbackEmoji?: string; testID?: string }) {
   const { uri, headers } = usePhotoUrl(path);
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -220,7 +314,11 @@ export function PhotoLightboxThumb({
   if (!path) {
     return (
       <View style={[styles.thumbFallback, { width: size, height: size, borderRadius }]}>
-        <Feather name={fallbackIcon} size={size / 2.4} color={theme.color.onSurfaceTertiary} />
+        {fallbackEmoji ? (
+          <Text style={{ fontSize: size * 0.55 }}>{fallbackEmoji}</Text>
+        ) : (
+          <Feather name={fallbackIcon} size={size / 2.4} color={theme.color.onSurfaceTertiary} />
+        )}
       </View>
     );
   }
@@ -348,4 +446,53 @@ const lbStyles = StyleSheet.create({
   actionDanger: { backgroundColor: '#FEF2F0', borderColor: '#F5C7C0' },
   actionTxt: { color: theme.color.onSurface, fontWeight: '600', fontSize: 14 },
   hint: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontStyle: 'italic' },
+});
+
+
+const chooserStyles = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(16, 35, 40, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: theme.color.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 10, paddingBottom: theme.spacing.xl,
+  },
+  handle: {
+    width: 44, height: 4, borderRadius: 2, alignSelf: 'center',
+    backgroundColor: theme.color.borderStrong, opacity: 0.45,
+    marginBottom: theme.spacing.md,
+  },
+  title: {
+    fontFamily: theme.font.display, fontSize: 18,
+    color: theme.color.onSurface, marginBottom: 2,
+  },
+  sub: {
+    fontSize: 12, color: theme.color.onSurfaceSecondary,
+    marginBottom: theme.spacing.md,
+  },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: theme.spacing.md, borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+    marginBottom: theme.spacing.sm,
+  },
+  rowIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: theme.color.brandTertiary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  rowH: { fontSize: 14, fontWeight: '700', color: theme.color.onSurface },
+  rowS: { fontSize: 12, color: theme.color.onSurfaceSecondary, marginTop: 2 },
+  cancel: {
+    marginTop: theme.spacing.sm, height: 48,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.color.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cancelTxt: { color: theme.color.onSurface, fontWeight: '600', fontSize: 14 },
 });

@@ -255,3 +255,80 @@ Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta s
 - Backend: 8/8 pytest passed (`test_iteration20_notif_prefs_and_pro_plus.py`) — round-trip NotificationPrefs, legacy `enabled`, /purchases/sync con pro/pro_plus.
 - Frontend web preview: Plans screen, tutorial, notifications-expiry tutti renderizzano senza errori né chiavi i18n mancanti.
 - ⚠️ Consegna reale delle notifiche locali **non validabile in Expo Go / web preview** — richiede build nativa .aab.
+
+## Iteration 21 — Rebrand → Planibble + UX pack (oct 2026)
+
+### C1 — Rebrand nome
+- "PlanEat" → **"Planibble"** ovunque (app.json, Login, Splash, i18n IT+EN, backend API root, backup, admin, email sender).
+- Sottotitolo: *"I tuoi menù. La tua spesa. La tua dispensa."* in Login/Splash. `auth.login.tagline` aggiornato.
+- Backup legacy: `backup.tsx` accetta sia `app: 'PlanEat'` sia `app: 'Planibble'` per compat.
+
+### C2 — Nuovo logo + varianti
+- Partendo dall'identity concept 1024×1024 attached by user, croppato il tile centrale (160,156)→(864,840) e generato tutte le varianti:
+  - `icon.png` 1024×1024 arrotondato stile iOS
+  - `adaptive-icon.png` 1024×1024 (sfondo brand `#1D8EA2`)
+  - `splash-image.png` 400×400
+  - `favicon.png` 48×48
+  - `play-store-icon-512.png`
+  - `play-store-feature-graphic-1024x500.jpg` (gradient teal + Planibble + sottotitolo)
+
+### C3 — Nuova palette "Petrolio vivace"
+- Primary `#1D8EA2`, Secondary `#4FB3C5`, Accent `#E0F2F5`, Error `#C96B4A`, Success `#4A8A6B`. Background cream `#FDFBF7` invariato.
+- `theme.ts` migrato con stessi token names (nessuna breaking change).
+
+### M1 — ConfirmSheet styled per eliminazione Dispensa
+- Nuovo componente `src/ConfirmSheet.tsx`: bottom-sheet con icona circolare + title + body + 2 CTA (secondary + danger).
+- Sostituito `Alert.alert` in `frigorifero.tsx`. i18n body usa `{name}` (sintassi corretta).
+
+### M2 — Fallback categoria per thumb ingredienti
+- `PhotoLightboxThumb` ora accetta `fallbackEmoji`. `DishEditor` passa l'emoji della categoria quando non c'è foto → la scatola generica scompare per ingredienti con categoria.
+
+### M3 — Prezzi corretti
+- Fallback prezzi in app: Pro = 3€ una tantum, Pro+ monthly = 2€/mese, Pro+ annual = 20€/anno (badge "MIGLIORE", ≈1,67€/mese).
+- i18n `plans.proPlus.*` aggiornato.
+
+### M4 — "Frigorifero" → "Dispensa"
+- Rinomina SOLO delle string USER-FACING in i18n (IT + EN "Fridge"→"Pantry"). Identificatori di codice `fridge.*`, FridgeLite, api.listFridge, `/api/fridge`, `fridge_items` collection restano uguali per non spaccare i backup esistenti.
+
+### M5 — Data iscrizione nel DB
+- Backend: campo `registered_at` scritto a `/auth/register` e backfill one-shot su startup da `created_at` per utenti pre-esistenti.
+- Esposto in `/api/auth/me` e tutti i payload utente pubblici (`_user_public`).
+
+### M6 — Foto da camera o galleria
+- `PhotoPicker`: tap su thumb vuota apre bottom-sheet "📷 Scatta foto" / "🖼️ Scegli dalla galleria".
+- Permessi camera richiesti solo al primo tap su "Scatta foto" (lazy, Play Store best practice).
+- i18n: `photo.cameraPermTitle/Body`, `photo.sourceTitle/Sub`, `photo.takePhoto/Sub`, `photo.fromLibrary/Sub` (IT+EN).
+
+### M7 — Elementi scaduti NON auto-cancellati
+- Backend: `_cleanup_expired_fridge` kept as dead-code, no longer called in `GET /fridge` o `clear-checked`.
+- Frontend: nuovo gruppo "SCADUTI" nella Dispensa in rosso, mostra tutti gli item con `max(expiries) < oggi`.
+- i18n: `fridge.group.expired` = "Scaduti" / "Expired".
+
+### M8 — Più icone emoji ingredienti
+- Aggiunti nel picker: 🫒 🧈 🌾 🌽 🥔 🍟 🍿 🥜 🥐 🥖 🫓 🥯 🧄 🧅 🥥 (categorie olio/farine/snack/legumi/condimenti).
+
+### D1 + D2 — Gestione scadenza abbonamento Pro+
+- Backend `purchases.py` webhook esteso:
+  - `PRODUCT_TO_TIER` include `pro_plus_subscription`, `pro_plus_subscription:monthly`, `pro_plus_subscription:annual`.
+  - Grant event ora estrae `expiration_at_ms` → persiste `entitlements.pro_plus.expires_at` + `will_renew=True`.
+  - `CANCELLATION` / `SUBSCRIPTION_PAUSED` / `BILLING_ISSUE` NON revoca immediatamente — solo flagga `will_renew=False` e `cancel_reason`. L'utente mantiene accesso fino a `expires_at` (Play Store policy).
+  - `EXPIRATION` revoca immediata.
+- Backend `_get_tier()`: safety-net per-request che tratta Pro+ con `expires_at` passato come scaduto anche se nessuno ha ancora flippato `active=False`.
+- Startup task `_revoke_expired_subscriptions()` scrive l'inversione in Mongo.
+- `/auth/me` espone `pro_plus_expires_at` + `pro_plus_will_renew`.
+- Frontend Pro+ card:
+  - Mostra "Attivo · si rinnova il DD/MM/YYYY" o "Attivo fino al DD/MM/YYYY (non si rinnova)".
+  - Nuovo CTA **"Gestisci abbonamento"** (testID=`manage-subscription`) che apre `https://play.google.com/store/account/subscriptions?sku=pro_plus_subscription&package=com.emergent.mealprepmaster.op32ei`.
+- i18n: `plans.proPlus.renewOn/endingOn`, `plans.manageSubscription` (IT+EN).
+
+### D3 — Audit traduzioni EN
+- 588 chiavi IT, 588 chiavi EN. 0 chiavi mancanti su entrambe le lingue. 0 italiano residuo nei valori EN. 0 duplicati per blocco.
+
+### Testing (iteration 21)
+- Backend: **9/9 pytest passed** (`test_iteration21_planibble_rebrand.py`).
+- Static review completato dal testing_agent (invoke 1), run pytest dall'agente principale (invoke 2) con env `RC_WEBHOOK_AUTH` + `RC_WEBHOOK_HMAC_SECRET` loaded.
+- Frontend web preview: Login teal + Planibble, Dispensa funzionante, ConfirmSheet "Elimina dalla dispensa?" renderizzato, prezzi Pro/Pro+ corretti, pulsante "Gestisci abbonamento" visibile.
+
+### app.json
+- `versionCode` 133 → **147** (incrementato ad ogni iterazione per Play Store).
+- `name` = "Planibble", `scheme` = "planibble", `adaptiveIcon.backgroundColor` = `#1D8EA2`.

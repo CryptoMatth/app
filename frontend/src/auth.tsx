@@ -36,6 +36,11 @@ export type User = {
   preferences?: UserPreferences;
   is_pro?: boolean;
   pro_source?: string | null;
+  // Added oct 2026 — exposed by backend `/auth/me`.
+  registered_at?: string | null;         // ISO datetime
+  pro_plus_expires_at?: string | null;   // ISO datetime, only set for active subscriptions
+  pro_plus_will_renew?: boolean | null;  // false after CANCELLATION
+  tier?: string;                         // "free" | "pro" | "pro_plus"
 };
 
 const DEFAULT_PREFS: UserPreferences = {

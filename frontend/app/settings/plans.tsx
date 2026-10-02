@@ -1,5 +1,5 @@
 /**
- * Piani PlanEat + Google Play Billing (via RevenueCat).
+ * Piani Planibble + Google Play Billing (via RevenueCat).
  *
  * Behaviour matrix:
  *   - Web / iOS / RC not configured → hide CTA buttons, show info banner.
@@ -9,7 +9,7 @@
  *   - always visible: "Ripristina acquisti" (unless RC not configured).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Platform, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter } from 'expo-router';
@@ -35,6 +35,17 @@ import {
 type Feature = { icon: any; label: string };
 type Msg = { kind: 'ok' | 'err' | 'info'; text: string } | null;
 
+/** Format an ISO datetime like "DD/MM/YYYY" using the current locale. Falls
+ *  back silently to the raw string if parsing fails. */
+function formatDate(iso?: string | null, _t?: (k: string) => string): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString();
+  } catch { return iso || ''; }
+}
+
 // Business-defined fallback prices (used when RevenueCat isn't reachable yet).
 const FALLBACK_PRICE = {
   pro: '3€ una tantum',
@@ -45,7 +56,7 @@ const FALLBACK_PRICE = {
 export default function PlansScreen() {
   const router = useRouter();
   const { t } = useTranslation();
-  const { refresh } = useAuth();
+  const { refresh, user } = useAuth();
   const tier = useTier();
   const tierRank: Record<string, number> = { free: 0, pro: 1, pro_plus: 2 };
   const cur = tierRank[tier] ?? 0;
@@ -321,10 +332,34 @@ export default function PlansScreen() {
           )}
 
           {tier === 'pro_plus' && (
-            <View style={styles.activeInfo}>
-              <Feather name="check-circle" size={14} color={theme.color.success} />
-              <Text style={styles.activeInfoTxt}>{t('plans.proPlus.activeInfo')}</Text>
-            </View>
+            <>
+              <View style={styles.activeInfo}>
+                <Feather name="check-circle" size={14} color={theme.color.success} />
+                <Text style={styles.activeInfoTxt}>
+                  {user?.pro_plus_expires_at
+                    ? (user.pro_plus_will_renew === false
+                        ? t('plans.proPlus.endingOn', { date: formatDate(user.pro_plus_expires_at, t) })
+                        : t('plans.proPlus.renewOn', { date: formatDate(user.pro_plus_expires_at, t) }))
+                    : t('plans.proPlus.activeInfo')}
+                </Text>
+              </View>
+
+              {/* D1/D2 — "Gestisci abbonamento" opens Google Play subscriptions page. */}
+              <Pressable
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  const url = Platform.OS === 'android'
+                    ? 'https://play.google.com/store/account/subscriptions?sku=pro_plus_subscription&package=com.emergent.mealprepmaster.op32ei'
+                    : 'https://play.google.com/store/account/subscriptions';
+                  Linking.openURL(url).catch(() => {});
+                }}
+                style={styles.manageBtn}
+                testID="manage-subscription"
+              >
+                <Feather name="external-link" size={14} color={theme.color.brandPrimary} />
+                <Text style={styles.manageBtnTxt}>{t('plans.manageSubscription')}</Text>
+              </Pressable>
+            </>
           )}
         </View>
 
@@ -540,4 +575,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: theme.color.divider,
   },
   activeInfoTxt: { fontSize: 12, color: theme.color.success, fontWeight: '600', flex: 1 },
+  manageBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, marginTop: 10, paddingVertical: 11,
+    borderRadius: theme.radius.md, borderWidth: 1, borderStyle: 'dashed',
+    borderColor: theme.color.brandPrimary,
+  },
+  manageBtnTxt: { color: theme.color.brandPrimary, fontWeight: '700', fontSize: 13 },
 });

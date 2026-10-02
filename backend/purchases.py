@@ -1,5 +1,5 @@
 """
-RevenueCat purchases routes for PlanEat.
+RevenueCat purchases routes for Planibble.
 
 Two endpoints:
 
@@ -42,15 +42,34 @@ logger = logging.getLogger("planeat.purchases")
 
 
 PRODUCT_TO_TIER: Dict[str, str] = {
+    # Legacy one-time purchases (kept so old backups still restore).
     "pro_lifetime": "pro",
     "pro_plus_lifetime": "pro_plus",
     "pro_to_pro_plus_upgrade": "pro_plus",
+    # New subscription model (oct 2026): a single Google Play subscription
+    # id `pro_plus_subscription` with two base plans `monthly` / `annual`.
+    # RevenueCat may report the base plan separately — map both forms.
+    "pro_plus_subscription": "pro_plus",
+    "pro_plus_subscription:monthly": "pro_plus",
+    "pro_plus_subscription:annual": "pro_plus",
+    "pro_plus_monthly": "pro_plus",
+    "pro_plus_annual": "pro_plus",
 }
 
 ENTITLEMENT_TO_TIER: Dict[str, str] = {
     "pro": "pro",
     "pro_plus": "pro_plus",
 }
+
+
+def _parse_rc_timestamp(ms: Optional[int]) -> Optional[datetime]:
+    """RevenueCat emits timestamps as UNIX ms. Return UTC datetime or None."""
+    if ms is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000.0, tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 class SyncPurchasesBody(BaseModel):
@@ -63,19 +82,54 @@ def _now_utc() -> datetime:
 
 
 async def _grant_tier(db, user_id: str, tier: str, source: str, meta: Dict[str, Any]) -> None:
-    """Grant `tier` (pro/pro_plus) to the user with an audit trail."""
+    """Grant `tier` (pro/pro_plus) to the user with an audit trail.
+
+    Known optional fields in `meta` (persisted alongside `active`):
+      - expires_at (datetime)    end of current paid period (subscription)
+      - will_renew (bool)        True if auto-renew is on
+      - product_id, transaction_id, event_id, event_type, …
+    """
     if tier not in ("pro", "pro_plus"):
         return
+    # Preserve any existing grant metadata (e.g. don't lose granted_at on renewal).
+    existing = await db.users.find_one(
+        {"user_id": user_id}, {f"entitlements.{tier}": 1, "_id": 0}
+    )
+    prev = ((existing or {}).get("entitlements") or {}).get(tier) or {}
+    granted_at = prev.get("granted_at") or _now_utc()
     entry = {
         "active": True,
         "source": source,
-        "granted_at": _now_utc(),
+        "granted_at": granted_at,
+        "last_event_at": _now_utc(),
         **{k: v for k, v in meta.items() if v is not None},
     }
+    # On every grant we clear any previous "revoked" markers.
+    entry.setdefault("revoked_at", None)
+    entry.setdefault("revoke_reason", None)
     await db.users.update_one(
         {"user_id": user_id},
         {"$set": {f"entitlements.{tier}": entry, "updated_at": _now_utc()}},
     )
+
+
+async def _mark_subscription_cancelled(db, user_id: str, tier: str, event_type: str, expires_at: Optional[datetime]) -> None:
+    """User disabled auto-renew (CANCELLATION) but hasn't reached end of
+    period yet — keep `active=True` so they retain access until `expires_at`.
+    Only flip `will_renew=False` and persist the end-of-period timestamp.
+    `_get_tier` and the periodic sweep handle the actual downgrade.
+    """
+    if tier not in ("pro", "pro_plus"):
+        return
+    patch: Dict[str, Any] = {
+        f"entitlements.{tier}.will_renew": False,
+        f"entitlements.{tier}.cancel_reason": event_type,
+        f"entitlements.{tier}.cancelled_at": _now_utc(),
+        "updated_at": _now_utc(),
+    }
+    if expires_at:
+        patch[f"entitlements.{tier}.expires_at"] = expires_at
+    await db.users.update_one({"user_id": user_id}, {"$set": patch})
 
 
 async def _revoke_tier(db, user_id: str, tier: str, reason: str) -> None:
@@ -226,19 +280,29 @@ def create_revenuecat_webhook_router(db):
         entitlements = set(event.get("entitlement_ids") or [])
         product_id = event.get("product_id")
         transaction_id = event.get("transaction_id")
+        # RevenueCat includes `expiration_at_ms` for subscription events —
+        # it marks the end of the currently paid period. Lifetime products
+        # don't have one.
+        expires_at_dt = _parse_rc_timestamp(event.get("expiration_at_ms"))
+        purchased_at_dt = _parse_rc_timestamp(event.get("purchased_at_ms"))
 
         grant_events = {
             "INITIAL_PURCHASE",
             "NON_RENEWING_PURCHASE",
-            "RENEWAL",  # not applicable to non-consumables, but harmless
+            "RENEWAL",
             "PRODUCT_CHANGE",
             "TRANSFER",
             "UNCANCELLATION",
         }
-        revoke_events = {"CANCELLATION", "EXPIRATION", "SUBSCRIPTION_PAUSED"}
+        # CANCELLATION / BILLING_ISSUE / SUBSCRIPTION_PAUSED do NOT revoke
+        # immediately — Play Store policy requires we keep the user on the
+        # paid tier until `expires_at` passes. We just flag `will_renew=False`.
+        cancellation_events = {"CANCELLATION", "SUBSCRIPTION_PAUSED", "BILLING_ISSUE"}
+        # EXPIRATION fires when the period actually ended → hard revoke.
+        hard_revoke_events = {"EXPIRATION"}
         refund_events = {"REFUND"}
 
-        if event_type in grant_events or event_type in {}:
+        if event_type in grant_events:
             # Compute the highest tier this event grants.
             tier = None
             if "pro_plus" in entitlements:
@@ -259,11 +323,30 @@ def create_revenuecat_webhook_router(db):
                         "transaction_id": transaction_id,
                         "event_id": event_id,
                         "event_type": event_type,
+                        "expires_at": expires_at_dt,
+                        "last_purchased_at": purchased_at_dt,
+                        # Any grant event implies the sub is set to auto-renew
+                        # at least for now — a later CANCELLATION flips it.
+                        "will_renew": True if expires_at_dt else None,
                     },
                 )
 
-        elif event_type in refund_events or event_type in revoke_events:
-            # Revoke tiers listed in entitlements or inferred from product.
+        elif event_type in cancellation_events:
+            # Only mark `will_renew=False`; keep access until expires_at.
+            tiers = set()
+            for ent in entitlements:
+                t = ENTITLEMENT_TO_TIER.get(ent)
+                if t:
+                    tiers.add(t)
+            if product_id and not tiers:
+                t = PRODUCT_TO_TIER.get(product_id)
+                if t:
+                    tiers.add(t)
+            for t in tiers:
+                await _mark_subscription_cancelled(db, user["user_id"], t, event_type, expires_at_dt)
+
+        elif event_type in refund_events or event_type in hard_revoke_events:
+            # Immediate revoke (chargeback / expired paid period).
             tiers_to_revoke = set()
             for ent in entitlements:
                 t = ENTITLEMENT_TO_TIER.get(ent)
@@ -278,7 +361,7 @@ def create_revenuecat_webhook_router(db):
                     db, user["user_id"], t, reason=event_type or "refund"
                 )
 
-        # BILLING_ISSUE, TEST, and other event types are logged only.
+        # TEST and other event types are logged only.
         return {"ok": True}
 
     return router

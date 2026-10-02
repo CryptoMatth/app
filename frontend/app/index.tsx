@@ -21,7 +21,8 @@ export default function Index() {
         style={styles.icon}
         resizeMode="contain"
       />
-      <Text style={styles.brand}>PlanEat</Text>
+      <Text style={styles.brand}>Planibble</Text>
+      <Text style={styles.tagline}>I tuoi menù. La tua spesa. La tua dispensa.</Text>
       <ActivityIndicator color={theme.color.brandPrimary} size="small" style={{ marginTop: 24 }} />
     </View>
   );
@@ -31,10 +32,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: theme.color.surface,
+    paddingHorizontal: 24,
   },
   icon: { width: 140, height: 140, borderRadius: 32 },
   brand: {
     fontFamily: theme.font.display, fontSize: 36, color: theme.color.brandPrimary,
     marginTop: 20, letterSpacing: 0.5,
+  },
+  tagline: {
+    marginTop: 6, fontSize: 13, color: theme.color.onSurfaceSecondary,
+    textAlign: 'center', lineHeight: 18,
   },
 });

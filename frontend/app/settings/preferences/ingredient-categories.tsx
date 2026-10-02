@@ -14,8 +14,14 @@ const EMOJI = [
   '🥬', '🍎', '🍌', '🥕', '🌶️', '🌰', '🫒', '🥑', '🥦', '🍅',
   // Cibo — proteine
   '🥩', '🐟', '🦐', '🥚', '🧀', '🥓',
-  // Cibo — dispensa e conserve
-  '🍞', '🥨', '🫘', '🍚', '🍝', '🍯', '🫙', '🥫', '🧂', '🌾',
+  // Cibo — dispensa, farinacei, conserve
+  '🍞', '🥨', '🥐', '🥖', '🫓', '🥯', '🌾', '🌽', '🥔', '🍚', '🍝', '🧂', '🫙', '🥫', '🍯',
+  // Oli, condimenti e spezie
+  '🫒', '🧈', '🌶️', '🧄', '🧅', '🥥',
+  // Legumi
+  '🫘',
+  // Snack e frutta secca
+  '🥜', '🍿', '🥨', '🍟',
   // Cibo — surgelati e freddi
   '❄️', '🍦', '🥶',
   // Cibo — snack e dolci
@@ -25,7 +31,7 @@ const EMOJI = [
   // Pulizia casa
   '🧽', '🧴', '🧼', '🧹', '🧺', '🪣',
   // Igiene personale
-  '🧻', '🪒', '🪥', '💄', '🧴',
+  '🧻', '🪒', '🪥', '💄',
   // Farmaci e cura
   '💊', '🩹', '🌡️', '🌿',
   // Bambini

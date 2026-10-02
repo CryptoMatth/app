@@ -93,7 +93,10 @@ export default function BackupSettings() {
         raw = await FileSystem.readAsStringAsync(uri);
       }
       const parsed = JSON.parse(raw);
-      if (!parsed || (parsed.app && parsed.app !== 'PlanEat')) {
+      // Accept the legacy "PlanEat" app marker so backups taken before the
+      // oct 2026 rebrand still restore correctly.
+      const validApp = !parsed?.app || parsed.app === 'Planibble' || parsed.app === 'PlanEat';
+      if (!parsed || !validApp) {
         setMsg({ kind: 'err', text: t('backup.errInvalid') });
         return;
       }
