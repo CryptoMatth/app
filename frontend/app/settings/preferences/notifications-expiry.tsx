@@ -30,8 +30,11 @@ const isExpiryOn = (n: NotificationPrefs) => {
 
 export default function NotificationsExpiryPreference() {
   const { t } = useTranslation();
-  const { prefs, updatePreferences } = useAuth();
+  const { user, prefs, updatePreferences } = useAuth();
   const isProPlus = useHasTier('pro_plus');
+  // Dev/debug helpers (test notification + pending queue inspector) are shown
+  // ONLY to admin / founder accounts to avoid confusing regular users.
+  const isAdmin = (user?.pro_source === 'founder') || ((user?.username || '').toLowerCase() === 'halley');
   const [upsell, setUpsell] = useState(false);
 
   // Seed with the *effective* expiry value so the toggle mirrors what the
@@ -179,8 +182,8 @@ export default function NotificationsExpiryPreference() {
           </View>
         )}
 
-        {/* Test-notification button — helps user verify permissions/channel work */}
-        {Platform.OS !== 'web' && isProPlus && (
+        {/* Test-notification button — admin/founder only (debug aid). */}
+        {Platform.OS !== 'web' && isProPlus && isAdmin && (
           <Pressable
             onPress={async () => {
               Haptics.selectionAsync();
@@ -197,8 +200,9 @@ export default function NotificationsExpiryPreference() {
           </Pressable>
         )}
 
-        {/* Diagnostic: shows what's currently in the OS scheduler queue. */}
-        {Platform.OS !== 'web' && isProPlus && (
+        {/* Diagnostic: shows what's currently in the OS scheduler queue —
+            admin/founder only. */}
+        {Platform.OS !== 'web' && isProPlus && isAdmin && (
           <PendingNotificationsPanel />
         )}
       </View>
