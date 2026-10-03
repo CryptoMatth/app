@@ -95,11 +95,14 @@ export default function Frigorifero() {
     setConfirmDel({ id, name: name || '' });
   };
 
+  // Capture `confirmDel` into a local variable so the async delete still
+  // works after we close the modal (which resets the state).
   const doDelete = async () => {
-    if (!confirmDel) return;
+    const target = confirmDel;
+    if (!target) return;
     try {
-      await api.deleteFridge(confirmDel.id);
-      setItems(prev => prev.filter(x => x.id !== confirmDel.id));
+      await api.deleteFridge(target.id);
+      setItems(prev => prev.filter(x => x.id !== target.id));
     } catch {}
   };
 

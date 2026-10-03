@@ -3,23 +3,30 @@
  * destructive actions. Full-width bottom-sheet with icon, title, body and
  * two actions. Matches the Planibble brand (teal theme, cream card).
  *
+ * Design notes (lessons learned Oct 2026):
+ *   - Uses Modal's built-in `animationType="fade"` instead of a custom
+ *     Animated.Value slide. The custom animation + nested Pressables was
+ *     causing the sheet to get stuck open on native Android (B1 regression).
+ *   - All inner buttons use plain Pressable with explicit onPress — no
+ *     bubbling conflicts with the backdrop Pressable since they are
+ *     siblings, not nested inside each other.
+ *   - `handleConfirm` closes the modal FIRST, then runs the async action.
+ *     This guarantees the UI never gets stuck even if the action throws.
+ *
  * Usage:
- *   const [confirm, setConfirm] = useState<ConfirmSheetProps | null>(null);
- *   // on tap:
- *   setConfirm({
- *     title: 'Rimuovere l\'ingrediente?',
- *     body: 'Verrà eliminato definitivamente dalla Dispensa.',
- *     confirmLabel: 'Elimina',
- *     tone: 'danger',
- *     onConfirm: async () => { await api.deleteFridge(id); },
- *   });
- *   // in render: <ConfirmSheet {...confirm} onClose={() => setConfirm(null)} />
+ *   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+ *   setConfirm({ id, name });
+ *   <ConfirmSheet
+ *      visible={!!confirm}
+ *      title="Rimuovere?"
+ *      body={`«${confirm?.name}» verrà eliminato.`}
+ *      confirmLabel="Elimina"
+ *      tone="danger"
+ *      onConfirm={async () => { await api.deleteFridge(confirm!.id); }}
+ *      onClose={() => setConfirm(null)}
+ *   />
  */
-import { useEffect, useRef } from 'react';
-import {
-  View, Text, StyleSheet, Pressable, Modal, Animated, Easing,
-  Platform, Dimensions,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
@@ -40,94 +47,103 @@ export type ConfirmSheetProps = {
   testID?: string;
 };
 
-const H = Dimensions.get('window').height;
-
 export function ConfirmSheet({
   visible, title, body, icon, tone = 'danger', confirmLabel,
   cancelLabel, onConfirm, onClose, testID,
 }: ConfirmSheetProps) {
-  const slide = useRef(new Animated.Value(1)).current; // 1 = hidden, 0 = shown
-
-  useEffect(() => {
-    Animated.timing(slide, {
-      toValue: visible ? 0 : 1,
-      duration: 220,
-      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [visible, slide]);
-
-  const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 420] });
-  const overlayOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-
   const confirmColor = {
     danger: theme.color.error,
     brand: theme.color.brandPrimary,
     neutral: theme.color.onSurfaceSecondary,
   }[tone];
   const iconBg = {
-    danger: '#F5E0DC',
+    danger: '#FADAD4',  // soft red-tinted fill that works with the Planibble palette
     brand: theme.color.brandTertiary,
     neutral: theme.color.surfaceSecondary,
   }[tone];
   const resolvedIcon = icon ?? (tone === 'danger' ? 'trash-2' : tone === 'brand' ? 'check-circle' : 'info');
 
-  const handleConfirm = async () => {
+  const handleConfirm = () => {
+    // Fire haptic BEFORE closing — once the Modal is unmounted RN may
+    // disallow Haptics on some devices.
     try { Haptics.notificationAsync(tone === 'danger' ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success); } catch {}
-    try { await onConfirm(); } finally { onClose(); }
+    // Close the modal FIRST so UI never gets stuck if the async action throws.
+    onClose();
+    // Fire the action after a microtask so React has a chance to unmount the
+    // Modal before any re-render triggered by setState inside `onConfirm`.
+    Promise.resolve().then(async () => {
+      try { await onConfirm(); } catch (err) {
+        if (__DEV__) console.warn('[ConfirmSheet] onConfirm failed', err);
+      }
+    });
+  };
+
+  const handleCancel = () => {
+    try { Haptics.selectionAsync(); } catch {}
+    onClose();
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={StyleSheet.absoluteFillObject}>
-        {/* Dimmed backdrop */}
-        <Animated.View style={[styles.backdrop, { opacity: overlayOpacity }]}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} testID={testID ? `${testID}-backdrop` : undefined} />
-        </Animated.View>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      hardwareAccelerated
+      statusBarTranslucent
+    >
+      <View style={styles.container}>
+        {/* Backdrop — tapping outside the sheet cancels. */}
+        <Pressable
+          style={styles.backdrop}
+          onPress={handleCancel}
+          testID={testID ? `${testID}-backdrop` : undefined}
+        />
 
-        {/* Sheet */}
-        <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]} pointerEvents="box-none">
-          <SafeAreaView edges={['bottom']} style={styles.safe}>
-            <View style={styles.sheet} testID={testID}>
-              <View style={styles.handle} />
-              <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
-                <Feather name={resolvedIcon} size={26} color={confirmColor} />
-              </View>
-              <Text style={styles.title}>{title}</Text>
-              {body ? <Text style={styles.body}>{body}</Text> : null}
-              <View style={styles.btnRow}>
-                <Pressable
-                  onPress={onClose}
-                  style={({ pressed }) => [styles.btn, styles.btnSecondary, pressed && { opacity: 0.7 }]}
-                  testID={testID ? `${testID}-cancel` : undefined}
-                >
-                  <Text style={styles.btnSecondaryTxt}>{cancelLabel || 'Annulla'}</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleConfirm}
-                  style={({ pressed }) => [styles.btn, { backgroundColor: confirmColor }, pressed && { opacity: 0.85 }]}
-                  testID={testID ? `${testID}-confirm` : undefined}
-                >
-                  <Text style={styles.btnPrimaryTxt}>{confirmLabel}</Text>
-                </Pressable>
-              </View>
+        {/* Sheet — bottom-anchored. */}
+        <SafeAreaView edges={['bottom']} style={styles.safe} pointerEvents="box-none">
+          <View style={styles.sheet} testID={testID}>
+            <View style={styles.handle} />
+            <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
+              <Feather name={resolvedIcon} size={26} color={confirmColor} />
             </View>
-          </SafeAreaView>
-        </Animated.View>
+            <Text style={styles.title}>{title}</Text>
+            {body ? <Text style={styles.body}>{body}</Text> : null}
+            <View style={styles.btnRow}>
+              <Pressable
+                onPress={handleCancel}
+                style={({ pressed }) => [styles.btn, styles.btnSecondary, pressed && styles.pressed]}
+                testID={testID ? `${testID}-cancel` : undefined}
+              >
+                <Text style={styles.btnSecondaryTxt}>{cancelLabel || 'Annulla'}</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleConfirm}
+                style={({ pressed }) => [styles.btn, { backgroundColor: confirmColor }, pressed && styles.pressed]}
+                testID={testID ? `${testID}-confirm` : undefined}
+              >
+                <Text style={styles.btnPrimaryTxt}>{confirmLabel}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(16, 35, 40, 0.45)',
   },
-  sheetWrap: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
+  safe: {
+    backgroundColor: 'transparent',
   },
-  safe: { backgroundColor: 'transparent' },
   sheet: {
     backgroundColor: theme.color.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -175,4 +191,5 @@ const styles = StyleSheet.create({
   },
   btnSecondaryTxt: { color: theme.color.onSurface, fontWeight: '600', fontSize: 15 },
   btnPrimaryTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  pressed: { opacity: 0.75 },
 });

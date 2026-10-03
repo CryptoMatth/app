@@ -29,7 +29,7 @@ export const theme = {
     // Semantics.
     success: '#4A8A6B',
     warning: '#E0A458',
-    error: '#C96B4A',
+    error: '#D64545',
 
     // Borders & dividers — cool neutral.
     border: '#D5DFE2',

@@ -157,24 +157,23 @@ export default function PlansScreen() {
   const canBuyPro = rcConfigured && tier === 'free';
   const canSubscribeProPlus = rcConfigured && (tier === 'free' || tier === 'pro');
 
-  // Display prices returned by Play (falls back to i18n copy).
-  const priceOr = (pkg: PurchasesPackage | undefined, fallback: string) =>
+  // Display prices — we always show the business-defined fallback price in
+  // the hero / card labels because the Play Store price can diverge due to
+  // currency conversion and may confuse users (B2 fix). The real transaction
+  // price is shown by Google Play at the checkout screen anyway.
+  //
+  // Keep a `_rawPrice` helper around in case we ever want to surface the Play
+  // price as a secondary line.
+  const priceOr = (_pkg: PurchasesPackage | undefined, fallback: string) => fallback;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _rawPrice = (pkg: PurchasesPackage | undefined, fallback: string) =>
     pkg?.product?.priceString || fallback;
 
-  // Estimated per-month equivalent for the annual plan (business copy — computed
-  // from the localized Play price if we can parse it; falls back to "1,67 €/mese").
-  const perMonthFromAnnual = (annual: PurchasesPackage | undefined): string | null => {
-    const num = annual?.product?.price;
-    const cur = annual?.product?.currencyCode || 'EUR';
-    if (typeof num === 'number' && num > 0) {
-      const per = num / 12;
-      try {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(per) + ' / mese';
-      } catch {
-        return `${per.toFixed(2)} ${cur} / mese`;
-      }
-    }
-    return t('plans.proPlus.annualEquivalent'); // "≈ 1,67 € / mese"
+  // Estimated per-month equivalent for the annual plan — business copy only
+  // (we no longer compute from Play price to avoid locale/currency surprises;
+  // 20€/anno ÷ 12 ≈ 1,67€/mese).
+  const perMonthFromAnnual = (_annual: PurchasesPackage | undefined): string | null => {
+    return t('plans.proPlus.annualEquivalent');
   };
 
   return (
@@ -410,6 +409,7 @@ export default function PlansScreen() {
 
         <Text style={styles.footer}>{t('plans.footer')}</Text>
         <Text style={styles.footerSmall}>{t('plans.subFooter')}</Text>
+        <Text style={styles.footerSmall}>{t('plans.priceDisclaimer')}</Text>
       </ScrollView>
     </SafeAreaView>
   );
