@@ -2,14 +2,17 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { useState } from 'react';
 import { theme } from '@/src/theme';
 import { settingsStyles as s } from '@/src/settingsStyles';
-import { resetAllTutorial } from '@/src/tutorial';
+import { resetAllTutorial, resetTipsOnly } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 
 export default function TutorialSettings() {
   const router = useRouter();
   const { t } = useTranslation();
+  const [resetDone, setResetDone] = useState(false);
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="settings-tutorial">
@@ -25,7 +28,11 @@ export default function TutorialSettings() {
         <Text style={s.sectionSub}>{t('tutSet.intro')}</Text>
 
         <Pressable
-          onPress={async () => { await resetAllTutorial(); router.push('/tutorial'); }}
+          onPress={async () => {
+            try { Haptics.selectionAsync(); } catch {}
+            await resetAllTutorial();
+            router.push('/tutorial');
+          }}
           style={s.actionRow}
           testID="btn-review-tutorial"
         >
@@ -40,7 +47,11 @@ export default function TutorialSettings() {
         </Pressable>
 
         <Pressable
-          onPress={async () => { await resetAllTutorial(); router.back(); }}
+          onPress={async () => {
+            try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+            await resetTipsOnly();
+            setResetDone(true);
+          }}
           style={s.actionRow}
           testID="btn-reset-tips"
         >
@@ -53,6 +64,23 @@ export default function TutorialSettings() {
           </View>
           <Feather name="chevron-right" size={20} color={theme.color.onSurfaceTertiary} />
         </Pressable>
+
+        {resetDone && (
+          <View
+            style={{
+              marginTop: theme.spacing.lg, padding: theme.spacing.md,
+              borderRadius: theme.radius.md, backgroundColor: theme.color.brandTertiary,
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              borderWidth: 1, borderColor: theme.color.brandSecondary,
+            }}
+            testID="reset-tips-feedback"
+          >
+            <Feather name="check-circle" size={16} color={theme.color.success} />
+            <Text style={{ flex: 1, color: theme.color.onSurface, fontSize: 13 }}>
+              {t('tutSet.resetDone')}
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

@@ -13,6 +13,8 @@ import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
 import { PhotoPicker, PhotoLightboxThumb } from '@/src/PhotoPicker';
 import { IngredientEditorModal, type IngredientDraft } from '@/src/IngredientEditorForm';
+import { TipBanner } from '@/src/TipBanner';
+import { TutorialKeys } from '@/src/tutorial';
 
 type Ing = IngredientDraft;
 
@@ -167,6 +169,14 @@ export default function DishEditor({ id, initialCourse }: Props) {
           <View style={{ alignItems: 'center', marginBottom: theme.spacing.sm }}>
             <PhotoPicker value={photoPath} onChange={setPhotoPath} size={120} testID="dish-photo" />
           </View>
+
+          <TipBanner
+            storageKey={TutorialKeys.tipDishEditor}
+            icon="edit-3"
+            title={t('dish.tip.title')}
+            body={t('dish.tip.body')}
+            testID="tip-dish-editor"
+          />
 
           <Text style={styles.label}>{t('piatti.field.name')}</Text>
           <TextInput

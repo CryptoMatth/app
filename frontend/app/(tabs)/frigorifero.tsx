@@ -13,6 +13,8 @@ import { useTranslation } from '@/src/i18n';
 import { PhotoThumb } from '@/src/PhotoPicker';
 import { useHasTier, ProUpsellModal } from '@/src/ProGate';
 import { ConfirmSheet } from '@/src/ConfirmSheet';
+import { TipBanner } from '@/src/TipBanner';
+import { TutorialKeys } from '@/src/tutorial';
 import type { ExpiryEntry } from '@/src/auth';
 
 type FridgeItem = {
@@ -298,11 +300,20 @@ export default function Frigorifero() {
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.color.brandPrimary} /></View>
       ) : items.length === 0 ? (
-        <View style={styles.center}>
-          <Feather name="package" size={44} color={theme.color.borderStrong} />
-          <Text style={styles.emptyH}>{t('fridge.empty.title')}</Text>
-          <Text style={styles.emptyP}>{t('fridge.empty.sub')}</Text>
-        </View>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, paddingBottom: 100 + Math.max(insets.bottom, 0) }}>
+          <TipBanner
+            storageKey={TutorialKeys.tipDispensa}
+            icon="bell"
+            title={t('fridge.tip.title')}
+            body={t('fridge.tip.body')}
+            testID="tip-fridge-empty"
+          />
+          <View style={styles.centerInner}>
+            <Feather name="package" size={44} color={theme.color.borderStrong} />
+            <Text style={styles.emptyH}>{t('fridge.empty.title')}</Text>
+            <Text style={styles.emptyP}>{t('fridge.empty.sub')}</Text>
+          </View>
+        </ScrollView>
       ) : groups.length === 0 ? (
         <View style={styles.center}>
           <Feather name="search" size={44} color={theme.color.borderStrong} />
@@ -317,6 +328,15 @@ export default function Frigorifero() {
             paddingBottom: 100 + Math.max(insets.bottom, 0),
           }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.brandPrimary} />}
+          ListHeaderComponent={
+            <TipBanner
+              storageKey={TutorialKeys.tipDispensa}
+              icon="bell"
+              title={t('fridge.tip.title')}
+              body={t('fridge.tip.body')}
+              testID="tip-fridge"
+            />
+          }
           renderItem={({ item: group }) => (
             <View style={{ marginBottom: theme.spacing.md }}>
               <Text style={[
@@ -392,6 +412,7 @@ const styles = StyleSheet.create({
   },
   badgeBellTxt: { color: '#fff', fontSize: 9, fontWeight: '700' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  centerInner: { alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, paddingTop: theme.spacing.xxxl },
   emptyH: { fontFamily: theme.font.display, fontSize: 18, color: theme.color.onSurface, marginTop: theme.spacing.md, textAlign: 'center' },
   emptyP: { fontSize: 13, color: theme.color.onSurfaceSecondary, marginTop: 6, textAlign: 'center', maxWidth: 280 },
   groupLabel: { fontSize: 11, fontWeight: '700', color: theme.color.onSurfaceTertiary, letterSpacing: 0.6 },

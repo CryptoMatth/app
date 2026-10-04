@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Feather from '@react-native-vector-icons/feather';
 import * as Haptics from 'expo-haptics';
 import { theme } from '@/src/theme';
-import { hasSeenTip, markTipSeen } from '@/src/tutorial';
+import { hasSeenTip, markTipSeen, subscribeTipsVersion } from '@/src/tutorial';
 
 type Props = {
   storageKey: string;
@@ -16,9 +16,18 @@ type Props = {
 /**
  * Small dismissible informative banner. Shown once per user per key
  * (stored in AsyncStorage). Non-blocking and non-intrusive.
+ *
+ * Subscribes to the shared "tips version" counter so a global
+ * `resetAllTutorial()` call re-materialises the banner without
+ * requiring an app restart.
  */
 export function TipBanner({ storageKey, icon = 'info', title, body, testID }: Props) {
   const [visible, setVisible] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  // Re-read whenever the global tips version bumps (e.g. user hits
+  // "Mostra di nuovo i suggerimenti" in Settings).
+  useEffect(() => subscribeTipsVersion(() => setReloadToken(t => t + 1)), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,12 +36,12 @@ export function TipBanner({ storageKey, icon = 'info', title, body, testID }: Pr
       if (!cancelled) setVisible(!seen);
     })();
     return () => { cancelled = true; };
-  }, [storageKey]);
+  }, [storageKey, reloadToken]);
 
   if (!visible) return null;
 
   const dismiss = async () => {
-    Haptics.selectionAsync();
+    try { Haptics.selectionAsync(); } catch {}
     await markTipSeen(storageKey);
     setVisible(false);
   };
@@ -60,7 +69,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     padding: theme.spacing.md,
     marginBottom: theme.spacing.md,
-    borderWidth: 1, borderColor: '#DDCFB4',
+    borderWidth: 1, borderColor: '#B9DBE2',
   },
   iconWrap: {
     width: 28, height: 28, borderRadius: 14,
