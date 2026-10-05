@@ -21,7 +21,7 @@
         "backgroundColor": "#1D8EA2"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 153,
+      "versionCode": 154,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
@@ -73,5 +73,9 @@
     "experiments": {
       "typedRoutes": true
     }
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-3617902293688046~3853619052",
+    "ios_app_id": "ca-app-pub-3617902293688046~3853619052"
   }
 }

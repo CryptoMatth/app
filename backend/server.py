@@ -2231,12 +2231,9 @@ async def startup():
     except Exception as e:
         logger.warning(f"Object storage init deferred: {e}")
 
-    # Cleanup: drop any legacy `backups` collection (Ultra feature removed)
-    try:
-        if "backups" in await db.list_collection_names():
-            await db.backups.drop()
-    except Exception:
-        pass
+    # NOTE: legacy `backups` collection cleanup used to run here but was removed
+    # because automatic DB drops on startup are not deployment-safe. If any
+    # stale `backups` collection remains in production, retire it manually.
 
     # Cleanup: reset any lingering "ultra" entitlement to pro_plus.
     try:
@@ -2267,7 +2264,11 @@ async def startup():
         logger.warning(f"expired subscription revoke skipped: {e}")
 
     # Seed / refresh dev accounts so testing agents always have them.
-    await _seed_dev_users()
+    # Gated behind SEED_DEV_USERS=true (set only in local/dev containers).
+    # Deployed / production environments must leave this unset so no
+    # predictable test credential is created in the database.
+    if os.environ.get("SEED_DEV_USERS", "").strip().lower() in {"1", "true", "yes"}:
+        await _seed_dev_users()
 
 
 async def _revoke_expired_subscriptions() -> int:
