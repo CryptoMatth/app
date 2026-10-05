@@ -21,7 +21,7 @@
         "backgroundColor": "#1D8EA2"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 152,
+      "versionCode": 153,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "READ_MEDIA_IMAGES",
@@ -61,7 +61,14 @@
       "expo-status-bar",
       "expo-web-browser",
       "@react-native-vector-icons/feather",
-      "expo-localization"
+      "expo-localization",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3617902293688046~3853619052",
+          "iosAppId": "ca-app-pub-3617902293688046~3853619052"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

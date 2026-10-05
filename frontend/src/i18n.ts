@@ -84,6 +84,8 @@ const IT: Dict = {
   'pro.feat.freezer.b': 'Preavviso 24h per pasti che usano surgelati.',
   'pro.feat.fridge.t': 'Dispensa completa',
   'pro.feat.fridge.b': 'Traccia gli ingredienti a casa con date di scadenza multiple.',
+  'pro.feat.noads.t': 'Nessuna pubblicità',
+  'pro.feat.noads.b': 'Usa Planibble senza interruzioni pubblicitarie.',
   'pro.cta': 'Passa a Pro',
   'pro.later': 'Forse più tardi',
   'pro.lockedFeature': 'Funzionalità a pagamento',
@@ -400,7 +402,7 @@ const IT: Dict = {
   'settings.pro.tierProPlus': 'Sei un utente Pro+ ✨',
   'settings.pro.tierProPlus.sub': 'Tutte le funzionalità sbloccate: categorie, dispensa, scadenze e alert surgelati.',
   'settings.pro.freeTitle': 'Versione Free',
-  'settings.pro.freeSub': 'Passa a Pro per Foto e simboli. Con Pro+ sblocchi anche categorie, Dispensa e notifiche scadenza.',
+  'settings.pro.freeSub': 'Passa a Pro per Foto e simboli. Con Pro+ sblocchi anche categorie, Dispensa, notifiche scadenza e rimuovi le pubblicità.',
 
   // ---- Account subpage ----
   'account.header': 'Account',
@@ -728,6 +730,8 @@ const EN: Dict = {
   'pro.feat.freezer.b': '24h heads-up for meals that use frozen items.',
   'pro.feat.fridge.t': 'Full Pantry tracker',
   'pro.feat.fridge.b': 'Track items at home with multiple expiration dates.',
+  'pro.feat.noads.t': 'Ad-free experience',
+  'pro.feat.noads.b': 'Use Planibble without any ad interruptions.',
   'pro.cta': 'Upgrade to Pro',
   'pro.later': 'Maybe later',
   'pro.lockedFeature': 'Paid feature',
@@ -1040,7 +1044,7 @@ const EN: Dict = {
   'settings.pro.tierProPlus': 'You\'re a Pro+ user ✨',
   'settings.pro.tierProPlus.sub': 'Everything unlocked: categories, pantry, expiry and freezer alerts.',
   'settings.pro.freeTitle': 'Free version',
-  'settings.pro.freeSub': 'Upgrade to Pro for Photos & symbols. Pro+ also unlocks categories, Pantry and expiry alerts.',
+  'settings.pro.freeSub': 'Upgrade to Pro for Photos & symbols. Pro+ also unlocks categories, Pantry, expiry alerts and removes ads.',
 
   'account.header': 'Account',
   'account.badge': 'Planibble user',

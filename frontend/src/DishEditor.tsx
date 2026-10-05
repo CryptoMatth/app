@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Keyboard, Modal, ScrollView,
 } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,7 @@ import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
 import { PhotoPicker, PhotoLightboxThumb } from '@/src/PhotoPicker';
 import { IngredientEditorModal, type IngredientDraft } from '@/src/IngredientEditorForm';
+import { maybeShowInterstitialOnSave } from '@/src/admobInterstitial';
 
 type Ing = IngredientDraft;
 
@@ -24,7 +25,8 @@ type Props = {
 export default function DishEditor({ id, initialCourse }: Props) {
   const router = useRouter();
   const params = useLocalSearchParams<{ course?: string; id?: string }>();
-  const { prefs } = useAuth();
+  const { prefs, user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { t, tCourse, tCat } = useTranslation();
   const courses = prefs.courses;
   const ingCats = prefs.ingredient_categories;
@@ -102,6 +104,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
       if (dishId && dishId !== 'new') await api.updateDish(dishId, body);
       else await api.createDish(body);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void maybeShowInterstitialOnSave(user?.tier === 'pro_plus');
       router.back();
     } catch (e: any) {
       setErr(e.message || t('piatti.errors.save'));
@@ -270,7 +273,7 @@ export default function DishEditor({ id, initialCourse }: Props) {
         </KeyboardAwareScrollView>
 
         <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-          <View style={styles.saveWrap}>
+          <View style={[styles.saveWrap, { paddingBottom: Math.max(theme.spacing.lg, insets.bottom + theme.spacing.sm) }]}>
             <Pressable onPress={save} disabled={busy} style={styles.saveBtn} testID="dish-save">
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>{t('piatti.saveDish')}</Text>}
             </Pressable>

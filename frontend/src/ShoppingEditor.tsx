@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { api } from '@/src/api';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/auth';
 import { useTranslation } from '@/src/i18n';
 import { IngredientEditorForm, type IngredientDraft } from '@/src/IngredientEditorForm';
+import { maybeShowInterstitialOnSave } from '@/src/admobInterstitial';
 
 type Props = { id?: string };
 
@@ -20,6 +22,8 @@ export default function ShoppingEditor({ id }: Props) {
   const itemId = id || (params.id as string | undefined);
   const isNew = !itemId || itemId === 'new';
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [draft, setDraft] = useState<IngredientDraft>({ name: '', quantity: '', unit: 'g', category_id: 'altro', notes: '', photo_path: null });
   const [plannerQty, setPlannerQty] = useState(0);
@@ -75,6 +79,7 @@ export default function ShoppingEditor({ id }: Props) {
         });
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void maybeShowInterstitialOnSave(user?.tier === 'pro_plus');
       router.back();
     } catch (e: any) {
       setErr(e.message || t('spesa.errors.save'));
@@ -114,7 +119,7 @@ export default function ShoppingEditor({ id }: Props) {
       </KeyboardAwareScrollView>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View style={styles.saveWrap}>
+        <View style={[styles.saveWrap, { paddingBottom: Math.max(theme.spacing.lg, insets.bottom + theme.spacing.sm) }]}>
           <Pressable onPress={save} disabled={busy} style={styles.saveBtn} testID="shop-save">
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveTxt}>{isNew ? t('spesa.add') : t('spesa.saveChanges')}</Text>}
           </Pressable>

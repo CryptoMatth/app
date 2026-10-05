@@ -264,6 +264,7 @@ export default function PlansScreen() {
             { icon: 'clock', label: t('pro.feat.expiry.t') },
             { icon: 'cloud-snow', label: t('pro.feat.freezer.t') },
             { icon: 'package', label: t('pro.feat.fridge.t') },
+            { icon: 'shield-off', label: t('pro.feat.noads.t') },
           ].map((f, i) => (
             <View key={i} style={styles.row}>
               <View style={[styles.rowIcon, { backgroundColor: `${theme.color.brandSecondary}22` }]}>

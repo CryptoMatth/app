@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, FlatList, Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@react-native-vector-icons/feather';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -11,6 +11,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { orderedDayLabels } from '@/src/week';
 import { useTranslation } from '@/src/i18n';
+import { maybeShowInterstitialOnSave } from '@/src/admobInterstitial';
 
 type Dish = { id: string; name: string; course: string; ingredients: any[] };
 type Item = { dish_id: string; dish_name: string; course: string; persons: number };
@@ -18,6 +19,8 @@ type Item = { dish_id: string; dish_name: string; course: string; persons: numbe
 export default function PlannerSlot() {
   const router = useRouter();
   const { prefs } = useAuth();
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const { t, lang, tCourse } = useTranslation();
   const courses = prefs.courses;
   const {
@@ -120,6 +123,8 @@ export default function PlannerSlot() {
         sync_shopping: syncShopping,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Pro+ users skip ads. All others count toward the 5-save interstitial.
+      void maybeShowInterstitialOnSave(user?.tier === 'pro_plus');
       router.back();
     } catch {}
     setSaving(false);
@@ -277,7 +282,7 @@ export default function PlannerSlot() {
         />
       )}
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(theme.spacing.lg, insets.bottom + theme.spacing.sm) }]}>
         {hasItems ? (
           <Pressable onPress={() => setItems([])} style={styles.clearBtn} testID="slot-clear">
             <Feather name="trash-2" size={16} color={theme.color.error} />

@@ -10,6 +10,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
 import { RevenueCatBridge } from "@/src/RevenueCatBridge";
+import { initializeAdMob } from "@/src/admobInterstitial";
 
 
 LogBox.ignoreAllLogs(true)
@@ -28,6 +29,11 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
+
+  // Fire-and-forget AdMob init on cold start. No-op in Expo Go / web.
+  useEffect(() => {
+    void initializeAdMob();
+  }, []);
 
   if (!loaded && !error) return null;
 
