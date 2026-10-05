@@ -186,11 +186,11 @@ export default function Spesa() {
           <View style={styles.headerRight}>
             <View style={styles.legend}>
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />
+                <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />
                 <Text style={styles.legendTxt}>{t('spesa.legend.planner')}</Text>
               </View>
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />
+                <View style={[styles.dot, { backgroundColor: theme.color.warning }]} />
                 <Text style={styles.legendTxt}>{t('spesa.legend.manual')}</Text>
               </View>
             </View>
@@ -276,8 +276,8 @@ export default function Spesa() {
                   <PhotoThumb path={item.photo_path} size={36} rounded fallbackEmoji={catById[item.category_id || 'altro']?.icon || '🛒'} fallbackIcon="shopping-bag" />
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <View style={styles.rowTitleWrap}>
-                      {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brandSecondary }]} />}
-                      {item.manual_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />}
+                      {item.planner_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.brand }]} />}
+                      {item.manual_qty > 0 && <View style={[styles.dot, { backgroundColor: theme.color.warning }]} />}
                       <Text style={[styles.itemName, item.checked && styles.strike]}>{item.name}</Text>
                     </View>
                     <Text style={styles.itemQty}>
