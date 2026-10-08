@@ -21,7 +21,7 @@
         "backgroundColor": "#1D8EA2"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 159,
+      "versionCode": 160,
       "permissions": [
         "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
@@ -67,6 +67,7 @@
       "expo-web-browser",
       "@react-native-vector-icons/feather",
       "expo-localization",
+      "./plugins/withRemoveMediaPermissions.js",
       [
         "react-native-google-mobile-ads",
         {
