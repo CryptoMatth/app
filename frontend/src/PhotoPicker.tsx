@@ -81,32 +81,25 @@ export function PhotoPicker({ value, onChange, size = 96, rounded, testID }: Pro
 
   const pickFromLibrary = useCallback(async () => {
     if (!isPro) { setUpsellOpen(true); return; }
-    const { status, canAskAgain } = await ImagePicker.getMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (req.status !== 'granted') {
-        if (!canAskAgain) {
-          Alert.alert(
-            t('photo.permTitle'),
-            t('photo.permBody'),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              { text: t('photo.openSettings'), onPress: () => Linking.openSettings() },
-            ],
-          );
-        }
-        return;
-      }
+    // Google Play policy (Android 13+ / API 33+): we must NOT request
+    // READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE because the system Photo
+    // Picker satisfies the use-case without any broad storage permission.
+    // expo-image-picker auto-routes to the Android Photo Picker when the
+    // app has no media permission, so we just launch directly.
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'] as any,
+        quality: 0.7,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+      if (result.canceled || !result.assets?.length) return;
+      await uploadAsset(result.assets[0]);
+    } catch (e: any) {
+      // On very old Android (< 13) the picker may fail without permission.
+      // Soft-fail with a user-friendly message rather than crashing.
+      Alert.alert(t('common.error'), e?.message || 'Picker unavailable');
     }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'] as any,
-      quality: 0.7,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
-    if (result.canceled || !result.assets?.length) return;
-    await uploadAsset(result.assets[0]);
   }, [isPro, t, uploadAsset]);
 
   // M6 — lazy camera permission: ask only when the user explicitly taps
