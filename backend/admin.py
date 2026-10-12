@@ -134,17 +134,43 @@ def create_admin_router(db) -> APIRouter:
         sessions = await db.user_sessions.count_documents({"user_id": user_id})
         return {"dishes": dishes, "weekly_plans": plans, "shopping_items": shopping, "fridge_items": fridge, "active_sessions": sessions}
 
+    # Fields allowed for client-driven sorting via `?sort_by=...`.
+    # Keep this a strict allow-list to avoid exposing arbitrary document
+    # fields (or indexes) to admin tooling callers.
+    _SORTABLE_USER_FIELDS = {"created_at", "username", "registered_at", "last_login_at"}
+
     @router.get("/users")
     async def list_users(
         username: Optional[str] = Query(None, description="Case-insensitive username substring filter"),
         tier: Optional[str] = Query(None, description="Filter by exact tier: free|pro|pro_plus"),
+        sort_by: str = Query(
+            "created_at",
+            description=f"Field to sort by. Allowed: {sorted(_SORTABLE_USER_FIELDS)}",
+        ),
+        order: str = Query("desc", description="Sort direction: 'asc' or 'desc'"),
         _: None = Depends(require_admin),
     ) -> List[Dict[str, Any]]:
+        # Validate sort inputs against an allow-list — any unknown field is
+        # a client bug and should be refused instead of silently ignored.
+        if sort_by not in _SORTABLE_USER_FIELDS:
+            raise HTTPException(
+                400,
+                f"Invalid sort_by '{sort_by}'. Allowed: {sorted(_SORTABLE_USER_FIELDS)}",
+            )
+        order_normalized = order.strip().lower()
+        if order_normalized not in {"asc", "desc"}:
+            raise HTTPException(400, "Invalid order. Use 'asc' or 'desc'.")
+        direction = 1 if order_normalized == "asc" else -1
+
         # Base Mongo filter — username substring is applied with a regex.
         q: Dict[str, Any] = {}
         if username:
             q["username"] = {"$regex": username.strip(), "$options": "i"}
-        rows = await db.users.find(q, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(2000)
+        rows = (
+            await db.users.find(q, {"_id": 0, "password_hash": 0})
+            .sort(sort_by, direction)
+            .to_list(2000)
+        )
         out: List[Dict[str, Any]] = []
         for u in rows:
             base = _clean_user(u)

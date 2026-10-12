@@ -21,7 +21,7 @@
         "backgroundColor": "#1D8EA2"
       },
       "package": "com.emergent.mealprepmaster.op32ei",
-      "versionCode": 160,
+      "versionCode": 161,
       "permissions": [
         "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
@@ -73,6 +73,16 @@
         {
           "androidAppId": "ca-app-pub-3617902293688046~3853619052",
           "iosAppId": "ca-app-pub-3617902293688046~3853619052"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# ===== Planibble ProGuard/R8 keep rules =====\n# Keep AdMob public API — reflection + GMS internals require these classes intact.\n-keep public class com.google.android.gms.ads.** { public *; }\n-keep public class com.google.ads.** { public *; }\n-dontwarn com.google.android.gms.ads.**\n\n# Keep RevenueCat public API — purchases SDK uses reflection for events + mappers.\n-keep class com.revenuecat.purchases.** { *; }\n-keep interface com.revenuecat.purchases.** { *; }\n-dontwarn com.revenuecat.purchases.**\n\n# Keep Expo modules — bridge resolution happens by class name.\n-keep class expo.modules.** { *; }\n-keep class expo.** { *; }\n-dontwarn expo.modules.**\n\n# Keep classes referenced by notification channels and boot receiver.\n-keep class * extends android.content.BroadcastReceiver\n-keep class * extends android.app.Service"
+          }
         }
       ]
     ],
