@@ -332,3 +332,8 @@ Custom generato con PIL: terracotta bg, piatto crema con "PE" serif, forchetta s
 ### app.json
 - `versionCode` 133 → **147** (incrementato ad ogni iterazione per Play Store).
 - `name` = "Planibble", `scheme` = "planibble", `adaptiveIcon.backgroundColor` = `#1D8EA2`.
+
+## v2.1.0 (versionCode 170) — Notifications overhaul + Play Console
+- Backend: freezer_enabled default False; symmetric backfill of expiry/freezer toggles (read + PUT).
+- Frontend: Pro+ gating (was is_pro), planner/dish/import mutations bump reschedule, frozen category detected by id/label/❄️, notifications sorted by imminence and capped at 60 (iOS 64 limit), cancel on logout/downgrade, pref screens patch only own keys, prefsRef for latest prefs.
+- Play Console: orientation default, StatusBar without backgroundColor, plugin withR8Optimize.js (proguard-android-optimize + optimizedResourceShrinking).

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import * as Localization from 'expo-localization';
 import { api, clearToken, setToken, getToken } from './api';
+import { cancelAllScheduled } from './notifications';
 
 export type Course = { id: string; label: string; icon?: string | null };
 export type IngredientCategory = { id: string; label: string; icon?: string | null; color?: string | null };
@@ -135,6 +136,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
   const logout = async () => {
     try { await api.logout(); } catch {}
+    // Drop the previous account's scheduled alerts so they never leak into
+    // the next account logged in on this device.
+    await cancelAllScheduled();
     await clearToken();
     setTokenState(null);
     setUser(null);

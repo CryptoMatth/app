@@ -8,7 +8,8 @@ import { theme } from '@/src/theme';
 import { hasSeenOnboarding } from '@/src/tutorial';
 import { useTranslation } from '@/src/i18n';
 import { api } from '@/src/api';
-import { reschedule, readNotifPrefs, type PlannedMeal, type FridgeLite } from '@/src/notifications';
+import { reschedule, readNotifPrefs, cancelAllScheduled, type PlannedMeal, type FridgeLite } from '@/src/notifications';
+import { useHasTier } from '@/src/ProGate';
 import { parseIso, addDays } from '@/src/week';
 import { useNotificationBumpValue, bumpNotifications } from '@/src/notificationsBus';
 
@@ -19,6 +20,8 @@ export default function TabsLayout() {
   const [checked, setChecked] = useState(false);
   const bump = useNotificationBumpValue();
   const insets = useSafeAreaInsets();
+  // Local notifications are a Pro+ feature (not plain Pro).
+  const isProPlus = useHasTier('pro_plus');
 
   // Serialize reschedules: if a new request comes in while one is running,
   // set a "dirty" flag; when the running one finishes it will run again with
@@ -27,6 +30,9 @@ export default function TabsLayout() {
   const runningRef = useRef(false);
   const dirtyRef = useRef(false);
   const lastFingerprintRef = useRef<string>('');
+  // Always read the LATEST prefs inside the async loop (not the closure's).
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
 
   // Fingerprint only the fields that actually influence scheduling. Wrapping
   // the whole `prefs` in the useEffect deps re-fires on ANY unrelated pref
@@ -84,10 +90,17 @@ export default function TabsLayout() {
   // in while another is running, we mark dirty; the running one will loop
   // and re-run with the *latest* data. This guarantees no rescheduling is
   // dropped due to overlap.
+  // Plan downgrade / account switch to a non-Pro+ user: clear leftovers.
   useEffect(() => {
-    if (loading || !user || !user.is_pro) return;
+    if (loading || !user || isProPlus) return;
+    lastFingerprintRef.current = '';
+    cancelAllScheduled();
+  }, [loading, user, isProPlus]);
+
+  useEffect(() => {
+    if (loading || !user || !isProPlus) return;
     // Skip if nothing observable changed since the last successful run.
-    const fingerprint = `${notifFingerprint}|${bump}`;
+    const fingerprint = `${user.user_id}|${notifFingerprint}|${bump}`;
     if (fingerprint === lastFingerprintRef.current && !dirtyRef.current) return;
     lastFingerprintRef.current = fingerprint;
 
@@ -102,7 +115,7 @@ export default function TabsLayout() {
       try {
         do {
           dirtyRef.current = false;
-          const np = readNotifPrefs(prefs);
+          const np = readNotifPrefs(prefsRef.current);
           const [fridge, weeks, dishes] = await Promise.all([
             api.listFridge().catch(() => []),
             api.listPlannerWeeks().catch(() => []),
@@ -138,7 +151,7 @@ export default function TabsLayout() {
               }
             } catch {}
           }
-          await reschedule(fridge as FridgeLite[], plans, np);
+          await reschedule(fridge as FridgeLite[], plans, np, (prefsRef.current as any)?.ingredient_categories);
           // Loop if a new request came in during this iteration.
         } while (dirtyRef.current);
       } catch (err) {
@@ -150,7 +163,7 @@ export default function TabsLayout() {
     // Intentionally not returning a cleanup that cancels the loop — we want
     // it to finish and settle. If prefs change mid-run, the dirty flag will
     // trigger another iteration with the newest data.
-  }, [loading, user, prefs, notifFingerprint, bump]);
+  }, [loading, user, isProPlus, prefs, notifFingerprint, bump]);
 
   if (loading || !user) return null;
 

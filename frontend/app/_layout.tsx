@@ -44,7 +44,7 @@ export default function RootLayout() {
           <AuthProvider>
             <RevenueCatBridge />
             {/* Dark icons on the cream background so orario/batteria/wifi are readable. */}
-            <StatusBar style="dark" translucent backgroundColor="transparent" />
+            <StatusBar style="dark" />
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
           </AuthProvider>
         </SafeAreaProvider>

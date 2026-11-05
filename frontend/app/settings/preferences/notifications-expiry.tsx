@@ -67,17 +67,20 @@ export default function NotificationsExpiryPreference() {
     <PrefsScreenShell
       title={t('notif.expiry.h')}
       dirty={dirty && isProPlus}
-      onSave={() => updatePreferences({
-        notifications: {
-          ...notif,
-          // Persist BOTH toggles explicitly so subsequent reads don't fall
-          // back to the legacy `enabled` field. This decouples expiry and
-          // freezer definitively.
-          expiry_enabled: isExpiryOn(notif),
-          freezer_enabled: !!notif.freezer_enabled,
-          enabled: isExpiryOn(notif) || !!notif.freezer_enabled,
-        },
-      })}
+      onSave={async () => {
+        // Patch ONLY the expiry keys (+ legacy master) so this screen can
+        // never overwrite the freezer settings saved from the other screen.
+        const freezerOn = readNotifPrefs(prefs).freezer_enabled;
+        await updatePreferences({
+          notifications: {
+            expiry_enabled: isExpiryOn(notif),
+            days_ahead: notif.days_ahead,
+            expiry_days_ahead: notif.expiry_days_ahead,
+            notify_hour: notif.notify_hour,
+            enabled: isExpiryOn(notif) || freezerOn,
+          } as NotificationPrefs,
+        });
+      }}
       testID="prefs-notif-expiry"
     >
       <View style={s.section}>

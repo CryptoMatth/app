@@ -170,7 +170,8 @@ def _default_prefs() -> Dict[str, Any]:
             "expiry_days_ahead": 1,          # legacy fallback
             "days_ahead": [1],                # new multi-day preavviso
             "notify_hour": 9,
-            "freezer_enabled": True,
+            "expiry_enabled": False,
+            "freezer_enabled": False,
             "freezer_hours": 24,
         },
         "defaults": {
@@ -453,7 +454,7 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     if not prefs.get("ingredient_categories"):
         prefs["ingredient_categories"] = [dict(c) for c in DEFAULT_INGREDIENT_CATEGORIES]
     if not prefs.get("notifications"):
-        prefs["notifications"] = {"enabled": False, "expiry_days_ahead": 1, "days_ahead": [1], "notify_hour": 9, "freezer_enabled": True, "freezer_hours": 24}
+        prefs["notifications"] = {"enabled": False, "expiry_enabled": False, "expiry_days_ahead": 1, "days_ahead": [1], "notify_hour": 9, "freezer_enabled": False, "freezer_hours": 24}
     else:
         n = prefs["notifications"]
         n.setdefault("expiry_days_ahead", 1)
@@ -461,7 +462,15 @@ async def _user_public(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         if "days_ahead" not in n or n["days_ahead"] is None:
             n["days_ahead"] = [int(n.get("expiry_days_ahead", 1))]
         n.setdefault("notify_hour", 9)
-        n.setdefault("freezer_enabled", True)
+        # Symmetric backfill of the two independent toggles: a legacy record
+        # (only the master `enabled`) migrates BOTH from `enabled`; a record
+        # already on the new schema gets any missing toggle as False. This
+        # avoids the old asymmetric default (freezer=True, expiry missing)
+        # which flipped the client into "new schema" and silently zeroed expiry.
+        has_new = isinstance(n.get("expiry_enabled"), bool) or isinstance(n.get("freezer_enabled"), bool)
+        legacy_on = bool(n.get("enabled")) if not has_new else False
+        n.setdefault("expiry_enabled", legacy_on)
+        n.setdefault("freezer_enabled", legacy_on)
         n.setdefault("freezer_hours", 24)
     if not prefs.get("defaults"):
         prefs["defaults"] = {"default_qty": 1.0, "default_unit": "pz", "default_servings": 2}
@@ -851,6 +860,12 @@ async def update_preferences(body: PreferencesBody, current_user=Depends(get_cur
         prefs["ingredient_categories"] = cleaned_ic
     if body.notifications is not None:
         cur = prefs.get("notifications") or {}
+        # Materialise both toggles from the legacy master BEFORE patching, so a
+        # partial save from one screen can't zero the other on legacy docs.
+        if not (isinstance(cur.get("expiry_enabled"), bool) or isinstance(cur.get("freezer_enabled"), bool)):
+            legacy_on = bool(cur.get("enabled"))
+            cur["expiry_enabled"] = legacy_on
+            cur["freezer_enabled"] = legacy_on
         n = body.notifications
         if n.enabled is not None: cur["enabled"] = bool(n.enabled)
         if n.expiry_enabled is not None: cur["expiry_enabled"] = bool(n.expiry_enabled)

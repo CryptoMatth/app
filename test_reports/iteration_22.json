@@ -1,0 +1,44 @@
+{
+  "summary": "Ho testato le preferenze notifiche (backend + UI) e fatto uno smoke test delle tab e del salvataggio degli slot del planner. Backend: 8 test su 10 passati. I default per i nuovi utenti (expiry=false, freezer=false) e il backfill simmetrico in lettura funzionano. Il patch parziale funziona sul nuovo schema. C'è però un bug: per i documenti legacy (solo `enabled:true`), salvare una delle due schermate azzera l'altro toggle. Frontend: halley (Pro+ founder) ha attivato e salvato expiry (ora 18) e freezer (48h, poi spento). Ho riaperto entrambe le schermate: gli stati sono persistiti e un salvataggio non resetta l'altro. Tutte e 4 le tab si caricano. Il salvataggio slot del planner con sync della spesa funziona (utente TEST_). In code review ho trovato una closure stale di `prefs` nel loop di reschedule in (tabs)/_layout.tsx. Pacchetti deprecati: nessuno (non c'è expo-av, expo-barcode-scanner o expo-background-fetch). app.json conferma version 2.1.0 / versionCode 170.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/auth/preferences", "issue": "Patch parziale su un documento legacy, cioè notifications={enabled:true} senza expiry_enabled/freezer_enabled. update_preferences parte da current_user['preferences'] grezzo dal DB, senza backfill. Il payload della schermata freezer {freezer_enabled:false, freezer_hours, enabled:true} salva quindi un documento con il solo freezer_enabled. Alla lettura successiva has_new=True e expiry_enabled viene impostato a False: l'utente perde gli avvisi di scadenza senza accorgersene. Succede lo stesso in senso inverso salvando dalla schermata expiry: freezer diventa False. L'ho riprodotto con test_iteration22::test_legacy_user_freezer_save_preserves_expiry / test_legacy_user_expiry_save_preserves_freezer. Impatto attuale: nel DB ci sono 0 utenti solo-legacy, quindi è latente, ma resta un buco nella migrazione. Fix suggerito, in server.py vicino alla riga 862: prima di applicare il patch, se il documento non ha né expiry_enabled né freezer_enabled, impostare cur.setdefault('expiry_enabled', bool(cur.get('enabled'))) e cur.setdefault('freezer_enabled', bool(cur.get('enabled'))). In alternativa, il client può inviare sempre entrambi i toggle."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "notifications-freezer master card", "issue": "Il sottotitolo statico 'Ti ricordiamo di scongelare 24 ore prima del pasto.' resta invariato anche con freezer_hours=48. Inoltre il titolo 'Notifiche surgelati attive' compare anche quando il toggle è spento. Riferimento: src/i18n notif.freezer.enableSub", "testID": "notif-freezer", "priority": "low"},
+      {"component": "notifications-freezer card", "issue": "Con freezer spento viene mostrata una card vuota: il wrapper .card viene renderizzato senza contenuto. Riferimento: app/settings/preferences/notifications-freezer.tsx:90-125", "testID": "prefs-notif-freezer", "priority": "low"},
+      {"component": "planner-slot save", "issue": "save() usa `catch {}` e ingoia gli errori dell'API: se updateSlot fallisce l'utente non riceve nessun feedback. Riferimento: app/planner-slot.tsx:129", "testID": "slot-save", "priority": "low"}
+    ],
+    "integration_issues": [
+      {"flow": "Reschedule notifiche (solo nativo)", "issue": "Closure stale: nel loop do/while di (tabs)/_layout.tsx:113-153, `readNotifPrefs(prefs)` usa i `prefs` catturati dall'effect che ha AVVIATO il loop. Se l'utente salva le preferenze mentre il reschedule è in corso, il nuovo effect imposta lastFingerprintRef e dirtyRef=true e poi esce. L'iterazione successiva del loop rischedula quindi con le preferenze VECCHIE, e nessun altro effect riparte perché il fingerprint corrisponde già. Risultato: la coda OS non riflette l'ultimo salvataggio fino al prossimo bump. Fix: tenere un prefsRef aggiornato a ogni render (prefsRef.current = prefs) e leggere readNotifPrefs(prefsRef.current) dentro il loop.", "affected_testIDs": []}
+    ],
+    "design_issues": [
+      {"screen": "notifications-expiry / notifications-freezer", "issues": ["L'area di tocco dei toggle notif-expiry-master e notif-freezer è 44x26 px, sotto i 44pt minimi in altezza: aggiungere hitSlop o padding verticale.", "Le chip delle ore e dei giorni (chipSmall paddingVertical 5) sono alte circa 28px, sotto i 44pt."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration22_notif_prefs_backfill.py", "/app/test_reports/pytest/pytest_iter22.xml"],
+  "action_items": [
+    "server.py update_preferences (circa riga 862): fare il backfill di expiry_enabled/freezer_enabled dal legacy `enabled` PRIMA di applicare il patch parziale, così un salvataggio da una schermata non azzera il toggle dell'altra per i documenti legacy.",
+    "(tabs)/_layout.tsx: usare un prefsRef dentro il loop di reschedule per evitare la closure stale quando le preferenze cambiano durante un reschedule in corso.",
+    "Freezer: rendere dinamico il sottotitolo con freezer_hours e non renderizzare la card vuota quando il toggle è spento.",
+    "planner-slot.tsx save(): mostrare un errore all'utente invece di `catch {}`.",
+    "Aumentare l'area di tocco dei toggle (hitSlop) fino a 44pt."
+  ],
+  "critical_code_review_comments": [
+    "server.py ha più di 2300 righe: andrebbe diviso in moduli (auth/prefs, planner, shopping, fridge, notifications).",
+    "DEFAULT_COURSES è definito due volte in server.py (righe 117 e 131).",
+    "Il fingerprint delle notifiche in _layout.tsx usa !!n.expiry_enabled grezzo invece di readNotifPrefs. Oggi va bene perché il backend fa sempre il backfill, ma resta fragile.",
+    "Il backfill in _user_public muta il dict user_doc e non viene persistito: la normalizzazione esiste solo in lettura, da cui il bug del patch parziale legacy."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration22_notif_prefs_backfill.py"],
+  "success_rate": {"backend": "80% (8/10, i 2 falliti sono lo stesso bug del patch parziale su documenti legacy)", "frontend": "100% dei flussi testati"},
+  "seed_data_creation": "Ho creato utenti test_* temporanei (via pytest e un utente per la UI test_a1114915 con piatto TEST_Pasta, slot del planner e voce della spesa), tutti eliminati per user_id. Ho modificato le preferenze notifiche di halley durante il test UI come richiesto e le ho RIPRISTINATE ai valori originali: enabled:true, expiry_enabled:false, freezer_enabled:true, days_ahead [3,2,1,0], notify_hour 16, freezer_hours 24, expiry_days_ahead 3. Solo updated_at è cambiato.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Lo stato raw delle notifiche di halley nel DB è quello originale indicato sopra. Il test backend usa pymongo per simulare documenti legacy su utenti TEST. Su web il reschedule esce subito: lo scheduling OS va verificato su build nativa. Gli utenti free ricevono un 402 sulla tab frigorifero (paywall Pro, comportamento atteso). Per evitare il redirect al tutorial nella UI, impostare localStorage planeat_tutorial_seen_v1='1'.",
+  "rca_of_issue": "Bug del patch parziale legacy. Riproduzione: impostare notifications={enabled:true} nel DB, poi fare PUT {notifications:{freezer_enabled:false,freezer_hours:24,enabled:true}}; la GET successiva restituisce expiry_enabled=false. Causa: update_preferences fa il merge sul documento grezzo (non normalizzato), quindi viene scritto un solo toggle del nuovo schema; a quel punto il backfill in _user_public tratta il documento come nuovo schema e imposta il toggle mancante a False. Mitigazione: normalizzare cur (backfill dei due toggle da enabled) prima di applicare il patch."
+}

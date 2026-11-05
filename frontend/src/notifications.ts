@@ -23,7 +23,7 @@ import { Platform } from 'react-native';
 import type { UserPreferences } from './auth';
 
 // Verbose debug logging — flip to false for production silence.
-const DEBUG = true;
+const DEBUG = __DEV__;
 function log(...args: any[]) { if (DEBUG) console.log('[notifications]', ...args); }
 function warn(...args: any[]) { if (DEBUG) console.warn('[notifications]', ...args); }
 
@@ -89,6 +89,12 @@ export async function ensurePermission(): Promise<boolean> {
   return !!req.granted;
 }
 
+/** Public: cancel every Planibble-scheduled notification (logout / plan downgrade). */
+export async function cancelAllScheduled() {
+  if (Platform.OS === 'web') return;
+  await cancelAllPlanibble();
+}
+
 async function cancelAllPlanibble() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -144,11 +150,37 @@ export type PlannedMeal = {
   dishes: { name: string; ingredients: { name: string; category_id?: string }[] }[];
 };
 
-const FROZEN_CATEGORY_IDS = new Set(['surgelati']);
+export type CategoryLite = { id?: string; label?: string; icon?: string | null };
 
-function hasFrozen(m: PlannedMeal): boolean {
-  return m.dishes.some(d => d.ingredients.some(i => FROZEN_CATEGORY_IDS.has(i.category_id || '')));
+// Frozen categories are recognised by id, label or ❄️ icon — users can rename
+// or recreate the default "surgelati" category (or use the English UI), so a
+// single hard-coded id is not enough.
+const FROZEN_WORDS = ['surgel', 'congel', 'frozen', 'freezer', 'gelo'];
+function frozenCategoryIds(categories: CategoryLite[] | undefined): Set<string> {
+  const ids = new Set<string>(['surgelati']);
+  for (const c of categories || []) {
+    if (!c?.id) continue;
+    const hay = `${c.id} ${c.label || ''}`.toLowerCase();
+    if ((c.icon || '').includes('❄') || FROZEN_WORDS.some(w => hay.includes(w))) ids.add(c.id);
+  }
+  return ids;
 }
+
+function hasFrozen(m: PlannedMeal, frozenIds: Set<string>): boolean {
+  return m.dishes.some(d => d.ingredients.some(i => frozenIds.has(i.category_id || '')));
+}
+
+// iOS keeps at most 64 pending local notifications per app (extra ones are
+// silently dropped); some Android OEMs cap alarms too. We schedule only the
+// most imminent ones, leaving a small margin.
+const MAX_SCHEDULED = 60;
+
+type Candidate = {
+  when: Date;
+  title: string;
+  body: string;
+  data: Record<string, any>;
+};
 
 // Standard meal times (24h) — used as the anchor for the meal date, since
 // PlannedMeal.date is a whole-day Date. We subtract freezer_hours from this
@@ -168,6 +200,7 @@ export async function reschedule(
   fridge: FridgeLite[],
   plans: PlannedMeal[],
   prefs: NotifPrefs,
+  categories?: CategoryLite[],
 ): Promise<{ scheduled: number; skipped: number }> {
   if (Platform.OS === 'web') return { scheduled: 0, skipped: 0 };
 
@@ -200,23 +233,21 @@ export async function reschedule(
   const notifyHour = Math.max(0, Math.min(23, prefs.notify_hour));
   let scheduled = 0;
   let skipped = 0;
+  const candidates: Candidate[] = [];
 
   // ---- Expiry notifications ----
   if (prefs.expiry_enabled) {
-    // Multi-select: schedule ONE notification per (item, expiry, day-offset).
+    // Multi-select: ONE notification per (item, expiry, day-offset).
     // If days_ahead is empty (legacy), fall back to [expiry_days_ahead].
     const dayOffsetsRaw = (prefs.days_ahead && prefs.days_ahead.length > 0)
       ? prefs.days_ahead
       : [prefs.expiry_days_ahead];
-    // Sanitize: unique, finite, non-negative integers.
     const dayOffsets = Array.from(new Set(
       dayOffsetsRaw
         .map(v => Number(v))
         .filter(v => Number.isFinite(v) && v >= 0)
         .map(v => Math.floor(v)),
     ));
-    log('scheduling expiry with dayOffsets =', dayOffsets);
-
     for (const it of fridge) {
       for (const entry of (it.expiries || [])) {
         const d = expiryDate(entry);
@@ -225,36 +256,18 @@ export async function reschedule(
           const warnDate = new Date(d);
           warnDate.setDate(warnDate.getDate() - daysBefore);
           warnDate.setHours(notifyHour, 0, 0, 0);
-          if (warnDate.getTime() <= now.getTime()) {
-            log('skip: past date', it.name, daysBefore, warnDate.toISOString());
-            skipped++;
-            continue;
-          }
-          const label = daysBefore === 0
+          if (warnDate.getTime() <= now.getTime()) { skipped++; continue; }
+          const body = daysBefore === 0
             ? `${it.name} scade oggi.`
             : daysBefore === 1
               ? `${it.name} scade domani.`
               : `${it.name} scade tra ${daysBefore} giorni.`;
-          try {
-            const id = await Notifications.scheduleNotificationAsync({
-              content: {
-                title: '🕐 In scadenza',
-                body: label,
-                data: { tag: TAG, kind: 'expiry', item_id: it.id, days_before: daysBefore },
-                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-              },
-              trigger: {
-                type: SchedulableTriggerInputTypes.DATE,
-                date: warnDate,
-                ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-              },
-            });
-            log('scheduled expiry', { id, item: it.name, when: warnDate.toISOString(), daysBefore });
-            scheduled++;
-          } catch (err) {
-            warn('expiry schedule failed', it.name, err);
-            skipped++;
-          }
+          candidates.push({
+            when: warnDate,
+            title: '🕐 In scadenza',
+            body,
+            data: { tag: TAG, kind: 'expiry', item_id: it.id, days_before: daysBefore },
+          });
         }
       }
     }
@@ -262,50 +275,56 @@ export async function reschedule(
 
   // ---- Freezer alerts (freezer_hours before a planned meal with frozen ingredients) ----
   if (prefs.freezer_enabled) {
-    // Honor the user's `freezer_hours` setting instead of the previous
-    // hard-coded 24h. Also anchor the meal at its normal hour (pranzo ~ 13,
-    // cena ~ 20) so subtracting hours lands on a realistic alert time.
     const freezerHours = Math.max(1, Math.min(168,
       Number.isFinite(prefs.freezer_hours) ? Math.floor(prefs.freezer_hours) : DEFAULT_NOTIF.freezer_hours,
     ));
-    log('scheduling freezer with freezerHours =', freezerHours);
-
+    const frozenIds = frozenCategoryIds(categories);
+    log('freezer: hours =', freezerHours, 'frozen category ids =', Array.from(frozenIds));
     for (const m of plans) {
-      if (!hasFrozen(m)) continue;
+      if (!hasFrozen(m, frozenIds)) continue;
       const mealAnchor = new Date(m.date);
       mealAnchor.setHours(MEAL_HOUR[m.meal] ?? 13, 0, 0, 0);
       const warnDate = new Date(mealAnchor.getTime() - freezerHours * 3600 * 1000);
-      if (warnDate.getTime() <= now.getTime()) {
-        log('skip freezer: past date', m.meal, warnDate.toISOString());
-        skipped++;
-        continue;
-      }
+      if (warnDate.getTime() <= now.getTime()) { skipped++; continue; }
       const dishNames = m.dishes.map(d => d.name).filter(Boolean).join(', ') || 'un piatto surgelato';
       const mealLabel = m.meal === 'pranzo' ? 'pranzo' : 'cena';
-      // Nice human-readable pretext if hours >= 24
       const timeHint = freezerHours >= 24
         ? (freezerHours === 24 ? 'domani' : `tra ${Math.round(freezerHours / 24)} giorni`)
         : `tra ${freezerHours}h`;
-      try {
-        const id = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: '❄️ Ricordati di scongelare',
-            body: `${timeHint} a ${mealLabel}: ${dishNames}`,
-            data: { tag: TAG, kind: 'freezer' },
-            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-          },
-          trigger: {
-            type: SchedulableTriggerInputTypes.DATE,
-            date: warnDate,
-            ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
-          },
-        });
-        log('scheduled freezer', { id, meal: m.meal, when: warnDate.toISOString() });
-        scheduled++;
-      } catch (err) {
-        warn('freezer schedule failed', err);
-        skipped++;
-      }
+      candidates.push({
+        when: warnDate,
+        title: '❄️ Ricordati di scongelare',
+        body: `${timeHint} a ${mealLabel}: ${dishNames}`,
+        data: { tag: TAG, kind: 'freezer' },
+      });
+    }
+  }
+
+  // Most imminent first, then cap to stay under the OS limit.
+  candidates.sort((x, y) => x.when.getTime() - y.when.getTime());
+  if (candidates.length > MAX_SCHEDULED) {
+    log(`capping ${candidates.length} candidates to the ${MAX_SCHEDULED} most imminent`);
+    skipped += candidates.length - MAX_SCHEDULED;
+  }
+  for (const c of candidates.slice(0, MAX_SCHEDULED)) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: c.title,
+          body: c.body,
+          data: c.data,
+          ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+        },
+        trigger: {
+          type: SchedulableTriggerInputTypes.DATE,
+          date: c.when,
+          ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+        },
+      });
+      scheduled++;
+    } catch (err) {
+      warn('schedule failed', c.data.kind, err);
+      skipped++;
     }
   }
 

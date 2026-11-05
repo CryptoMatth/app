@@ -55,6 +55,13 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+/** Run a mutation and, on success, ask the tabs layout to re-schedule local notifications. */
+async function withBump<T>(p: Promise<T>): Promise<T> {
+  const r = await p;
+  bumpNotifications();
+  return r;
+}
+
 export const api = {
   register: (username: string, password: string, password_repeat: string) =>
     req('/auth/register', { method: 'POST', body: JSON.stringify({ username, password, password_repeat }) }),
@@ -93,21 +100,23 @@ export const api = {
   },
   getDish: (id: string) => req(`/dishes/${id}`),
   createDish: (data: any) => req('/dishes', { method: 'POST', body: JSON.stringify(data) }),
-  updateDish: (id: string, data: any) => req(`/dishes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteDish: (id: string) => req(`/dishes/${id}`, { method: 'DELETE' }),
+  // Dish ingredients (e.g. a frozen category) drive freezer alerts → bump.
+  updateDish: (id: string, data: any) => withBump(req(`/dishes/${id}`, { method: 'PUT', body: JSON.stringify(data) })),
+  deleteDish: (id: string) => withBump(req(`/dishes/${id}`, { method: 'DELETE' })),
   duplicateDish: (id: string) => req(`/dishes/${id}/duplicate`, { method: 'POST' }),
 
   getPlanner: (weekStart: string) => req(`/planner/${weekStart}`),
   listPlannerWeeks: () => req('/planner-weeks'),
-  updateSlot: (data: any) => req('/planner/slot', { method: 'PUT', body: JSON.stringify(data) }),
+  // Planner changes must re-schedule freezer ("remember to defrost") alerts.
+  updateSlot: (data: any) => withBump(req('/planner/slot', { method: 'PUT', body: JSON.stringify(data) })),
   duplicateWeek: (source: string, target: string) =>
-    req('/planner/duplicate', {
+    withBump(req('/planner/duplicate', {
       method: 'POST',
       body: JSON.stringify({ source_week_start: source, target_week_start: target }),
-    }),
+    })),
 
   exportData: () => req('/export'),
-  importData: (payload: any) => req('/import', { method: 'POST', body: JSON.stringify(payload) }),
+  importData: (payload: any) => withBump(req('/import', { method: 'POST', body: JSON.stringify(payload) })),
 
   // Purchases (RevenueCat sync)
   syncPurchases: (data: { revenuecat_app_user_id?: string; entitlements?: string[] }) =>
